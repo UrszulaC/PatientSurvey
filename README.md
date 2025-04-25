@@ -14,8 +14,8 @@ A comprehensive patient survey system with CRUD functionality for healthcare pro
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/patient-survey-app.git
-   cd patient-survey-app
+   git clone https://github.com/UrszulaC/PatientSurvey.git
+   cd PatientSurvey
    ```
 
 2. Install dependencies:
