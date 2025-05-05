@@ -1,0 +1,38 @@
+pipeline {
+    agent any
+    environment {
+        ENV_FILE = credentials('patient-survey-env')
+    }
+    stages {
+        stage('Setup') {
+            steps {
+                sh '''
+                    python -m venv venv
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    cp $ENV_FILE .env
+                '''
+            }
+        }
+        stage('Test') {
+            steps {
+                sh '''
+                    . venv/bin/activate
+                    pip install -r requirements-dev.txt
+                    python -m pytest tests/ --cov=app --cov-report=xml
+                '''
+            }
+            post {
+                always {
+                    junit '**/junit.xml'
+                    cobertura coberturaReportFile: '**/coverage.xml'
+                }
+            }
+        }
+    }
+    post {
+        always {
+            sh 'rm -f .env'  # Clean up credentials
+        }
+    }
+}
