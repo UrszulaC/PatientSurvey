@@ -12,16 +12,31 @@ pipeline {
       }
     }
 
+    stage('Setup Python') {
+      steps {
+        sh '''
+          python3 -m pip install --upgrade pip
+          python3 -m venv venv
+          . venv/bin/activate
+        '''
+      }
+    }
+
     stage('Install Dependencies') {
       steps {
-          sh 'python3 -m pip install --upgrade pip'  // Ensures latest pip
-          sh 'python3 -m pip install -r requirements.txt'
+        sh '''
+          . venv/bin/activate
+          pip install -r requirements.txt
+        '''
       }
     }
 
     stage('Run Tests') {
       steps {
-        sh 'pytest tests'
+        sh '''
+          . venv/bin/activate
+          pytest tests
+        '''
       }
     }
 
