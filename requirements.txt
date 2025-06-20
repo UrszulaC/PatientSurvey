@@ -10,4 +10,4 @@ mock==5.1.0
 
 # Development/Utility
 python-dateutil==2.8.2
-PyYAML==6.0.
+PyYAML==6.0
