@@ -1,61 +1,62 @@
 pipeline {
     agent {
-        docker {
-            image 'python:3.10-slim'
-            args '-u root --cache-from python:3.10-slim'
+        node {
+            label 'docker'  // Specify a label that matches your agents with Docker
         }
     }
 
     environment {
         DOCKER_USER = credentials('docker-hub-creds')
-        VENV_PATH = '/opt/venv'
+        VENV_PATH = "${env.WORKSPACE}/venv"
     }
 
     stages {
-        // Simple checkout doesn't need script block
         stage('Checkout Code') {
             steps {
                 checkout scm
             }
         }
 
-        // Needs script block for error handling
         stage('Setup Environment') {
             steps {
                 script {
-                    try {
+                    docker.image('python:3.10-slim').inside('-u root') {
                         sh '''
                             python -m pip install --upgrade pip
                             python -m venv $VENV_PATH
                             . $VENV_PATH/bin/activate
                         '''
-                    } catch (e) {
-                        error("Failed to setup environment: ${e}")
                     }
                 }
             }
         }
 
-        // Needs script block for withEnv
         stage('Install Dependencies') {
             steps {
                 script {
-                    withEnv(["PATH+VENV=${VENV_PATH}/bin"]) {
-                        sh '''
-                            pip install -r requirements.txt
-                            pip list
-                        '''
+                    docker.image('python:3.10-slim').inside('-u root') {
+                        withEnv(["PATH+VENV=${VENV_PATH}/bin"]) {
+                            sh '''
+                                . $VENV_PATH/bin/activate
+                                pip install -r requirements.txt
+                                pip list
+                            '''
+                        }
                     }
                 }
             }
         }
 
-        // Needs script block for withEnv
         stage('Run Tests') {
             steps {
                 script {
-                    withEnv(["PATH+VENV=${VENV_PATH}/bin"]) {
-                        sh 'pytest tests --junitxml=test-results/results.xml'
+                    docker.image('python:3.10-slim').inside('-u root') {
+                        withEnv(["PATH+VENV=${VENV_PATH}/bin"]) {
+                            sh '''
+                                . $VENV_PATH/bin/activate
+                                pytest tests --junitxml=test-results/results.xml
+                            '''
+                        }
                     }
                 }
             }
@@ -66,7 +67,6 @@ pipeline {
             }
         }
 
-        // Needs script block for Docker operations
         stage('Build and Push Docker Image') {
             steps {
                 script {
