@@ -8,66 +8,70 @@ pipeline {
 
     environment {
         DOCKER_USER = credentials('docker-hub-creds')
-        VENV_PATH = '/opt/venv'  // System-wide venv location
+        VENV_PATH = '/opt/venv'
     }
 
     stages {
         stage('Checkout Code') {
             steps {
-                checkout scm
-                sh 'git --version'  // Verify git is working
+                checkout([
+                    $class: 'GitSCM',
+                    branches: scm.branches,
+                    extensions: scm.extensions,
+                    userRemoteConfigs: scm.userRemoteConfigs
+                ])
             }
         }
 
-        stage('Setup Python Environment') {
+        stage('Setup Environment') {
             steps {
-                sh '''
-                    python -m pip install --upgrade pip
-                    python -m venv $VENV_PATH
-                    . $VENV_PATH/bin/activate
-                    pip --version
-                '''
+                script {
+                    try {
+                        sh '''
+                            python -m pip install --upgrade pip
+                            python -m venv $VENV_PATH
+                            . $VENV_PATH/bin/activate
+                        '''
+                    } catch (e) {
+                        error("Failed to setup environment: ${e}")
+                    }
+                }
             }
         }
 
         stage('Install Dependencies') {
             steps {
-                sh '''
-                    . $VENV_PATH/bin/activate
-                    pip install -r requirements.txt
-                    pip freeze  # Log installed packages
-                '''
+                script {
+                    withEnv(["PATH+VENV=${VENV_PATH}/bin"]) {
+                        sh '''
+                            pip install -r requirements.txt
+                            pip list
+                        '''
+                    }
+                }
             }
         }
 
         stage('Run Tests') {
             steps {
-                sh '''
-                    . $VENV_PATH/bin/activate
-                    pytest tests --cov=./ --cov-report=xml
-                '''
+                script {
+                    withEnv(["PATH+VENV=${VENV_PATH}/bin"]) {
+                        sh 'pytest tests --junitxml=test-results/results.xml'
+                    }
+                }
             }
             post {
                 always {
-                    junit '**/test-reports/*.xml'  // If you generate JUnit reports
-                    cobertura coberturaReportFile: '**/coverage.xml'
+                    junit 'test-results/results.xml'
                 }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build and Push Docker Image') {
             steps {
                 script {
-                    docker.build("urszulach/epa-feedback-app:latest")
-                }
-            }
-        }
-
-        stage('Push to Docker Hub') {
-            steps {
-                script {
-                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-creds') {
-                        docker.image("urszulach/epa-feedback-app:latest").push()
+                    docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
+                        docker.build("urszulach/epa-feedback-app:latest").push()
                     }
                 }
             }
@@ -76,14 +80,7 @@ pipeline {
 
     post {
         always {
-            sh 'docker system prune -f || true'  // Cleanup docker artifacts
-            cleanWs()  // Clean workspace
-        }
-        success {
-            slackSend color: 'good', message: "Build ${env.BUILD_NUMBER} succeeded!"
-        }
-        failure {
-            slackSend color: 'danger', message: "Build ${env.BUILD_NUMBER} failed!"
+            cleanWs()
         }
     }
 }
