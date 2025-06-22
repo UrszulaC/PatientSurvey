@@ -1,55 +1,89 @@
 pipeline {
-  agent any
-
-  environment {
-    DOCKER_USER = credentials('docker-hub-creds')
-  }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
+    agent {
+        docker {
+            image 'python:3.10-slim'
+            args '-u root --cache-from python:3.10-slim'
+        }
     }
 
-    // NEW STAGE ADDED HERE
-    stage('Setup Python Environment') {
-      steps {
-        sh '''
-          sudo apt-get update
-          sudo apt-get install -y python3-venv python3-pip
-        '''
-      }
+    environment {
+        DOCKER_USER = credentials('docker-hub-creds')
+        VENV_PATH = '/opt/venv'  // System-wide venv location
     }
 
-    stage('Install Dependencies') {
-      steps {
-        sh '''
-          python3 -m venv venv
-          . venv/bin/activate
-          pip install -r requirements.txt
-        '''
-      }
+    stages {
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+                sh 'git --version'  // Verify git is working
+            }
+        }
+
+        stage('Setup Python Environment') {
+            steps {
+                sh '''
+                    python -m pip install --upgrade pip
+                    python -m venv $VENV_PATH
+                    . $VENV_PATH/bin/activate
+                    pip --version
+                '''
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    . $VENV_PATH/bin/activate
+                    pip install -r requirements.txt
+                    pip freeze  # Log installed packages
+                '''
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh '''
+                    . $VENV_PATH/bin/activate
+                    pytest tests --cov=./ --cov-report=xml
+                '''
+            }
+            post {
+                always {
+                    junit '**/test-reports/*.xml'  // If you generate JUnit reports
+                    cobertura coberturaReportFile: '**/coverage.xml'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("urszulach/epa-feedback-app:latest")
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-creds') {
+                        docker.image("urszulach/epa-feedback-app:latest").push()
+                    }
+                }
+            }
+        }
     }
 
-    // Rest of your existing stages...
-    stage('Run Tests') {
-      steps {
-        sh '''
-          . venv/bin/activate
-          pytest tests
-        '''
-      }
+    post {
+        always {
+            sh 'docker system prune -f || true'  // Cleanup docker artifacts
+            cleanWs()  // Clean workspace
+        }
+        success {
+            slackSend color: 'good', message: "Build ${env.BUILD_NUMBER} succeeded!"
+        }
+        failure {
+            slackSend color: 'danger', message: "Build ${env.BUILD_NUMBER} failed!"
+        }
     }
-
-    stage('Docker Build and Push') {
-      steps {
-        sh '''
-          docker login -u $DOCKER_USER_USR -p $DOCKER_USER_PSW
-          docker build -t urszulach/epa-feedback-app:latest .
-          docker push urszulach/epa-feedback-app:latest
-        '''
-      }
-    }
-  }
 }
