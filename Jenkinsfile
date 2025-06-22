@@ -12,17 +12,14 @@ pipeline {
     }
 
     stages {
+        // Simple checkout doesn't need script block
         stage('Checkout Code') {
             steps {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: scm.branches,
-                    extensions: scm.extensions,
-                    userRemoteConfigs: scm.userRemoteConfigs
-                ])
+                checkout scm
             }
         }
 
+        // Needs script block for error handling
         stage('Setup Environment') {
             steps {
                 script {
@@ -39,6 +36,7 @@ pipeline {
             }
         }
 
+        // Needs script block for withEnv
         stage('Install Dependencies') {
             steps {
                 script {
@@ -52,6 +50,7 @@ pipeline {
             }
         }
 
+        // Needs script block for withEnv
         stage('Run Tests') {
             steps {
                 script {
@@ -67,6 +66,7 @@ pipeline {
             }
         }
 
+        // Needs script block for Docker operations
         stage('Build and Push Docker Image') {
             steps {
                 script {
