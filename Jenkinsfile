@@ -12,12 +12,12 @@ pipeline {
       }
     }
 
-    stage('Setup Python') {
+    // NEW STAGE ADDED HERE
+    stage('Setup Python Environment') {
       steps {
         sh '''
-          python3 -m pip install --upgrade pip
-          python3 -m venv venv
-          . venv/bin/activate
+          sudo apt-get update
+          sudo apt-get install -y python3-venv python3-pip
         '''
       }
     }
@@ -25,12 +25,14 @@ pipeline {
     stage('Install Dependencies') {
       steps {
         sh '''
+          python3 -m venv venv
           . venv/bin/activate
           pip install -r requirements.txt
         '''
       }
     }
 
+    // Rest of your existing stages...
     stage('Run Tests') {
       steps {
         sh '''
