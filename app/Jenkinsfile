@@ -1,38 +1,45 @@
 pipeline {
-    agent any
-    environment {
-        ENV_FILE = credentials('patient-survey-env')
+  agent {
+    docker {
+      image 'python:3.10-slim'
+      args '-u root'
     }
-    stages {
-        stage('Setup') {
-            steps {
-                sh '''
-                    python -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    cp $ENV_FILE .env
-                '''
-            }
-        }
-        stage('Test') {
-            steps {
-                sh '''
-                    . venv/bin/activate
-                    pip install -r requirements-dev.txt
-                    python -m pytest tests/ --cov=app --cov-report=xml
-                '''
-            }
-            post {
-                always {
-                    junit '**/junit.xml'
-                    cobertura coberturaReportFile: '**/coverage.xml'
-                }
-            }
-        }
+  }
+
+  environment {
+    VENV_DIR = 'venv'
+  }
+
+  options {
+    timeout(time: 30, unit: 'MINUTES')
+  }
+
+  stages {
+    stage('Install Dependencies') {
+      steps {
+        sh '''
+          apt-get update && apt-get install -y default-libmysqlclient-dev gcc
+          python -m venv ${VENV_DIR}
+          . ${VENV_DIR}/bin/activate && pip install --upgrade pip
+          . ${VENV_DIR}/bin/activate && pip install -r requirements.txt
+        '''
+      }
     }
-    post {
-        always {
-            sh 'rm -f .env'  # Clean up credentials
-        }
+
+    stage('Run Tests') {
+      steps {
+        sh '''
+          . ${VENV_DIR}/bin/activate
+          pytest tests --junitxml=test-results/results.xml
+        '''
+      }
     }
+  }
+
+  post {
+    always {
+      junit 'test-results/results.xml'
+      cleanWs()
+    }
+  }
 }
