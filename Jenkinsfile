@@ -48,10 +48,8 @@ pipeline {
 
   post {
     always {
-      node{
         junit 'test-results/results.xml'
         cleanWs()
-      }
     }
   }
 }
