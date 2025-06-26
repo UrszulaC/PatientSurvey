@@ -31,14 +31,12 @@ pipeline {
             gcc \
             default-libmysqlclient-dev
     
-          python -m venv ${VENV_DIR}
-          . ${VENV_DIR}/bin/activate && pip install --upgrade pip
-          . ${VENV_DIR}/bin/activate && pip install -r requirements.txt
+          python -m venv venv
+          . venv/bin/activate && pip install --upgrade pip
+          . venv/bin/activate && pip install -r requirements.txt
         '''
       }
     }
-
-    
 
     stage('Test') {
       steps {
