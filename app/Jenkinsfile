@@ -7,7 +7,8 @@ pipeline {
   }
 
   environment {
-    VENV_DIR = 'venv'
+    DB_HOST = 'localhost'  // or use 127.0.0.1 or a Docker container later
+    DB_NAME = 'patient_survey_db'
   }
 
   options {
