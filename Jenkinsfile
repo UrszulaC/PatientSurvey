@@ -50,9 +50,10 @@ pipeline {
 
   post {
     always {
-      sh 'docker ps -aq | xargs --no-run-if-empty docker stop || true'
-      sh 'docker system prune -f || true'
-      cleanWs()
+      node {
+        sh 'docker ps -aq | xargs --no-run-if-empty docker stop || true'
+        sh 'docker system prune -f || true'
+        cleanWs()
     }
   }
 }
