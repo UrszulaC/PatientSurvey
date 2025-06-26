@@ -6,8 +6,13 @@ pipeline {
     }
   }
 
+  environment {
+    DB_HOST = 'localhost'
+    DB_NAME = 'patient_survey_db'
+  }
+
   options {
-    timeout(time: 15, unit: 'MINUTES')
+    timeout(time: 20, unit: 'MINUTES')
   }
 
   stages {
@@ -23,9 +28,15 @@ pipeline {
 
     stage('Run Tests') {
       steps {
-        sh '''
-          pytest tests --junitxml=test-results/results.xml
-        '''
+        withCredentials([
+          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
+        ]) {
+          sh '''
+            export DB_USER=$DB_USER
+            export DB_PASSWORD=$DB_PASSWORD
+            pytest tests --junitxml=test-results/results.xml
+          '''
+        }
       }
     }
 
