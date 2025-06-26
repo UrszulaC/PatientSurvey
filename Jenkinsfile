@@ -6,26 +6,17 @@ pipeline {
     }
   }
 
-  environment {
-    VENV_DIR = 'venv'
-  }
-
   options {
     timeout(time: 15, unit: 'MINUTES')
   }
 
   stages {
-    stage('Prepare Environment') {
+    stage('Install Dependencies') {
       steps {
         sh '''
-          apt-get update && apt-get install -y \
-            python3-venv \
-            gcc \
-            default-libmysqlclient-dev
-
-          python -m venv ${VENV_DIR}
-          . ${VENV_DIR}/bin/activate && pip install --upgrade pip
-          . ${VENV_DIR}/bin/activate && pip install -r requirements.txt
+          python --version
+          pip install --upgrade pip
+          pip install -r requirements.txt
         '''
       }
     }
@@ -33,8 +24,6 @@ pipeline {
     stage('Run Tests') {
       steps {
         sh '''
-          echo "✅ Running pytest..."
-          . ${VENV_DIR}/bin/activate
           pytest tests --junitxml=test-results/results.xml
         '''
       }
@@ -53,7 +42,6 @@ pipeline {
 
   post {
     always {
-      // Publish test results if they exist
       script {
         if (fileExists('test-results/results.xml')) {
           junit 'test-results/results.xml'
@@ -61,8 +49,6 @@ pipeline {
           echo '⚠️ No test results found to publish.'
         }
       }
-
-      // Clean workspace after each build
       cleanWs()
     }
   }
