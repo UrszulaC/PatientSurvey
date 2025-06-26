@@ -23,17 +23,22 @@ pipeline {
         sh 'cat requirements.txt'
       }
     }
-
     stage('Install Dependencies') {
       steps {
         sh '''
-          apt-get update && apt-get install -y default-libmysqlclient-dev gcc
+          apt-get update && apt-get install -y \
+            python3-venv \
+            gcc \
+            default-libmysqlclient-dev
+    
           python -m venv ${VENV_DIR}
           . ${VENV_DIR}/bin/activate && pip install --upgrade pip
           . ${VENV_DIR}/bin/activate && pip install -r requirements.txt
         '''
       }
     }
+
+    
 
     stage('Test') {
       steps {
