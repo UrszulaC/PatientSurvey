@@ -8,10 +8,8 @@ pipeline {
 
   environment {
     DB_HOST = '172.17.0.1'
-    DB_NAME = 'patient_survey_db'
-    DB_USER = credentials('db-creds').usr
-    DB_PASSWORD = credentials('db-creds').psw
-}
+    DB_NAME = 'patient_survey_db'  
+  }
 
   options {
     timeout(time: 20, unit: 'MINUTES')
