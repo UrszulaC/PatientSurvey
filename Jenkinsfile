@@ -7,10 +7,11 @@ pipeline {
   }
 
   environment {
-    DB_HOST = 'host.docker.internal'
+    DB_HOST = '172.17.0.1'
     DB_NAME = 'patient_survey_db'
-    DB_CREDS = credentials('db-creds')
-  }
+    DB_USER = credentials('db-creds').usr
+    DB_PASSWORD = credentials('db-creds').psw
+}
 
   options {
     timeout(time: 20, unit: 'MINUTES')
