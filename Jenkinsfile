@@ -61,16 +61,16 @@ pipeline {
   }
 
   post {
-    always {
-      script {
-        if (fileExists('test-results/results.xml')) {
-          junit 'test-results/results.xml'
-        } else {
-          echo '⚠️ No test results found to publish.'
-        }
+  always {
+    script {
+      if (fileExists('test-results/results.xml')) {
+        junit 'test-results/results.xml'
+      } else {
+        echo '⚠️ No test results found to publish.'
       }
-      cleanWs()
     }
+    cleanWs()
   }
 }
+
 
