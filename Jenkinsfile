@@ -1,10 +1,5 @@
 pipeline {
-  agent {
-    docker {
-      image 'python:3.10'
-      args '-u root'
-    }
-  }
+  agent any
 
   environment {
     DB_HOST = '172.17.0.1'
