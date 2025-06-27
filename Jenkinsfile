@@ -9,24 +9,28 @@ pipeline {
   environment {
     DB_HOST = 'localhost'
     DB_NAME = 'patient_survey_db'
-    DB_CREDS = credentials('db-creds')
   }
 
   options {
     timeout(time: 20, unit: 'MINUTES')
   }
 
- stage('Setup Environment') {
-  steps {
-    script {
-      writeFile file: '.env', text: """DB_HOST=${env.DB_HOST}
-DB_USER=${env.DB_CREDS_USR}
-DB_PASSWORD=${env.DB_CREDS_PSW}
-DB_NAME=${env.DB_NAME}
-"""
+  stages {
+    stage('Create .env File') {
+      steps {
+        withCredentials([
+          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
+        ]) {
+          sh '''
+            echo "DB_HOST=${DB_HOST}" > .env
+            echo "DB_USER=${DB_USER}" >> .env
+            echo "DB_PASSWORD=${DB_PASSWORD}" >> .env
+            echo "DB_NAME=${DB_NAME}" >> .env
+          '''
+        }
+      }
     }
-  }
-}
+
     stage('Install Dependencies') {
       steps {
         sh '''
@@ -39,15 +43,9 @@ DB_NAME=${env.DB_NAME}
 
     stage('Run Tests') {
       steps {
-        withCredentials([
-          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
-        ]) {
-          sh '''
-            export DB_USER=$DB_USER
-            export DB_PASSWORD=$DB_PASSWORD
-            pytest tests --junitxml=test-results/results.xml
-          '''
-        }
+        sh '''
+          pytest tests --junitxml=test-results/results.xml
+        '''
       }
     }
 
@@ -75,3 +73,4 @@ DB_NAME=${env.DB_NAME}
     }
   }
 }
+
