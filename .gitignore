@@ -1,15 +1,32 @@
-# Ignore Python virtual environments
-venv/
+# Python cache
 __pycache__/
+*.py[cod]
+*.pyo
 
-# Ignore environment files
+# Virtual environments
+venv/
+.env/
+
+# Jenkins pipeline output
+test-results/
+*.xml
+
+# Environment variables
 .env
 
-# Ignore test result files
-test-results/
-
-# Ignore logs
+# Docker-related
 *.log
+*.pid
 
-# Ignore OS files
+# OS-generated files
 .DS_Store
+Thumbs.db
+
+# IDE/editor-specific
+.vscode/
+.idea/
+*.swp
+
+# Backup files
+*~
+
