@@ -38,11 +38,19 @@ pipeline {
 
     stage('Run Tests') {
       steps {
-        sh '''
-          pytest tests --junitxml=test-results/results.xml
-        '''
+        withCredentials([
+          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
+        ]) {
+          sh '''
+            export PATH=$HOME/.local/bin:$PATH
+            export DB_USER=$DB_USER
+            export DB_PASSWORD=$DB_PASSWORD
+            python3 -m xmlrunner discover -s tests -o test-results
+          '''
+        }
       }
     }
+
 
     stage('Build & Push Docker Image') {
       steps {
