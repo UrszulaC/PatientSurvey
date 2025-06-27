@@ -308,5 +308,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         
         self.assertLess(duration, 1.0, "Viewing responses took too long")
 
+
 if __name__ == "__main__":
-    unittest.main()
+    import xmlrunner
+    unittest.main(testRunner=xmlrunner.XMLTestRunner(output='test-results'))
