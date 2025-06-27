@@ -9,6 +9,7 @@ pipeline {
   environment {
     DB_HOST = 'localhost'
     DB_NAME = 'patient_survey_db'
+    DB_CREDS = credentials('db-creds')
   }
 
   options {
