@@ -16,18 +16,17 @@ pipeline {
     timeout(time: 20, unit: 'MINUTES')
   }
 
-  stages {
-    stage('Prepare .env') {
-      steps {
-        writeFile file: '.env', text: """
-          DB_HOST=${env.DB_HOST}
-          DB_NAME=${env.DB_NAME}
-          DB_USER=${env.DB_CREDS_USR}
-          DB_PASSWORD=${env.DB_CREDS_PSW}
-        """
-        echo "✅ .env file created"
-      }
+ stage('Setup Environment') {
+  steps {
+    script {
+      writeFile file: '.env', text: """DB_HOST=${env.DB_HOST}
+DB_USER=${env.DB_CREDS_USR}
+DB_PASSWORD=${env.DB_CREDS_PSW}
+DB_NAME=${env.DB_NAME}
+"""
     }
+  }
+}
     stage('Install Dependencies') {
       steps {
         sh '''
