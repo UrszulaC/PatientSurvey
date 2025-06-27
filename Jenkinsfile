@@ -7,7 +7,7 @@ pipeline {
   }
 
   environment {
-    DB_HOST = 'localhost'
+    DB_HOST = 'host.docker.internal'
     DB_NAME = 'patient_survey_db'
     DB_CREDS = credentials('db-creds')
   }
