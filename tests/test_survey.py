@@ -1,3 +1,9 @@
+import os
+from dotenv import load_dotenv
+
+# Load .env before using Config
+load_dotenv()
+
 import unittest
 import mysql.connector
 from unittest.mock import patch, MagicMock
