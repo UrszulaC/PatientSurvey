@@ -3,16 +3,25 @@ import json
 from app.utils.db_utils import with_db_connection
 from app.config import Config
 
+from prometheus_client import start_http_server, Counter
+import threading
+
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Prometheus metric
+survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
+
+def start_prometheus_server():
+    start_http_server(8000)  # Prometheus scrapes from http://<host>:8000/metrics
 
 @with_db_connection
 def create_survey_tables(conn):
     """Create all necessary tables for surveys"""
     try:
         cursor = conn.cursor()
-        
+
         # Drop tables in correct order to avoid foreign key constraints
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
         cursor.execute("DROP TABLE IF EXISTS answers")
@@ -20,7 +29,7 @@ def create_survey_tables(conn):
         cursor.execute("DROP TABLE IF EXISTS questions")
         cursor.execute("DROP TABLE IF EXISTS surveys")
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-        
+
         # Create tables
         cursor.execute("""
             CREATE TABLE surveys (
@@ -31,7 +40,7 @@ def create_survey_tables(conn):
                 is_active BOOLEAN DEFAULT TRUE
             )
         """)
-        
+
         cursor.execute("""
             CREATE TABLE questions (
                 question_id INT PRIMARY KEY AUTO_INCREMENT,
@@ -43,7 +52,7 @@ def create_survey_tables(conn):
                 FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
             )
         """)
-        
+
         cursor.execute("""
             CREATE TABLE responses (
                 response_id INT PRIMARY KEY AUTO_INCREMENT,
@@ -52,7 +61,7 @@ def create_survey_tables(conn):
                 FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
             )
         """)
-        
+
         cursor.execute("""
             CREATE TABLE answers (
                 answer_id INT PRIMARY KEY AUTO_INCREMENT,
@@ -63,7 +72,7 @@ def create_survey_tables(conn):
                 FOREIGN KEY (question_id) REFERENCES questions(question_id) ON DELETE CASCADE
             )
         """)
-        
+
         # Insert default survey with complete set of questions
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
         if not cursor.fetchone():
@@ -72,7 +81,7 @@ def create_survey_tables(conn):
                 VALUES ('Patient Experience Survey', 'Survey to collect feedback', TRUE)
             """)
             survey_id = cursor.lastrowid
-            
+
             questions = [
                 {'text': 'Date of visit?', 'type': 'text', 'required': True},
                 {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
@@ -86,7 +95,7 @@ def create_survey_tables(conn):
                 {'text': 'Overall satisfaction (1-5)', 'type': 'multiple_choice', 'required': True,
                  'options': ['1', '2', '3', '4', '5']}
             ]
-            
+
             for q in questions:
                 cursor.execute("""
                     INSERT INTO questions (survey_id, question_text, question_type, is_required, options)
@@ -98,10 +107,10 @@ def create_survey_tables(conn):
                     q.get('required', False),
                     json.dumps(q['options']) if 'options' in q else None
                 ))
-        
+
         conn.commit()
         logger.info("Database tables initialized successfully")
-        
+
     except Exception as e:
         conn.rollback()
         logger.error(f"Database initialization failed: {e}")
@@ -112,7 +121,7 @@ def conduct_survey(conn):
     """Conduct the survey and store responses"""
     try:
         cursor = conn.cursor(dictionary=True)
-        
+
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
         survey = cursor.fetchone()
         if not survey:
@@ -127,10 +136,10 @@ def conduct_survey(conn):
 
         print("\n=== Patient Experience Survey ===")
         answers = []
-        
+
         for q in questions:
             print(f"\n{q['question_text']}{' (required)' if q['is_required'] else ''}")
-            
+
             if q['question_type'] == 'multiple_choice':
                 options = json.loads(q['options'])
                 for i, opt in enumerate(options, 1):
@@ -160,14 +169,15 @@ def conduct_survey(conn):
 
         cursor.execute("INSERT INTO responses (survey_id) VALUES (%s)", (survey['survey_id'],))
         response_id = cursor.lastrowid
-        
+
         for a in answers:
             cursor.execute("""
                 INSERT INTO answers (response_id, question_id, answer_value)
                 VALUES (%s, %s, %s)
             """, (response_id, a['question_id'], a['answer_value']))
-        
+
         conn.commit()
+        survey_counter.inc()  # ✅ increment metric
         print("\nThank you for your feedback!")
         logger.info(f"New survey response recorded (ID: {response_id})")
 
@@ -181,10 +191,10 @@ def view_responses(conn):
     """View all survey responses"""
     try:
         cursor = conn.cursor(dictionary=True)
-        
+
         cursor.execute("SELECT COUNT(DISTINCT response_id) as count FROM answers")
         total_responses = cursor.fetchone()['count']
-        
+
         if total_responses == 0:
             print("\nNo responses found in the database.")
             return
@@ -200,10 +210,10 @@ def view_responses(conn):
             JOIN questions q ON a.question_id = q.question_id
             ORDER BY r.response_id, q.question_id
         """)
-        
+
         responses = {}
         current_id = None
-        
+
         for row in cursor.fetchall():
             if row['response_id'] != current_id:
                 current_id = row['response_id']
@@ -214,7 +224,7 @@ def view_responses(conn):
             responses[current_id]['answers'].append(
                 (row['question_text'], row['answer_value'])
             )
-        
+
         print(f"\n=== SURVEY RESPONSES ({len(responses)} total) ===")
         for response_id, data in responses.items():
             print(f"\nResponse ID: {response_id} | Date: {data['date']}")
@@ -223,9 +233,9 @@ def view_responses(conn):
                 print(f"Q: {question}")
                 print(f"A: {answer}\n")
             print("-" * 50)
-        
+
         logger.info(f"Viewed {len(responses)} survey responses")
-        
+
     except Exception as e:
         logger.error(f"Failed to retrieve responses: {e}")
         raise
@@ -233,15 +243,16 @@ def view_responses(conn):
 def main():
     try:
         logger.info("Starting Patient Survey Application")
+        threading.Thread(target=start_prometheus_server, daemon=True).start()  # ✅ Start Prometheus server
         create_survey_tables()
-        
+
         while True:
             print("\nMain Menu:")
             print("1. Conduct Survey")
             print("2. View Responses") 
             print("3. Exit")
             choice = input("Your choice (1-3): ")
-            
+
             if choice == '1':
                 conduct_survey()
             elif choice == '2':
@@ -251,7 +262,7 @@ def main():
                 break
             else:
                 print("Please enter a number between 1 and 3")
-                
+
     except Exception as e:
         logger.critical(f"Application error: {e}")
     finally:
