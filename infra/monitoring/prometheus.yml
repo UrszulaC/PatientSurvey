@@ -2,6 +2,7 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: 'app-monitor'
+  - job_name: 'patient_survey_app'
     static_configs:
-      - targets: ['host.docker.internal:8000']  # Replace with your app port
+      - targets: ['localhost:8000']
+
