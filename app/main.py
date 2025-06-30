@@ -270,4 +270,5 @@ def main():
         logger.info("Application shutdown")
 
 if __name__ == "__main__":
-    main()
+   threading.Thread(target=start_prometheus_server, daemon=True).start() 
+   main()
