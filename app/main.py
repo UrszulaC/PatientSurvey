@@ -243,7 +243,8 @@ def view_responses(conn):
 def main():
     try:
         logger.info("Starting Patient Survey Application")
-        threading.Thread(target=start_prometheus_server, daemon=True).start()  # ✅ Start Prometheus server
+        # Start metrics server
+        threading.Thread(target=start_http_server, args=(8000,), daemon=True).start()
         create_survey_tables()
 
         while True:
