@@ -1,5 +1,6 @@
 import logging
 import json
+import time
 from app.utils.db_utils import with_db_connection
 from app.config import Config
 
@@ -12,6 +13,11 @@ logger = logging.getLogger(__name__)
 
 # Prometheus metric
 survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
+survey_duration = Counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
+survey_failures = Counter('patient_survey_failures_total', 'Total failed survey submissions')
+active_surveys = Counter('active_surveys_total', 'Number of active surveys initialized')
+question_count = Counter('survey_questions_total', 'Total number of questions initialized')
+
 
 @with_db_connection
 def create_survey_tables(conn):
@@ -78,7 +84,8 @@ def create_survey_tables(conn):
                 VALUES ('Patient Experience Survey', 'Survey to collect feedback', TRUE)
             """)
             survey_id = cursor.lastrowid
-
+            active_surveys.inc()
+            
             questions = [
                 {'text': 'Date of visit?', 'type': 'text', 'required': True},
                 {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
@@ -104,11 +111,13 @@ def create_survey_tables(conn):
                     q.get('required', False),
                     json.dumps(q['options']) if 'options' in q else None
                 ))
+            question_count.inc(len(questions))
 
         conn.commit()
         logger.info("Database tables initialized successfully")
 
     except Exception as e:
+        survey_failures.inc()
         conn.rollback()
         logger.error(f"Database initialization failed: {e}")
         raise
@@ -117,6 +126,7 @@ def create_survey_tables(conn):
 def conduct_survey(conn):
     """Conduct the survey and store responses"""
     try:
+        start_time = time.time()  # Starting timer
         cursor = conn.cursor(dictionary=True)
 
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
@@ -174,7 +184,8 @@ def conduct_survey(conn):
             """, (response_id, a['question_id'], a['answer_value']))
 
         conn.commit()
-        survey_counter.inc()  # ✅ increment metric
+        survey_counter.inc()  # increment metric
+        survey_duration.inc(time.time() - start_time)  # record time spent
         print("\nThank you for your feedback!")
         logger.info(f"New survey response recorded (ID: {response_id})")
 
@@ -241,7 +252,7 @@ def main():
     try:
         logger.info("Starting Patient Survey Application")
         # Start metrics server
-        start_http_server(8000)
+        threading.Thread(target=start_http_server, args=(8000,), daemon=True).start()
 
         create_survey_tables()
 
