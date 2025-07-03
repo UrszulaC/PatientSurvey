@@ -13,9 +13,6 @@ logger = logging.getLogger(__name__)
 # Prometheus metric
 survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
 
-def start_prometheus_server():
-    start_http_server(8000)  # Prometheus scrapes from http://<host>:8000/metrics
-
 @with_db_connection
 def create_survey_tables(conn):
     """Create all necessary tables for surveys"""
@@ -244,7 +241,8 @@ def main():
     try:
         logger.info("Starting Patient Survey Application")
         # Start metrics server
-        threading.Thread(target=start_http_server, args=(8000,), daemon=True).start()
+        start_http_server(8000)
+
         create_survey_tables()
 
         while True:
