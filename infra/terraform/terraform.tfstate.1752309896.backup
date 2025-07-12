@@ -1,0 +1,175 @@
+{
+  "version": 4,
+  "terraform_version": "1.12.2",
+  "serial": 4,
+  "lineage": "f90171bd-b51c-8198-650d-a4cfb030d2eb",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "azurerm_linux_virtual_machine",
+      "name": "survey_vm",
+      "provider": "provider[\"registry.terraform.io/hashicorp/azurerm\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "additional_capabilities": [],
+            "admin_password": null,
+            "admin_ssh_key": [
+              {
+                "public_key": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC9iWODsciWqaUEA1EqtjtzdrkK7IOkc3PAzepI8MzcJOzgGfe/H3rYTlwezRSpeG6fJz6CRc34cTIlSlp6beoHwqft+A+Jy4oDe5PlShfd6G6thSzj8Hmr++173jvTCU7cUkbzAB3XWibMC2zv/6FkJbEGybl2tALgX1w1iicG3m6wNe27Ppb2Q0kpgLwbEkwIfDS8ErzZIbdMCVy/t6KFSt3UX8/dfnQch3nyRzwZAHVY0bJX2Ra0wZ+uNSERVYv+sqbR6Fm+IEeN4XwtvTBaXx09BJ+EeX7EmIlIcOEdFwSGKmM/1RA1lmrJGL79JtWt851ys3fuj7oijq7jSx/T",
+                "username": "azureuser"
+              }
+            ],
+            "admin_username": "azureuser",
+            "allow_extension_operations": true,
+            "availability_set_id": "",
+            "boot_diagnostics": [
+              {
+                "storage_account_uri": ""
+              }
+            ],
+            "bypass_platform_safety_checks_on_user_schedule_enabled": false,
+            "capacity_reservation_group_id": "",
+            "computer_name": "survey-vm",
+            "custom_data": null,
+            "dedicated_host_group_id": "",
+            "dedicated_host_id": "",
+            "disable_password_authentication": true,
+            "disk_controller_type": "SCSI",
+            "edge_zone": "",
+            "encryption_at_host_enabled": false,
+            "eviction_policy": "",
+            "extensions_time_budget": "PT1H30M",
+            "gallery_application": [],
+            "id": "/subscriptions/f8710f06-734a-4570-941f-8a779d917b29/resourceGroups/MYPATIENTSURVEYRG/providers/Microsoft.Compute/virtualMachines/survey-vm",
+            "identity": [
+              {
+                "identity_ids": [],
+                "principal_id": "405a4680-70ac-4b33-9895-ad5ad9c6f23d",
+                "tenant_id": "59a54b9a-8f59-40e7-973e-5109ac99299b",
+                "type": "SystemAssigned"
+              }
+            ],
+            "license_type": "",
+            "location": "uksouth",
+            "max_bid_price": -1,
+            "name": "survey-vm",
+            "network_interface_ids": [
+              "/subscriptions/f8710f06-734a-4570-941f-8a779d917b29/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Network/networkInterfaces/survey-vmVMNic"
+            ],
+            "os_disk": [
+              {
+                "caching": "ReadWrite",
+                "diff_disk_settings": [],
+                "disk_encryption_set_id": "",
+                "disk_size_gb": 30,
+                "id": "/subscriptions/f8710f06-734a-4570-941f-8a779d917b29/resourceGroups/MYPATIENTSURVEYRG/providers/Microsoft.Compute/disks/survey-vm_OsDisk_1_97fe15108565485d93ed0f9134ab5141",
+                "name": "survey-vm_OsDisk_1_97fe15108565485d93ed0f9134ab5141",
+                "secure_vm_disk_encryption_set_id": "",
+                "security_encryption_type": "",
+                "storage_account_type": "Premium_LRS",
+                "write_accelerator_enabled": false
+              }
+            ],
+            "os_image_notification": [],
+            "patch_assessment_mode": "ImageDefault",
+            "patch_mode": "ImageDefault",
+            "plan": [],
+            "platform_fault_domain": -1,
+            "priority": "Regular",
+            "private_ip_address": "10.0.0.4",
+            "private_ip_addresses": [
+              "10.0.0.4"
+            ],
+            "provision_vm_agent": true,
+            "proximity_placement_group_id": "",
+            "public_ip_address": "20.68.221.123",
+            "public_ip_addresses": [
+              "20.68.221.123"
+            ],
+            "reboot_setting": "",
+            "resource_group_name": "MYPATIENTSURVEYRG",
+            "secret": [],
+            "secure_boot_enabled": true,
+            "size": "Standard_B2s",
+            "source_image_id": "",
+            "source_image_reference": [
+              {
+                "offer": "0001-com-ubuntu-server-jammy",
+                "publisher": "Canonical",
+                "sku": "22_04-lts-gen2",
+                "version": "latest"
+              }
+            ],
+            "tags": {},
+            "termination_notification": [],
+            "timeouts": null,
+            "user_data": "",
+            "virtual_machine_id": "11972c74-af3a-49f0-b435-8ba42222fd64",
+            "virtual_machine_scale_set_id": "",
+            "vm_agent_platform_updates_enabled": false,
+            "vtpm_enabled": true,
+            "zone": ""
+          },
+          "sensitive_attributes": [
+            [
+              {
+                "type": "get_attr",
+                "value": "admin_password"
+              }
+            ],
+            [
+              {
+                "type": "get_attr",
+                "value": "custom_data"
+              }
+            ]
+          ],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjoyNzAwMDAwMDAwMDAwLCJkZWxldGUiOjI3MDAwMDAwMDAwMDAsInJlYWQiOjMwMDAwMDAwMDAwMCwidXBkYXRlIjoyNzAwMDAwMDAwMDAwfSwic2NoZW1hX3ZlcnNpb24iOiIwIn0="
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "azurerm_public_ip",
+      "name": "existing",
+      "provider": "provider[\"registry.terraform.io/hashicorp/azurerm\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "allocation_method": "Static",
+            "ddos_protection_mode": "VirtualNetworkInherited",
+            "ddos_protection_plan_id": null,
+            "domain_name_label": "my-survey-app",
+            "domain_name_label_scope": "",
+            "edge_zone": "",
+            "fqdn": "my-survey-app.uksouth.cloudapp.azure.com",
+            "id": "/subscriptions/f8710f06-734a-4570-941f-8a779d917b29/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Network/publicIPAddresses/survey-vmPublicIP",
+            "idle_timeout_in_minutes": 4,
+            "ip_address": "20.68.221.123",
+            "ip_tags": {},
+            "ip_version": "IPv4",
+            "location": "uksouth",
+            "name": "survey-vmPublicIP",
+            "public_ip_prefix_id": null,
+            "resource_group_name": "MyPatientSurveyRG",
+            "reverse_fqdn": "",
+            "sku": "Standard",
+            "sku_tier": "Regional",
+            "tags": {},
+            "timeouts": null,
+            "zones": []
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjoxODAwMDAwMDAwMDAwLCJkZWxldGUiOjE4MDAwMDAwMDAwMDAsInJlYWQiOjMwMDAwMDAwMDAwMCwidXBkYXRlIjoxODAwMDAwMDAwMDAwfSwic2NoZW1hX3ZlcnNpb24iOiIwIn0="
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
