@@ -37,10 +37,9 @@ pipeline {
     }
     stage('Security Scan') {
       steps {
--       sh '''
-+       sh '''
+        sh '''
           pip install --user bandit
-+         export PATH=$HOME/.local/bin:$PATH
+          export PATH=$HOME/.local/bin:$PATH
           bandit -r app/ -lll
         '''
       }
