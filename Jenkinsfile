@@ -78,18 +78,24 @@ pipeline {
 
     stage('Container Scan') {
       steps {
-        sh '''
+        // explicitly use bash
+        sh '''#!/usr/bin/env bash
+          set -e
+    
           # install Trivy if missing
-          if ! command -v trivy >/dev/null; then
-            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b $HOME/.local/bin
+          if ! command -v trivy &>/dev/null; then
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+              | bash -s -- -b "$HOME/.local/bin"
           fi
-          export PATH=$HOME/.local/bin:$PATH
-
+    
+          export PATH="$HOME/.local/bin:$PATH"
+    
           # scan just-built image for HIGH/Critical
           trivy image --severity HIGH,CRITICAL urszulach/epa-feedback-app:${env.BUILD_NUMBER}
         '''
       }
     }
+
 
     stage('Push Docker Image') {
       steps {
