@@ -66,16 +66,38 @@ pipeline {
     }
 
 
-    stage('Build & Push Docker Image') {
+  stage('Build Docker Image') {
+      steps {
+        script {
+          dockerImage = docker.build("urszulach/epa-feedback-app:${env.BUILD_NUMBER}")
+        }
+      }
+    }
+
+    stage('Container Scan') {
+      steps {
+        sh '''
+          # install Trivy if not present
+          which trivy || curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b $HOME/.local/bin
+          export PATH=$HOME/.local/bin:$PATH
+
+          # scan for HIGH and CRITICAL vulnerabilities
+          trivy image --exit-code 1 --severity HIGH,CRITICAL urszulach/epa-feedback-app:${env.BUILD_NUMBER}
+        '''
+      }
+    }
+
+    stage('Push Docker Image') {
       steps {
         script {
           docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-            docker.build("urszulach/epa-feedback-app:latest").push()
+            dockerImage.push('latest')
+            dockerImage.push(env.BUILD_NUMBER)
           }
         }
       }
     }
-  }
+
 
   post {
     always {
