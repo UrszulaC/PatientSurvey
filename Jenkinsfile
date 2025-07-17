@@ -38,18 +38,18 @@ pipeline {
    stage('Security Scan') {
       steps {
         sh '''
-          # install tools into ~/.local
           python3 -m pip install --user bandit pip-audit
           export PATH=$HOME/.local/bin:$PATH
     
-          # 1 static code analysis
+          # static code analysis
           bandit -r app/ -lll
     
-          # 2 dependency scan via the pip-audit CLI
-          pip-audit --requirement requirements.txt --exit-code 1
+          # dependency audit
+          pip-audit -rrequirements.txt --exit-code 1
         '''
       }
     }
+
 
 
     stage('Run Tests') {
