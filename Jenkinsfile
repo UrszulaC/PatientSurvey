@@ -38,18 +38,19 @@ pipeline {
     stage('Security Scan') {
       steps {
         sh '''
-          # 1) Installing tool
+          # install or upgrade our security tools into ~/.local
           python3 -m pip install --user bandit pip-audit
           export PATH=$HOME/.local/bin:$PATH
     
-          # 2) Static code analysis
+          # 1) static code scan
           bandit -r app/ -lll
     
-          # 3) Dependency audit (fail the build if any CVEs are found)
-          python3 -m pip_audit -r requirements.txt --exit-code 1
+          # 2) dependency audit—fail if any CVEs are detected
+          python3 -m pip_audit --requirement requirements.txt --exit-code 1
         '''
       }
     }
+
 
 
 
