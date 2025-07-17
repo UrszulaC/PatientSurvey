@@ -4,6 +4,7 @@ pipeline {
   environment {
     DB_HOST = '172.17.0.1'
     DB_NAME = 'patient_survey_db'
+    IMAGE_TAG  = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
   }
 
   options {
@@ -65,12 +66,10 @@ pipeline {
         }
       }
     }
-
-    stage('Build Docker Image') {
+  stage('Build Docker Image') {
       steps {
         script {
-          // tag with build number and also "latest"
-          IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
+          // will build e.g. urszulach/epa-feedback-app:66
           docker.build(IMAGE_TAG)
         }
       }
@@ -78,24 +77,22 @@ pipeline {
 
     stage('Container Scan') {
       steps {
-        // explicitly use bash
-        sh '''#!/usr/bin/env bash
+        // use a double-quoted Groovy string so ${IMAGE_TAG} is expanded before sending
+        sh """
+          #!/usr/bin/env bash
           set -e
-    
-          # install Trivy if missing
+          # install trivy if missing
           if ! command -v trivy &>/dev/null; then
             curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-              | bash -s -- -b "$HOME/.local/bin"
+              | bash -s -- -b "\$HOME/.local/bin"
           fi
-    
-          export PATH="$HOME/.local/bin:$PATH"
-    
-          # scan just-built image for HIGH/Critical
-          trivy image --severity HIGH,CRITICAL urszulach/epa-feedback-app:${env.BUILD_NUMBER}
-        '''
+          export PATH="\$HOME/.local/bin:\$PATH"
+
+          # now scan the image we just built
+          trivy image --severity HIGH,CRITICAL ${IMAGE_TAG}
+        """
       }
     }
-
 
     stage('Push Docker Image') {
       steps {
@@ -111,14 +108,9 @@ pipeline {
 
   post {
     always {
-      script {
-        if (fileExists('test-results/results.xml')) {
-          junit 'test-results/results.xml'
-        } else {
-          echo '⚠️ No test results found to publish.'
-        }
-      }
+      junit 'test-results/results.xml'
       cleanWs()
     }
   }
 }
+
