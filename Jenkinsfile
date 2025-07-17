@@ -35,23 +35,21 @@ pipeline {
         '''
       }
     }
-    stage('Security Scan') {
+   stage('Security Scan') {
       steps {
         sh '''
-          # install or upgrade our security tools into ~/.local
+          # install tools into ~/.local
           python3 -m pip install --user bandit pip-audit
           export PATH=$HOME/.local/bin:$PATH
     
-          # 1) static code scan
+          # 1 static code analysis
           bandit -r app/ -lll
     
-          # 2) dependency audit—fail if any CVEs are detected
-          python3 -m pip_audit --requirement requirements.txt --exit-code 1
+          # 2 dependency scan via the pip-audit CLI
+          pip-audit --requirement requirements.txt --exit-code 1
         '''
       }
     }
-
-
 
 
     stage('Run Tests') {
@@ -87,7 +85,7 @@ pipeline {
         if (fileExists('test-results/results.xml')) {
           junit 'test-results/results.xml'
         } else {
-          echo '⚠️ No test results found to publish.'
+          echo ' No test results found to publish.'
         }
       }
       cleanWs()
