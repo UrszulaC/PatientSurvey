@@ -35,6 +35,15 @@ pipeline {
         '''
       }
     }
+    stage('Security Scan') {
+      steps {
+        // example: using Bandit for Python
+        sh '''
+          pip install bandit
+          bandit -r app/ -lll
+        '''
+      }
+    }
 
     stage('Run Tests') {
       steps {
