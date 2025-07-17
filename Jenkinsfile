@@ -38,12 +38,19 @@ pipeline {
     stage('Security Scan') {
       steps {
         sh '''
-          pip install --user bandit
+          # 1) Installing tool
+          python3 -m pip install --user bandit pip-audit
           export PATH=$HOME/.local/bin:$PATH
+    
+          # 2) Static code analysis
           bandit -r app/ -lll
+    
+          # 3) Dependency audit (fail the build if any CVEs are found)
+          python3 -m pip_audit -r requirements.txt --exit-code 1
         '''
       }
     }
+
 
 
     stage('Run Tests') {
