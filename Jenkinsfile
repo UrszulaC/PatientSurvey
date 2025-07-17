@@ -35,7 +35,7 @@ pipeline {
         '''
       }
     }
-   stage('Security Scan') {
+    stage('Security Scan') {
       steps {
         sh '''
           python3 -m pip install --user bandit pip-audit
@@ -44,13 +44,11 @@ pipeline {
           # static code analysis
           bandit -r app/ -lll
     
-          # dependency audit
-          pip-audit -r requirements.txt --exit-code=1
+          # dependency audit (will exit non-zero if any vuln is found)
+          pip-audit -r requirements.txt
         '''
       }
     }
-
-
 
     stage('Run Tests') {
       steps {
