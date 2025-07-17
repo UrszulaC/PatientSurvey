@@ -37,13 +37,15 @@ pipeline {
     }
     stage('Security Scan') {
       steps {
-        // example: using Bandit for Python
-        sh '''
-          pip install bandit
+-       sh '''
++       sh '''
+          pip install --user bandit
++         export PATH=$HOME/.local/bin:$PATH
           bandit -r app/ -lll
         '''
       }
     }
+
 
     stage('Run Tests') {
       steps {
