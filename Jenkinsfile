@@ -45,7 +45,7 @@ pipeline {
           bandit -r app/ -lll
     
           # dependency audit
-          pip-audit -rrequirements.txt --exit-code 1
+          pip-audit -r requirements.txt --exit-code=1
         '''
       }
     }
