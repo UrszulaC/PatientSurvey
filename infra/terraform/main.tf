@@ -35,12 +35,6 @@ resource "azurerm_container_group" "survey_app" {
   ip_address_type = "Public"
   dns_name_label  = "survey-app-${random_integer.suffix.result}"
 
-  # allow inbound on 8000
-  ports {
-    port     = 8000
-    protocol = "TCP"
-  }
-
   container {
     name  = "survey-app"
     image = "urszulach/epa-feedback-app:latest"
