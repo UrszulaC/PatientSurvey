@@ -48,16 +48,17 @@ resource "azurerm_container_registry" "acr" {
 # ──────────────────────────────────────────────────────────────────────────────
 # 3) Immutable deployment: Azure Container Instance
 # ──────────────────────────────────────────────────────────────────────────────
-resource "azurerm_container_group" "survey_app" {
+  resource "azurerm_container_group" "survey_app" {
   name                = "survey-app-cg"
   location            = data.azurerm_resource_group.existing.location
   resource_group_name = data.azurerm_resource_group.existing.name
-    os_type        = "Linux"
-  restart_policy = "OnFailure"
+  os_type             = "Linux"
+  restart_policy      = "OnFailure"
 
+  # --- Define the public IP & port mappings here ---
   ip_address {
-    type            = "Public"
-    dns_name_label  = "survey-app-${random_integer.suffix.result}"
+    type           = "Public"
+    dns_name_label = "survey-app-${random_integer.suffix.result}"
 
     ports {
       port     = 8000
@@ -65,6 +66,7 @@ resource "azurerm_container_group" "survey_app" {
     }
   }
 
+  # --- Now define your container inside the group ---
   container {
     name   = "survey-app"
     image  = "urszulach/epa-feedback-app:latest"
@@ -83,15 +85,7 @@ resource "azurerm_container_group" "survey_app" {
       DB_PASSWORD = var.db_password
     }
   }
-
-
-    environment_variables = {
-      DB_HOST     = "172.17.0.1"
-      DB_NAME     = "patient_survey_db"
-      DB_USER     = var.db_user
-      DB_PASSWORD = var.db_password
-    }
-  }
+}
 
   ports {
     port     = 8000
