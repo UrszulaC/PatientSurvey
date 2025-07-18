@@ -4,12 +4,27 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.36"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
 provider "azurerm" {
   features {}
   subscription_id = "f8710f06-734a-4570-941f-8a779d917b29"
+}
+
+variable "db_user" {
+  type        = string
+  description = "Database user for the survey app"
+}
+
+variable "db_password" {
+  type        = string
+  description = "Database password for the survey app"
+  sensitive   = true
 }
 
 # 1) Data sources
@@ -41,7 +56,7 @@ resource "azurerm_container_registry" "acr" {
   admin_enabled       = true
 }
 
-# 3) Immutable deployment: Azure Container Instance
+# 3) Azure Container Instance (ACI)
 resource "azurerm_container_group" "survey_app" {
   name                = "survey-app-cg"
   location            = data.azurerm_resource_group.existing.location
@@ -49,36 +64,42 @@ resource "azurerm_container_group" "survey_app" {
   os_type             = "Linux"
   restart_policy      = "OnFailure"
 
-  ip_address {
+  # use attribute syntax instead of block
+  ip_address = {
     type           = "Public"
     dns_name_label = "survey-app-${random_integer.suffix.result}"
-
-    ports {
-      port     = 8000
-      protocol = "TCP"
-    }
+    ports = [
+      {
+        port     = 8000
+        protocol = "TCP"
+      }
+    ]
   }
 
-  container {
-    name   = "survey-app"
-    image  = "urszulach/epa-feedback-app:latest"
-    cpu    = "0.5"
-    memory = "1.0"
+  container = [
+    {
+      name   = "survey-app"
+      image  = "urszulach/epa-feedback-app:latest"
+      cpu    = "0.5"
+      memory = "1.0"
 
-    ports {
-      port     = 8000
-      protocol = "TCP"
+      ports = [
+        {
+          port     = 8000
+          protocol = "TCP"
+        }
+      ]
+
+      environment_variables = {
+        DB_HOST     = "172.17.0.1"
+        DB_NAME     = "patient_survey_db"
+        DB_USER     = var.db_user
+        DB_PASSWORD = var.db_password
+      }
     }
+  ]
 
-    environment_variables = {
-      DB_HOST     = "172.17.0.1"
-      DB_NAME     = "patient_survey_db"
-      DB_USER     = var.db_user
-      DB_PASSWORD = var.db_password
-    }
-  }
-
-  # If you’d rather pull from ACR than Docker Hub, uncomment this:
+  # to pull from ACR than Docker Hub, uncomment this:
   # image_registry_credential {
   #   server   = azurerm_container_registry.acr.login_server
   #   username = azurerm_container_registry.acr.admin_username
