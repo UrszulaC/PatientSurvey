@@ -12,9 +12,7 @@ provider "azurerm" {
   subscription_id = "f8710f06-734a-4570-941f-8a779d917b29"
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 1) Data sources
-# ──────────────────────────────────────────────────────────────────────────────
 data "azurerm_resource_group" "existing" {
   name = "MyPatientSurveyRG"
 }
@@ -29,9 +27,7 @@ data "azurerm_network_interface" "existing" {
   resource_group_name = data.azurerm_resource_group.existing.name
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 2) ACR to host images
-# ──────────────────────────────────────────────────────────────────────────────
 resource "random_integer" "suffix" {
   min = 1000
   max = 9999
@@ -45,17 +41,14 @@ resource "azurerm_container_registry" "acr" {
   admin_enabled       = true
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 3) Immutable deployment: Azure Container Instance
-# ──────────────────────────────────────────────────────────────────────────────
-  resource "azurerm_container_group" "survey_app" {
+resource "azurerm_container_group" "survey_app" {
   name                = "survey-app-cg"
   location            = data.azurerm_resource_group.existing.location
   resource_group_name = data.azurerm_resource_group.existing.name
   os_type             = "Linux"
   restart_policy      = "OnFailure"
 
-  # --- Define the public IP & port mappings here ---
   ip_address {
     type           = "Public"
     dns_name_label = "survey-app-${random_integer.suffix.result}"
@@ -66,7 +59,6 @@ resource "azurerm_container_registry" "acr" {
     }
   }
 
-  # --- Now define your container inside the group ---
   container {
     name   = "survey-app"
     image  = "urszulach/epa-feedback-app:latest"
@@ -85,14 +77,8 @@ resource "azurerm_container_registry" "acr" {
       DB_PASSWORD = var.db_password
     }
   }
-}
 
-  ports {
-    port     = 8000
-    protocol = "TCP"
-  }
-
-  # If you push into ACR instead of Docker Hub, uncomment:
+  # If you’d rather pull from ACR than Docker Hub, uncomment this:
   # image_registry_credential {
   #   server   = azurerm_container_registry.acr.login_server
   #   username = azurerm_container_registry.acr.admin_username
@@ -100,9 +86,7 @@ resource "azurerm_container_registry" "acr" {
   # }
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 4) Outputs
-# ──────────────────────────────────────────────────────────────────────────────
 output "survey_app_fqdn" {
   value = azurerm_container_group.survey_app.fqdn
 }
