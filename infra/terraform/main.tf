@@ -67,7 +67,7 @@ resource "azurerm_container_group" "survey_app" {
   container {
       name   = "survey-app"
       image  = "urszulach/epa-feedback-app:latest"
-      cpu    = "0.5"
+      cpu    = 0.5
       memory = "1.0"
 
       ports {
@@ -83,7 +83,7 @@ resource "azurerm_container_group" "survey_app" {
         DB_PASSWORD = var.db_password
       }
     }
-  
+  }
 
   # to pull from ACR than Docker Hub, uncomment this:
   # image_registry_credential {
