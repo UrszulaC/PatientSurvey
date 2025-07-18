@@ -58,16 +58,13 @@ resource "azurerm_container_group" "survey_app" {
   ip_address {
     type           = "Public"
     dns_name_label = "survey-app-${random_integer.suffix.result}"
-    ports = [
-      {
+    ports {
         port     = 8000
         protocol = "TCP"
       }
-    ]
   }
 
-  container
-    {
+  container {
       name   = "survey-app"
       image  = "urszulach/epa-feedback-app:latest"
       cpu    = "0.5"
@@ -86,7 +83,7 @@ resource "azurerm_container_group" "survey_app" {
         DB_PASSWORD = var.db_password
       }
     }
-  ]
+  
 
   # to pull from ACR than Docker Hub, uncomment this:
   # image_registry_credential {
