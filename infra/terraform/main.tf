@@ -55,7 +55,7 @@ resource "azurerm_container_group" "survey_app" {
   restart_policy      = "OnFailure"
 
   # use attribute syntax instead of block
-  ip_address = {
+  ip_address {
     type           = "Public"
     dns_name_label = "survey-app-${random_integer.suffix.result}"
     ports = [
@@ -66,19 +66,18 @@ resource "azurerm_container_group" "survey_app" {
     ]
   }
 
-  container = [
+  container
     {
       name   = "survey-app"
       image  = "urszulach/epa-feedback-app:latest"
       cpu    = "0.5"
       memory = "1.0"
 
-      ports = [
-        {
+      ports {
           port     = 8000
           protocol = "TCP"
         }
-      ]
+    
 
       environment_variables = {
         DB_HOST     = "172.17.0.1"
