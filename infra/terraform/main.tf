@@ -27,40 +27,34 @@ resource "azurerm_container_group" "survey_app" {
   os_type             = "Linux"
   restart_policy      = "OnFailure"
 
-  ip_address {
-    type           = "Public"
-    dns_name_label = "survey-app-${random_integer.suffix.result}"
+  ip_address_type = "Public"
+  dns_name_label  = "survey-app-${random_integer.suffix.result}"
 
-    ports {
-      port     = 8000
-      protocol = "TCP"
-    }
+  ports {
+    port     = 8000
+    protocol = "TCP"
   }
+  
 
   container {
     name  = "survey-app"
     image = "urszulach/epa-feedback-app:latest"
-
-    resources {
-      cpu    = 0.5
-      memory = "1.0"
-    }
-
     ports {
       port     = 8000
       protocol = "TCP"
     }
-
-    environment_variables = {
+  environment_variables = {
       DB_HOST     = "172.17.0.1"
       DB_NAME     = "patient_survey_db"
       DB_USER     = var.db_user
       DB_PASSWORD = var.db_password
     }
+    resources {
+      cpu    = 0.5
+      memory = "1.0"
+    } 
   }
 }
-
-
 output "survey_app_fqdn" {
   value = azurerm_container_group.survey_app.fqdn
 }
