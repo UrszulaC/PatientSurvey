@@ -1,35 +1,101 @@
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.36"
+    }
+  }
+}
+
 provider "azurerm" {
   features {}
   subscription_id = "f8710f06-734a-4570-941f-8a779d917b29"
 }
 
-# Existing resource group (data only)
+# ──────────────────────────────────────────────────────────────────────────────
+# 1) Data sources
+# ──────────────────────────────────────────────────────────────────────────────
 data "azurerm_resource_group" "existing" {
   name = "MyPatientSurveyRG"
 }
 
-# Existing public IP
 data "azurerm_public_ip" "existing" {
   name                = "survey-vmPublicIP"
   resource_group_name = data.azurerm_resource_group.existing.name
 }
 
-# Existing NIC (optional, if you need the private IP)
 data "azurerm_network_interface" "existing" {
   name                = "survey-vmVMNic"
   resource_group_name = data.azurerm_resource_group.existing.name
 }
 
-# Outputs
-output "vm_public_ip" {
-  value = data.azurerm_public_ip.existing.ip_address
+# ──────────────────────────────────────────────────────────────────────────────
+# 2) ACR to host images
+# ──────────────────────────────────────────────────────────────────────────────
+resource "random_integer" "suffix" {
+  min = 1000
+  max = 9999
 }
 
-output "vm_private_ip" {
-  value = data.azurerm_network_interface.existing.ip_configuration[0].private_ip_address
+resource "azurerm_container_registry" "acr" {
+  name                = "patientsurveyacr${random_integer.suffix.result}"
+  resource_group_name = data.azurerm_resource_group.existing.name
+  location            = data.azurerm_resource_group.existing.location
+  sku                 = "Standard"
+  admin_enabled       = true
 }
 
-output "nic_id" {
-  value = data.azurerm_network_interface.existing.id
+# ──────────────────────────────────────────────────────────────────────────────
+# 3) Immutable deployment: Azure Container Instance
+# ──────────────────────────────────────────────────────────────────────────────
+resource "azurerm_container_group" "survey_app" {
+  name                = "survey-app-cg"
+  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = data.azurerm_resource_group.existing.name
+  os_type             = "Linux"
+  ip_address_type     = "Public"
+  dns_name_label      = "survey-app-${random_integer.suffix.result}"
+  restart_policy      = "OnFailure"
+
+  container {
+    name   = "survey-app"
+    image  = "urszulach/epa-feedback-app:latest"
+    cpu    = "0.5"
+    memory = "1.0"
+
+    ports {
+      port     = 8000
+      protocol = "TCP"
+    }
+
+    environment_variables = {
+      DB_HOST     = "172.17.0.1"
+      DB_NAME     = "patient_survey_db"
+      DB_USER     = var.db_user
+      DB_PASSWORD = var.db_password
+    }
+  }
+
+  ports {
+    port     = 8000
+    protocol = "TCP"
+  }
+
+  # If you push into ACR instead of Docker Hub, uncomment:
+  # image_registry_credential {
+  #   server   = azurerm_container_registry.acr.login_server
+  #   username = azurerm_container_registry.acr.admin_username
+  #   password = azurerm_container_registry.acr.admin_password
+  # }
 }
 
+# ──────────────────────────────────────────────────────────────────────────────
+# 4) Outputs
+# ──────────────────────────────────────────────────────────────────────────────
+output "survey_app_fqdn" {
+  value = azurerm_container_group.survey_app.fqdn
+}
+
+output "survey_app_public_ip" {
+  value = azurerm_container_group.survey_app.ip_address
+}
