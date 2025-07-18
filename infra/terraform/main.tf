@@ -91,7 +91,6 @@ resource "azurerm_container_group" "survey_app" {
   #   username = azurerm_container_registry.acr.admin_username
   #   password = azurerm_container_registry.acr.admin_password
   # }
-}
 
 # 4) Outputs
 output "survey_app_fqdn" {
