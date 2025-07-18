@@ -60,14 +60,6 @@ resource "azurerm_container_group" "survey_app" {
   }
 }
 
-variable "db_user" {
-  type = string
-}
-
-variable "db_password" {
-  type      = string
-  sensitive = true
-}
 
 output "survey_app_fqdn" {
   value = azurerm_container_group.survey_app.fqdn
