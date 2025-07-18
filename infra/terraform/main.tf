@@ -16,16 +16,6 @@ provider "azurerm" {
   subscription_id = "f8710f06-734a-4570-941f-8a779d917b29"
 }
 
-variable "db_user" {
-  type        = string
-  description = "Database user for the survey app"
-}
-
-variable "db_password" {
-  type        = string
-  description = "Database password for the survey app"
-  sensitive   = true
-}
 
 # 1) Data sources
 data "azurerm_resource_group" "existing" {
