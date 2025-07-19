@@ -167,11 +167,8 @@ def create_survey_tables(conn):
         logger.error(f"General initialization failed: {e}")
         raise
 
-# Use the decorator for conduct_survey and view_responses
-from app.utils.db_utils import with_db_connection # Ensure this import is here
-
-@with_db_connection
-def conduct_survey(conn):
+# Removed @with_db_connection decorator
+def conduct_survey(conn): # Now explicitly accepts conn
     """Conduct the survey and store responses"""
     try:
         start_time = time.time()  # Starting timer
@@ -247,8 +244,8 @@ def conduct_survey(conn):
         logger.error(f"Survey submission failed: {e}")
         raise
 
-@with_db_connection
-def view_responses(conn):
+# Removed @with_db_connection decorator
+def view_responses(conn): # Now explicitly accepts conn
     """View all survey responses"""
     try:
         cursor = conn.cursor()
@@ -327,9 +324,13 @@ def main():
         # Now, create tables within the newly created Config.DB_NAME database
         # This connection will be passed to create_survey_tables
         conn_for_tables = get_db_connection(database_name=Config.DB_NAME)
-        conn_for_tables.autocommit = True # NEW: Explicitly set autocommit for this connection
+        conn_for_tables.autocommit = True # Explicitly set autocommit for this connection
         create_survey_tables(conn_for_tables) # Pass connection to decorator
         conn_for_tables.close() # Close after use
+
+        # Main application loop will now manage its own connection
+        app_conn = get_db_connection(database_name=Config.DB_NAME) # NEW: Get a dedicated connection for the app
+        # app_conn.autocommit = False # Default behavior for DML operations
 
         while True:
             print("\nMain Menu:")
@@ -339,11 +340,9 @@ def main():
             choice = input("Your choice (1-3): ")
 
             if choice == '1':
-                # The decorator @with_db_connection will handle the connection for conduct_survey
-                conduct_survey()
+                conduct_survey(app_conn) # Pass the app_conn
             elif choice == '2':
-                # The decorator @with_db_connection will handle the connection for view_responses
-                view_responses()
+                view_responses(app_conn) # Pass the app_conn
             elif choice == '3':
                 print("Goodbye!")
                 break
@@ -353,6 +352,8 @@ def main():
     except Exception as e:
         logger.critical(f"Application error: {e}")
     finally:
+        if 'app_conn' in locals() and app_conn: # Ensure app_conn is defined and not None
+            app_conn.close() # Close app connection on exit
         logger.info("Application shutdown")
 
 if __name__ == "__main__":
