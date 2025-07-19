@@ -17,17 +17,19 @@ class TestPatientSurveySystem(unittest.TestCase):
         """Set up test database and tables"""
         try:
             # Connect to master to create/drop the test database
-            # get_db_connection(None) connects to the server without a specific database
+            # IMPORTANT: Set autocommit=True for DDL operations like CREATE/DROP DATABASE
             cls.connection = get_db_connection(database_name=None)
+            cls.connection.autocommit = True # Explicitly set autocommit to True for DDL
             cls.cursor = cls.connection.cursor()
 
             # SQL Server specific syntax for dropping and creating database
             cls.cursor.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_TEST_NAME}') DROP DATABASE {Config.DB_TEST_NAME}")
             cls.cursor.execute(f"CREATE DATABASE {Config.DB_TEST_NAME}")
-            cls.connection.commit() # Commit DDL
+            # No explicit commit needed here because autocommit is True
 
             # Close and re-open connection to switch database context to the newly created test DB
             cls.connection.close()
+            # For subsequent operations on the test database, autocommit can be False (default)
             cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
             cls.cursor = cls.connection.cursor()
             cls.cursor.row_factory = pyodbc.Row # Set row_factory for dictionary-like access
@@ -63,15 +65,19 @@ class TestPatientSurveySystem(unittest.TestCase):
     def tearDownClass(cls):
         """Clean up test database"""
         try:
-            if hasattr(cls, 'connection') and cls.connection.is_connected():
-                cls.connection.close() # Close the test DB connection first
+            # Ensure connection exists before trying to close
+            if hasattr(cls, 'connection') and cls.connection:
+                # Reconnect to master to drop the test database with autocommit=True
+                temp_conn = get_db_connection(database_name=None)
+                temp_conn.autocommit = True # Explicitly set autocommit to True for DDL
+                temp_cursor = temp_conn.cursor()
+                temp_cursor.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_TEST_NAME}') DROP DATABASE {Config.DB_TEST_NAME}")
+                # No explicit commit needed here because autocommit is True
+                temp_conn.close()
 
-            # Reconnect to master to drop the test database
-            temp_conn = get_db_connection(database_name=None)
-            temp_cursor = temp_conn.cursor()
-            temp_cursor.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_TEST_NAME}') DROP DATABASE {Config.DB_TEST_NAME}")
-            temp_conn.commit()
-            temp_conn.close()
+                # Close the main connection used by tests if it's still open
+                # The is_connected() check can be unreliable, simpler to just close
+                cls.connection.close()
         except pyodbc.Error as e:
             print(f"Warning: Cleanup failed - {e}")
         except Exception as e:
@@ -92,9 +98,9 @@ class TestPatientSurveySystem(unittest.TestCase):
     def tearDown(self):
         """Cleanup after each test"""
         try:
-            if hasattr(self, 'cursor'):
+            if hasattr(self, 'cursor') and self.cursor:
                 self.cursor.close()
-            if hasattr(self, 'conn') and self.conn.is_connected():
+            if hasattr(self, 'conn') and self.conn: # Check if connection object exists
                 self.conn.close()
         except pyodbc.Error as e:
             print(f"Cleanup warning: {e}")
