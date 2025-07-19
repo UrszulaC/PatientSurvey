@@ -7,52 +7,55 @@ load_dotenv()
 import unittest
 import mysql.connector
 from unittest.mock import patch, MagicMock
-from app.config import Config
+from app.config import Config # Make sure this import is correct relative to where test_survey.py is
+
 import json
 
 class TestPatientSurveySystem(unittest.TestCase):
-    
+
     @classmethod
     def setUpClass(cls):
         """Set up test database and tables"""
         try:
-            # Connect without specifying a database
-            cls.connection = mysql.connector.connect(
-                host=Config.DB_CONFIG['host'],
-                user=Config.DB_CONFIG['user'],
-                password=Config.DB_CONFIG['password']
-            )
+            # Connect without specifying a database for initial setup
+            # Use **Config.DB_CONFIG to pass all settings, then override database if needed
+            # For setUpClass, you initially connect WITHOUT a specific database to create it.
+            # So, we'll create a temporary config dictionary for this specific connection.
+            initial_db_config = Config.DB_CONFIG.copy()
+            initial_db_config.pop('database', None) # Remove 'database' key if present for initial connection
+
+            cls.connection = mysql.connector.connect(**initial_db_config) # <<< FIXED HERE
             cls.cursor = cls.connection.cursor()
-            
+
             # Force reset the test database
             cls.cursor.execute("DROP DATABASE IF EXISTS patient_survey_test")
             cls.cursor.execute("CREATE DATABASE patient_survey_test")
             cls.cursor.execute("USE patient_survey_test")
-            
+
             # Import and call the table creation function
             from app.main import create_survey_tables
             create_survey_tables(cls.connection)
-            
+
             # Verify survey exists and has correct questions
             cls.cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
             survey = cls.cursor.fetchone()
             if not survey:
                 raise Exception("Default survey not created")
-            
+
             cls.survey_id = survey[0]
-            
+
             # Store question IDs for tests
             cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = %s ORDER BY question_id", (cls.survey_id,))
             cls.questions = {row[1]: row[0] for row in cls.cursor.fetchall()}
-            
+
             if len(cls.questions) < 7:
                 raise Exception(f"Expected 7 questions, found {len(cls.questions)}")
-            
+
         except Exception as err:
             cls.tearDownClass()
             raise Exception(f"Test setup failed: {err}")
 
-    @classmethod 
+    @classmethod
     def tearDownClass(cls):
         """Clean up test database"""
         try:
@@ -67,14 +70,13 @@ class TestPatientSurveySystem(unittest.TestCase):
 
     def setUp(self):
         """Fresh connection for each test"""
-        self.conn = mysql.connector.connect(
-            host=Config.DB_CONFIG['host'],
-            user=Config.DB_CONFIG['user'],
-            password=Config.DB_CONFIG['password'],
-            database="patient_survey_test"
-        )
+        # Pass the entire Config.DB_CONFIG dictionary and then override 'database'
+        # Ensure Config.DB_CONFIG includes 'port': 1433
+        test_db_config = Config.DB_CONFIG.copy()
+        test_db_config['database'] = "patient_survey_test" # Always use test database for individual tests
+        self.conn = mysql.connector.connect(**test_db_config) # <<< FIXED HERE
         self.cursor = self.conn.cursor(dictionary=True)
-        
+
         # Ensure clean state but preserve survey structure
         self.cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
         self.cursor.execute("TRUNCATE TABLE answers")
@@ -93,13 +95,13 @@ class TestPatientSurveySystem(unittest.TestCase):
             print(f"Cleanup warning: {e}")
 
     # --- Database Structure Tests ---
-    
+
     def test_tables_created_correctly(self):
         """Verify all tables exist with correct structure"""
         self.cursor.execute("SHOW TABLES")
         tables = {row['Tables_in_patient_survey_test'] for row in self.cursor.fetchall()}
         self.assertEqual(tables, {'surveys', 'questions', 'responses', 'answers'})
-        
+
         # Verify surveys table columns
         self.cursor.execute("DESCRIBE surveys")
         survey_columns = {row['Field'] for row in self.cursor.fetchall()}
@@ -117,21 +119,21 @@ class TestPatientSurveySystem(unittest.TestCase):
         """Verify all questions exist"""
         self.cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = %s", (self.survey_id,))
         self.assertEqual(self.cursor.fetchone()['COUNT(*)'], 7)
-        
+
         # Verify one sample question
         self.cursor.execute("""
-            SELECT question_type, is_required, options 
-            FROM questions 
+            SELECT question_type, is_required, options
+            FROM questions
             WHERE question_text = 'Which site did you visit?'
         """)
         question = self.cursor.fetchone()
         self.assertEqual(question['question_type'], 'multiple_choice')
         self.assertTrue(question['is_required'])
-        self.assertEqual(json.loads(question['options']), 
+        self.assertEqual(json.loads(question['options']),
                          ['Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital'])
 
     # --- Survey Conducting Tests ---
-    
+
     @patch('builtins.input')
     def test_complete_survey_flow(self, mock_input):
         """Test full survey submission with all answers"""
@@ -144,22 +146,22 @@ class TestPatientSurveySystem(unittest.TestCase):
             'Friendly staff',  # What went well
             '5'            # Rating (5)
         ]
-        
+
         from app.main import conduct_survey
         conduct_survey(self.conn)
-        
+
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
         response = self.cursor.fetchone()
         self.assertIsNotNone(response)
-        
+
         # Verify all answers were saved
         self.cursor.execute("SELECT COUNT(*) FROM answers WHERE response_id = %s", (response['response_id'],))
         self.assertEqual(self.cursor.fetchone()['COUNT(*)'], 7)
-        
+
         # Verify specific answers
         self.cursor.execute("""
-            SELECT answer_value FROM answers 
+            SELECT answer_value FROM answers
             WHERE question_id = %s AND response_id = %s
         """, (self.questions['What went well during your visit?'], response['response_id']))
         self.assertEqual(self.cursor.fetchone()['answer_value'], 'Friendly staff')
@@ -172,10 +174,10 @@ class TestPatientSurveySystem(unittest.TestCase):
             '2023-01-01', # Valid date
             '1', 'John', '3', '1', 'Good', '5'  # Rest of answers
         ]
-        
+
         from app.main import conduct_survey
         conduct_survey(self.conn)
-        
+
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
         self.assertIsNotNone(self.cursor.fetchone())
@@ -184,28 +186,28 @@ class TestPatientSurveySystem(unittest.TestCase):
     def test_optional_field_handling(self, mock_input):
         """Test optional fields can be skipped"""
         mock_input.side_effect = [
-            '2023-01-01', '1', 'John', '3', '1', 
+            '2023-01-01', '1', 'John', '3', '1',
             '',  # Skip optional "what went well"
             '5'
         ]
-        
+
         from app.main import conduct_survey
         conduct_survey(self.conn)
-        
+
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
         response = self.cursor.fetchone()
         self.assertIsNotNone(response)
-        
+
         # Verify optional answer was recorded as empty
         self.cursor.execute("""
-            SELECT answer_value FROM answers 
+            SELECT answer_value FROM answers
             WHERE question_id = %s AND response_id = %s
         """, (self.questions['What went well during your visit?'], response['response_id']))
         self.assertEqual(self.cursor.fetchone()['answer_value'], '[No response]')
 
     # --- View Responses Tests ---
-    
+
     def test_view_empty_responses(self):
         """Test viewing when no responses exist"""
         from app.main import view_responses
@@ -220,7 +222,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         response1 = self.cursor.lastrowid
         self.cursor.execute("INSERT INTO responses (survey_id) VALUES (%s)", (self.survey_id,))
         response2 = self.cursor.lastrowid
-        
+
         # Add answers
         sample_answers = [
             (response1, self.questions['Date of visit?'], '2023-01-01'),
@@ -228,20 +230,20 @@ class TestPatientSurveySystem(unittest.TestCase):
             (response2, self.questions['Date of visit?'], '2023-01-02'),
             (response2, self.questions['Which site did you visit?'], 'Herts & Essex Hospital')
         ]
-        
+
         for answer in sample_answers:
             self.cursor.execute("""
                 INSERT INTO answers (response_id, question_id, answer_value)
                 VALUES (%s, %s, %s)
             """, answer)
-        
+
         self.conn.commit()
-        
+
         # Test view function
         from app.main import view_responses
         with patch('builtins.print') as mock_print:
             view_responses(self.conn)
-            
+
             # Verify responses were displayed
             output = "\n".join(str(call) for call in mock_print.call_args_list)
             self.assertIn("Response ID: {}".format(response1), output)
@@ -250,7 +252,7 @@ class TestPatientSurveySystem(unittest.TestCase):
             self.assertIn("Herts & Essex Hospital", output)
 
     # --- Edge Cases ---
-    
+
     @patch('builtins.input')
     def test_invalid_multiple_choice_input(self, mock_input):
         """Test handling of invalid multiple choice selections"""
@@ -260,15 +262,15 @@ class TestPatientSurveySystem(unittest.TestCase):
             '1',  # Then valid choice
             'John', '3', '1', 'Good', '5'
         ]
-        
+
         from app.main import conduct_survey
         with patch('builtins.print') as mock_print:
             conduct_survey(self.conn)
-            
+
             # Verify error message was shown
             output = "\n".join(str(call) for call in mock_print.call_args_list)
             self.assertIn("Please enter a number between 1 and 3", output)
-            
+
         # Verify response was still recorded
         self.cursor.execute("SELECT * FROM responses")
         self.assertIsNotNone(self.cursor.fetchone())
@@ -284,11 +286,11 @@ class TestPatientSurveySystem(unittest.TestCase):
             self.conn.commit()
 
     # --- Performance Tests ---
-    
+
     def test_multiple_response_performance(self):
         """Test performance with many responses"""
         from app.main import view_responses
-        
+
         # Create 100 test responses
         for i in range(100):
             self.cursor.execute("INSERT INTO responses (survey_id) VALUES (%s)", (self.survey_id,))
@@ -297,15 +299,15 @@ class TestPatientSurveySystem(unittest.TestCase):
                 INSERT INTO answers (response_id, question_id, answer_value)
                 VALUES (%s, %s, %s)
             """, (response_id, self.questions['Date of visit?'], f'2023-01-{i+1:02d}'))
-        
+
         self.conn.commit()
-        
+
         # Time the view operation
         import time
         start = time.time()
         view_responses(self.conn)
         duration = time.time() - start
-        
+
         self.assertLess(duration, 1.0, "Viewing responses took too long")
 
 
