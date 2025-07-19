@@ -31,6 +31,7 @@ class TestPatientSurveySystem(unittest.TestCase):
             # For subsequent operations on the test database, autocommit can be False (default)
             cls.connection.close()
             cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
+            cls.connection.autocommit = True # NEW: Explicitly set autocommit for this connection
             cls.cursor = cls.connection.cursor()
             # Removed: cls.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
