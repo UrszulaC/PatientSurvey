@@ -21,7 +21,7 @@ pipeline {
               string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
               string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
               string(credentialsId: 'azure_subscription_id', variable: 'azure_subscription_id')
-              // --- YOU MUST ADD THIS BLOCK BACK IN ---
+            ])  {
               sh """
                 # Export Azure credentials for Terraform
                 export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
@@ -38,7 +38,7 @@ pipeline {
                 terraform plan -out=tfplan.out -var="db_user=\${DB_USER}" -var="db_password=\${DB_PASSWORD}"
                 terraform apply -auto-approve tfplan.out
               """
-              // --- AND THESE LINES TO CAPTURE OUTPUT AND SET ENV VAR ---
+             
               def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
               env.DB_HOST = sqlServerFqdn
               echo "Database Host FQDN: ${env.DB_HOST}"
