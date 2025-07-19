@@ -57,7 +57,9 @@ resource "azurerm_container_group" "survey_app" {
     }
   }
 }
-
+output "survey_app_fqdn" {
+  value = azurerm_container_group.survey_app.fqdn
+}
 output "survey_app_public_ip" {
   value = azurerm_container_group.survey_app.ip_address
 }
