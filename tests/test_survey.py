@@ -28,11 +28,11 @@ class TestPatientSurveySystem(unittest.TestCase):
             # No explicit commit needed here because autocommit is True
 
             # Close and re-open connection to switch database context to the newly created test DB
-            cls.connection.close()
             # For subsequent operations on the test database, autocommit can be False (default)
+            cls.connection.close()
             cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
             cls.cursor = cls.connection.cursor()
-            cls.cursor.row_factory = pyodbc.Row # Set row_factory for dictionary-like access
+            # Removed: cls.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
             # Import and call the table creation function from main (needs a connection)
             # This function will now use the pyodbc connection
@@ -40,16 +40,18 @@ class TestPatientSurveySystem(unittest.TestCase):
             create_survey_tables(cls.connection) # Pass the connection to it
 
             # Verify survey exists and has correct questions
+            # SELECT survey_id (index 0)
             cls.cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-            survey = cls.cursor.fetchone() # Will be a pyodbc.Row object
+            survey = cls.cursor.fetchone() # Will be a tuple
             if not survey:
                 raise Exception("Default survey not created")
 
-            cls.survey_id = survey.survey_id # Access by attribute
+            cls.survey_id = survey[0] # Access by index
 
             # Store question IDs for tests
+            # SELECT question_id (index 0), question_text (index 1)
             cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ? ORDER BY question_id", (cls.survey_id,)) # Use ?
-            cls.questions = {row.question_text: row.question_id for row in cls.cursor.fetchall()} # Access by attribute
+            cls.questions = {row[1]: row[0] for row in cls.cursor.fetchall()} # Access by index: {question_text: question_id}
 
             if len(cls.questions) < 7:
                 raise Exception(f"Expected 7 questions, found {len(cls.questions)}")
@@ -76,7 +78,6 @@ class TestPatientSurveySystem(unittest.TestCase):
                 temp_conn.close()
 
                 # Close the main connection used by tests if it's still open
-                # The is_connected() check can be unreliable, simpler to just close
                 cls.connection.close()
         except pyodbc.Error as e:
             print(f"Warning: Cleanup failed - {e}")
@@ -87,7 +88,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         """Fresh connection for each test"""
         self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
         self.cursor = self.conn.cursor()
-        self.cursor.row_factory = pyodbc.Row # Set row_factory for dictionary-like access
+        # Removed: self.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
         # Ensure clean state but preserve survey structure
         # TRUNCATE TABLE works for SQL Server
@@ -111,22 +112,26 @@ class TestPatientSurveySystem(unittest.TestCase):
 
     def test_tables_created_correctly(self):
         """Verify all tables exist with correct structure"""
+        # SELECT TABLE_NAME (index 0)
         self.cursor.execute(f"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG='{Config.DB_TEST_NAME}'")
-        tables = {row.TABLE_NAME for row in self.cursor.fetchall()} # Access by attribute
+        tables = {row[0] for row in self.cursor.fetchall()} # Access by index
         self.assertEqual(tables, {'surveys', 'questions', 'responses', 'answers'})
 
         # Verify surveys table columns
+        # SELECT COLUMN_NAME (index 0)
         self.cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'surveys' AND TABLE_CATALOG='{Config.DB_TEST_NAME}'")
-        survey_columns = {row.COLUMN_NAME for row in self.cursor.fetchall()} # Access by attribute
+        survey_columns = {row[0] for row in self.cursor.fetchall()} # Access by index
         self.assertEqual(survey_columns, {'survey_id', 'title', 'description', 'created_at', 'is_active'})
 
     def test_default_survey_exists(self):
         """Verify default survey was created"""
+        # SELECT * FROM surveys (columns: survey_id, title, description, created_at, is_active)
+        # Indices: 0         , 1    , 2          , 3         , 4
         self.cursor.execute("SELECT * FROM surveys WHERE title = ?", ('Patient Experience Survey',)) # Use ?
         survey = self.cursor.fetchone()
         self.assertIsNotNone(survey)
-        self.assertTrue(survey.is_active) # Access by attribute
-        self.assertEqual(survey.description, 'Survey to collect feedback') # Access by attribute
+        self.assertTrue(survey[4]) # is_active is at index 4
+        self.assertEqual(survey[2], 'Survey to collect feedback') # description is at index 2
 
     def test_questions_created(self):
         """Verify all questions exist"""
@@ -134,15 +139,16 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.assertEqual(self.cursor.fetchone()[0], 7) # COUNT(*) returns a single value, access by index 0
 
         # Verify one sample question
+        # SELECT question_type (index 0), is_required (index 1), options (index 2)
         self.cursor.execute("""
             SELECT question_type, is_required, options
             FROM questions
             WHERE question_text = ?
         """, ('Which site did you visit?',)) # Use ?
         question = self.cursor.fetchone()
-        self.assertEqual(question.question_type, 'multiple_choice') # Access by attribute
-        self.assertTrue(question.is_required) # Access by attribute
-        self.assertEqual(json.loads(question.options), # Access by attribute
+        self.assertEqual(question[0], 'multiple_choice') # question_type is at index 0
+        self.assertTrue(question[1]) # is_required is at index 1
+        self.assertEqual(json.loads(question[2]), # options is at index 2
                              ['Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital'])
 
     # --- Survey Conducting Tests ---
@@ -165,20 +171,22 @@ class TestPatientSurveySystem(unittest.TestCase):
         conduct_survey()
 
         # Verify response was created
+        # SELECT * FROM responses (response_id is at index 0)
         self.cursor.execute("SELECT * FROM responses")
         response = self.cursor.fetchone()
         self.assertIsNotNone(response)
 
         # Verify all answers were saved
-        self.cursor.execute("SELECT COUNT(*) FROM answers WHERE response_id = ?", (response.response_id,)) # Use ?
+        self.cursor.execute("SELECT COUNT(*) FROM answers WHERE response_id = ?", (response[0],)) # Access response_id by index
         self.assertEqual(self.cursor.fetchone()[0], 7)
 
         # Verify specific answers
+        # SELECT answer_value (index 0)
         self.cursor.execute("""
             SELECT answer_value FROM answers
             WHERE question_id = ? AND response_id = ?
-        """, (self.questions['What went well during your visit?'], response.response_id)) # Use ?
-        self.assertEqual(self.cursor.fetchone().answer_value, 'Friendly staff')
+        """, (self.questions['What went well during your visit?'], response[0])) # Access response_id by index
+        self.assertEqual(self.cursor.fetchone()[0], 'Friendly staff') # Access answer_value by index
 
     @patch('builtins.input')
     def test_required_field_validation(self, mock_input):
@@ -214,11 +222,12 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.assertIsNotNone(response)
 
         # Verify optional answer was recorded as empty
+        # SELECT answer_value (index 0)
         self.cursor.execute("""
             SELECT answer_value FROM answers
             WHERE question_id = ? AND response_id = ?
-        """, (self.questions['What went well during your visit?'], response.response_id)) # Use ?
-        self.assertEqual(self.cursor.fetchone().answer_value, '[No response]')
+        """, (self.questions['What went well during your visit?'], response[0])) # Access response_id by index
+        self.assertEqual(self.cursor.fetchone()[0], '[No response]') # Access answer_value by index
 
     # --- View Responses Tests ---
 
@@ -262,6 +271,7 @@ class TestPatientSurveySystem(unittest.TestCase):
             view_responses() # view_responses is decorated
 
             # Verify responses were displayed
+            # The view_responses function itself prints, so we check the printed output
             output = "\n".join(str(call) for call in mock_print.call_args_list)
             self.assertIn(f"Response ID: {response1}", output) # Use f-string
             self.assertIn(f"Response ID: {response2}", output) # Use f-string
