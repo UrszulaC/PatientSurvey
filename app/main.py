@@ -75,7 +75,8 @@ def create_survey_tables(conn):
                 question_id INT NOT NULL,
                 answer_value NVARCHAR(MAX),
                 FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE,
-                FOREIGN KEY (question_id) REFERENCES questions(question_id) ON DELETE CASCADE
+                -- CRITICAL FIX: Removed ON DELETE CASCADE from question_id to break circular dependency
+                FOREIGN KEY (question_id) REFERENCES questions(question_id)
             )
         """)
 
