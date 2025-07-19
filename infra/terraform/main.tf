@@ -38,19 +38,12 @@ resource "azurerm_container_group" "survey_app" {
 
   container {
     name  = "survey-app"
-    image = "urszulach/epa-feedback-app:latest"
-    cpu    = "0.5"       # top-level in container
-    memory = "1.0"       # top-level in container
-
-    # container-specific port
-    ports {
-      port     = 8000
-      protocol = "TCP"
-    }
+    image = "urszulach/epa-feedback-app:latest" # Keep 'latest' for now, will update in Jenkins
+    # ... other container config ...
 
     environment_variables = {
-      DB_HOST     = "172.17.0.1"
-      DB_NAME     = "patient_survey_db"
+      DB_HOST     = azurerm_sql_server.sql_server.fqdn # IMPORTANT CHANGE HERE!
+      DB_NAME     = "patient_survey_db" # Ensure this matches azurerm_sql_database.sql_database.name
       DB_USER     = var.db_user
       DB_PASSWORD = var.db_password
     }
