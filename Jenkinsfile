@@ -27,7 +27,7 @@ pipeline {
               string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
               string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
               string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-              string(credentialsId: 'azure-subscription-id', variable: 'AZURE_SUBSCRIPTION_ID_VAR') // Corrected variable name
+              string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR') // Corrected variable name
             ])  {
               sh """
                 # Export Azure credentials for Terraform
@@ -139,7 +139,6 @@ pipeline {
       }
     }
 
-
     stage('Run Tests') {
       steps {
         dir('app') { // Assuming tests are in tests/ within app/
@@ -172,16 +171,23 @@ pipeline {
         dir('app') { // Assuming the image context is from 'app/'
           sh """
             #!/usr/bin/env bash
-            set -e
-            # install trivy if missing
+            set -ex # Added -x for debugging output, and -e for exiting on error
+
+            echo "Installing Trivy..."
+            # install trivy if missing, with a timeout
             if ! command -v trivy &>/dev/null; then
-              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \\
+              timeout 5m curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \\
                 | bash -s -- -b "\$HOME/.local/bin"
             fi
-            export PATH="\$HOME/.local/bin:\$PATH"
+            echo "Trivy installed."
 
-            # now scan the image we just built
-            trivy image --severity HIGH,CRITICAL ${IMAGE_TAG}
+            export PATH="\$HOME/.local/bin:\$PATH"
+            echo "PATH updated for Trivy: \$PATH"
+
+            echo "Running container scan with Trivy..."
+            # now scan the image we just built, with a timeout
+            timeout 10m trivy image --severity HIGH,CRITICAL ${IMAGE_TAG}
+            echo "Trivy scan complete."
           """
         }
       }
