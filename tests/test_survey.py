@@ -31,7 +31,7 @@ class TestPatientSurveySystem(unittest.TestCase):
             # For subsequent operations on the test database, autocommit can be False (default)
             cls.connection.close()
             cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
-            cls.connection.autocommit = True # NEW: Explicitly set autocommit for this connection
+            cls.connection.autocommit = True # Explicitly set autocommit for this connection
             cls.cursor = cls.connection.cursor()
             # Removed: cls.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
@@ -91,11 +91,14 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.cursor = self.conn.cursor()
         # Removed: self.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
-        # Ensure clean state but preserve survey structure
-        # TRUNCATE TABLE works for SQL Server
-        self.cursor.execute("TRUNCATE TABLE answers")
-        self.cursor.execute("TRUNCATE TABLE responses")
-        self.conn.commit() # Commit truncate
+        # --- CRITICAL FIX: Use DELETE FROM instead of TRUNCATE TABLE for tables with FK constraints ---
+        # Delete from child tables first, then parent tables
+        self.cursor.execute("DELETE FROM answers")
+        self.cursor.execute("DELETE FROM responses")
+        # No need to delete from questions or surveys here, as they are part of the initial setup
+        # and are dropped/recreated in setUpClass. setUp only needs to clear transactional data.
+        self.conn.commit() # Commit delete operations
+        # --- END CRITICAL FIX ---
 
     def tearDown(self):
         """Cleanup after each test"""
