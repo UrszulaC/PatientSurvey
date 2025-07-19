@@ -9,44 +9,46 @@ pipeline {
   options {
     timeout(time: 20, unit: 'MINUTES')
   }
-
-  stages {
-    stage('Deploy Infrastructure (Terraform)') {
+  stage('Install Dependencies') {
       steps {
-        script {
-          dir('infra/terraform') {
-            withCredentials([
-              usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_VAR', passwordVariable: 'DB_PASSWORD_VAR'),
-              string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
-              string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
-              string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-              string(credentialsId: 'azure-subscription-id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
-            ])  {
-              sh """
-                # Export Azure credentials for Terraform
-                export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
-                export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
-                export ARM_TENANT_ID="${AZURE_TENANT_ID}"
-                export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
+        sh """
+          #!/usr/bin/env bash
+          set -e
 
-                # Export DB credentials for Terraform - these are sensitive variables for Terraform
-                export DB_USER="${DB_USER_VAR}"
-                export DB_PASSWORD="${DB_PASSWORD_VAR}"
+          echo "Installing ODBC Driver for SQL Server..."
 
-                # Terraform commands
-                terraform init -backend-config="resource_group_name=MyPatientSurveyRG" -backend-config="storage_account_name=mypatientsurveytfstate" -backend-config="container_name=tfstate" -backend-config="key=patient_survey.tfstate"
-                terraform plan -out=tfplan.out -var="db_user=\${DB_USER}" -var="db_password=\${DB_PASSWORD}"
-                terraform apply -auto-approve tfplan.out
-              """
-             
-              def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
-              env.DB_HOST = sqlServerFqdn
-              echo "Database Host FQDN: ${env.DB_HOST}"
-            }
-          }
-        }
+          export DEBIAN_FRONTEND=noninteractive
+          export TZ=Etc/UTC
+
+          # --- ADD THIS LINE TO PRE-SEED LICENSE ACCEPTANCE ---
+          echo "msodbcsql17 msodbcsql/accept-eula boolean true" | sudo debconf-set-selections
+          # --- END ADDITION ---
+
+          # 1. Install prerequisites for adding Microsoft repositories
+          sudo apt-get update
+          sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring
+
+          # 2. Import the Microsoft GPG key
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+
+          # 3. Add the Microsoft SQL Server repository
+          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
+          | sudo tee /etc/apt/sources.list.d/mssql-release.list
+
+          # 4. Update apt-get cache and install the ODBC driver
+          sudo apt-get update
+          sudo apt-get install -y msodbcsql17 unixodbc-dev
+
+          echo "ODBC Driver installation complete."
+
+          # Now, proceed with Python dependencies
+          python3 --version
+          pip3 install --upgrade pip
+          pip install -r requirements.txt
+        """
       }
     }
+  
     stage('Create .env File') {
       steps {
         withCredentials([
