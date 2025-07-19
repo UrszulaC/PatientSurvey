@@ -80,19 +80,31 @@ def create_survey_tables(conn):
             )
         """)
 
-        # Insert default survey with complete set of questions
-        # SELECT survey_id (index 0)
+        survey_id = None # Initialize survey_id
+
+        # Check if default survey exists
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-        if not cursor.fetchone():
+        existing_survey_row = cursor.fetchone() # Fetch the row if it exists
+
+        if existing_survey_row:
+            survey_id = existing_survey_row[0] # Use existing ID
+            logger.info("Default survey already exists.")
+        else:
+            # Insert default survey
             cursor.execute("""
                 INSERT INTO surveys (title, description, is_active)
                 VALUES (?, ?, ?) -- Use ? for pyodbc parameters
             """, ('Patient Experience Survey', 'Survey to collect feedback', True))
             # Get last inserted ID for pyodbc (SCOPE_IDENTITY() or @@IDENTITY)
             cursor.execute("SELECT SCOPE_IDENTITY()")
-            survey_id = int(cursor.fetchone()[0]) # SCOPE_IDENTITY returns decimal, cast to int
+            new_survey_id_row = cursor.fetchone()
+            if new_survey_id_row is None:
+                raise Exception("Failed to retrieve SCOPE_IDENTITY after inserting survey. Insert might have failed or returned no ID.")
+            survey_id = int(new_survey_id_row[0]) # SCOPE_IDENTITY returns decimal, cast to int
             active_surveys.inc()
+            logger.info("Default survey created.")
 
+            # Insert questions only if the survey was just created
             questions = [
                 {'text': 'Date of visit?', 'type': 'text', 'required': True},
                 {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
@@ -119,6 +131,10 @@ def create_survey_tables(conn):
                     json.dumps(q['options']) if 'options' in q else None
                 ))
             question_count.inc(len(questions))
+
+        # Ensure survey_id is set before proceeding
+        if survey_id is None:
+            raise Exception("Failed to determine survey_id for Patient Experience Survey.")
 
         conn.commit() # Explicit commit for DDL and DML
         logger.info("Database tables initialized successfully")
