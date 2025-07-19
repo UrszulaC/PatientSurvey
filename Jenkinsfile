@@ -14,7 +14,7 @@ pipeline {
     stage('Deploy Infrastructure (Terraform)') {
       steps {
         script {
-          dir('PatientSurvey/infra/terraform') {
+          dir('infra/terraform') {
             withCredentials([
               usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_VAR', passwordVariable: 'DB_PASSWORD_VAR')
             ]) {
