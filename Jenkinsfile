@@ -113,16 +113,25 @@ pipeline {
     stage('Security Scan') {
       steps {
         dir('app') { // Assuming app files are in 'app/' directory
-          sh '''
+          sh """
+            #!/usr/bin/env bash
+            set -ex # Added -x for debugging output, and -e for exiting on error
+
+            echo "Installing security tools (bandit, pip-audit)..."
             python3 -m pip install --user bandit pip-audit
+            echo "Security tools installed."
+
             export PATH=$HOME/.local/bin:$PATH
+            echo "PATH updated: $PATH"
 
-            # static code analysis
+            echo "Running static code analysis with Bandit..."
             bandit -r app/ -lll
+            echo "Bandit scan complete."
 
-            # dependency audit (will fail on any vulnerabilities)
+            echo "Running dependency audit with pip-audit..."
             pip-audit -r requirements.txt
-          '''
+            echo "pip-audit complete."
+          """
         }
       }
     }
