@@ -91,20 +91,35 @@ def create_survey_tables(conn):
             logger.info("Default survey already exists.")
         else:
             # Insert default survey
+            logger.info("Attempting to insert default survey...")
             cursor.execute("""
                 INSERT INTO surveys (title, description, is_active)
                 VALUES (?, ?, ?) -- Use ? for pyodbc parameters
             """, ('Patient Experience Survey', 'Survey to collect feedback', True))
+            
+            # Check if the insert actually happened
+            if cursor.rowcount == 0:
+                raise Exception("Insert into surveys table failed: No rows were inserted. Check for hidden constraints or transaction issues.")
+
             # Get last inserted ID for pyodbc (SCOPE_IDENTITY() or @@IDENTITY)
+            # Use @@IDENTITY as a fallback if SCOPE_IDENTITY() is still problematic in this environment
             cursor.execute("SELECT SCOPE_IDENTITY()")
             new_survey_id_row = cursor.fetchone()
-            # Debug print to see what fetchone returns
+            
             print(f"DEBUG: new_survey_id_row from SCOPE_IDENTITY(): {new_survey_id_row}")
+            
             if new_survey_id_row is None or new_survey_id_row[0] is None: # Check for None row or None value
-                raise Exception("Failed to retrieve SCOPE_IDENTITY after inserting survey. Insert might have failed or returned no ID.")
-            survey_id = int(new_survey_id_row[0]) # SCOPE_IDENTITY returns decimal, cast to int
+                # Fallback to @@IDENTITY if SCOPE_IDENTITY is None
+                logger.warning("SCOPE_IDENTITY returned None. Attempting to use @@IDENTITY as a fallback.")
+                cursor.execute("SELECT @@IDENTITY")
+                new_survey_id_row = cursor.fetchone()
+                print(f"DEBUG: new_survey_id_row from @@IDENTITY(): {new_survey_id_row}")
+                if new_survey_id_row is None or new_survey_id_row[0] is None:
+                    raise Exception("Failed to retrieve any identity after inserting survey. Insert might have failed or returned no ID.")
+            
+            survey_id = int(new_survey_id_row[0]) # Convert to int
             active_surveys.inc()
-            logger.info("Default survey created.")
+            logger.info(f"Default survey created with ID: {survey_id}")
 
             # Insert questions only if the survey was just created
             questions = [
@@ -312,6 +327,7 @@ def main():
         # Now, create tables within the newly created Config.DB_NAME database
         # This connection will be passed to create_survey_tables
         conn_for_tables = get_db_connection(database_name=Config.DB_NAME)
+        conn_for_tables.autocommit = True # NEW: Explicitly set autocommit for this connection
         create_survey_tables(conn_for_tables) # Pass connection to decorator
         conn_for_tables.close() # Close after use
 
