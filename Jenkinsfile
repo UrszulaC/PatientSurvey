@@ -20,14 +20,14 @@ pipeline {
               string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
               string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
               string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-              string(credentialsId: 'azure_subscription_id', variable: 'azure_subscription_id')
+              string(credentialsId: 'azure-subscription-id', variable: 'azure-subscription-id')
             ])  {
               sh """
                 # Export Azure credentials for Terraform
                 export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
                 export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
                 export ARM_TENANT_ID="${AZURE_TENANT_ID}"
-                export ARM_SUBSCRIPTION_ID="${azure_subscription_id}"
+                export ARM_SUBSCRIPTION_ID="${azure-subscription-id}"
 
                 # Export DB credentials for Terraform - these are sensitive variables for Terraform
                 export DB_USER="${DB_USER_VAR}"
