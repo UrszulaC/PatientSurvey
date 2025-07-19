@@ -141,17 +141,22 @@ pipeline {
 
     stage('Run Tests') {
       steps {
-        dir('app') { // Assuming tests are in tests/ within app/
-          withCredentials([
-            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
-          ]) {
-            sh '''
-              export PATH=$HOME/.local/bin:$PATH
-              export DB_USER=$DB_USER
-              export DB_PASSWORD=$DB_PASSWORD
-              python3 -m xmlrunner discover -s tests -o test-results
-            '''
-          }
+        // --- CRITICAL CHANGE: Removed dir('app') as tests are at repository root ---
+        // Tests are in tests/test_survey.py at the repository root
+        withCredentials([
+          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
+        ]) {
+          sh '''
+            export PATH=$HOME/.local/bin:$PATH
+            export DB_USER=$DB_USER
+            export DB_PASSWORD=$DB_PASSWORD
+            # Ensure tests/ is a Python package for discovery
+            mkdir -p tests # Ensure tests directory exists at root
+            touch tests/__init__.py # Make 'tests' a package
+
+            # Discover tests in the 'tests' directory at the workspace root
+            python3 -m xmlrunner discover -s tests -o test-results
+          '''
         }
       }
     }
@@ -209,7 +214,7 @@ pipeline {
 
   post {
     always {
-      junit 'app/test-results/*.xml' // Corrected path for JUnit reports
+      junit 'test-results/*.xml'
       cleanWs()
     }
   }
