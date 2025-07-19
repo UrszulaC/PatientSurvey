@@ -1,9 +1,8 @@
 import logging
 import json
 import time
-
 import pyodbc
-from app.utils.db_utils import get_db_connection # Imports get_db_connection directly
+from app.utils.db_utils import get_db_connection # Import get_db_connection directly
 from app.config import Config
 
 from prometheus_client import start_http_server, Counter
@@ -23,7 +22,7 @@ question_count = Counter('survey_questions_total', 'Total number of questions in
 
 # This function needs to handle its own connection for creating/dropping databases
 # because the decorator connects to a specific database.
-# it will take `conn` as an argument, and `main()` will pass it.
+# We'll modify it to take `conn` as an argument, and `main()` will pass it.
 def create_survey_tables(conn):
     """Create all necessary tables for surveys"""
     try:
@@ -80,7 +79,8 @@ def create_survey_tables(conn):
             )
         """)
 
-        # Default survey with complete set of questions
+        # Insert default survey with complete set of questions
+        # SELECT survey_id (index 0)
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
         if not cursor.fetchone():
             cursor.execute("""
@@ -133,26 +133,29 @@ def create_survey_tables(conn):
         logger.error(f"General initialization failed: {e}")
         raise
 
-# Decorator used for conduct_survey and view_responses
+# Use the decorator for conduct_survey and view_responses
+from app.utils.db_utils import with_db_connection # Ensure this import is here
+
 @with_db_connection
 def conduct_survey(conn):
     """Conduct the survey and store responses"""
     try:
         start_time = time.time()  # Starting timer
-        # For dictionary-like access, pyodbc cursors need row_factory or manual mapping
         cursor = conn.cursor()
-        cursor.row_factory = pyodbc.Row # This makes rows behave like dictionaries
+        # Removed: cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
+        # SELECT survey_id (index 0)
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
         survey = cursor.fetchone()
         if not survey:
             logger.error("Survey not found in database")
             return
 
+        # SELECT question_id (0), question_text (1), question_type (2), is_required (3), options (4)
         cursor.execute("""
             SELECT question_id, question_text, question_type, is_required, options
             FROM questions WHERE survey_id = ? ORDER BY question_id -- Use ? for parameters
-        """, (survey.survey_id,)) # Access by attribute if using pyodbc.Row
+        """, (survey[0],)) # Access survey_id by index
 
         questions = cursor.fetchall()
 
@@ -160,10 +163,10 @@ def conduct_survey(conn):
         answers = []
 
         for q in questions:
-            print(f"\n{q.question_text}{' (required)' if q.is_required else ''}") # Access by attribute
+            print(f"\n{q[1]}{' (required)' if q[3] else ''}") # Access question_text by index (1), is_required by index (3)
 
-            if q.question_type == 'multiple_choice':
-                options = json.loads(q.options)
+            if q[2] == 'multiple_choice': # question_type is at index 2
+                options = json.loads(q[4]) # options is at index 4
                 for i, opt in enumerate(options, 1):
                     print(f"{i}. {opt}")
                 while True:
@@ -171,7 +174,7 @@ def conduct_survey(conn):
                         choice = int(input("Your choice (number): "))
                         if 1 <= choice <= len(options):
                             answers.append({
-                                'question_id': q.question_id,
+                                'question_id': q[0], # question_id is at index 0
                                 'answer_value': options[choice-1]
                             })
                             break
@@ -181,15 +184,15 @@ def conduct_survey(conn):
             else:
                 while True:
                     answer = input("Your response: ").strip()
-                    if answer or not q.is_required:
+                    if answer or not q[3]: # is_required is at index 3
                         answers.append({
-                            'question_id': q.question_id,
+                            'question_id': q[0], # question_id is at index 0
                             'answer_value': answer if answer else "[No response]"
                         })
                         break
                     print("This field is required")
 
-        cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey.survey_id,)) # Use ?
+        cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey[0],)) # Access survey_id by index
         cursor.execute("SELECT SCOPE_IDENTITY()") # Get last inserted ID
         response_id = int(cursor.fetchone()[0])
 
@@ -215,15 +218,17 @@ def view_responses(conn):
     """View all survey responses"""
     try:
         cursor = conn.cursor()
-        cursor.row_factory = pyodbc.Row # For dictionary-like access
+        # Removed: cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
+        # SELECT COUNT(DISTINCT response_id) as count (index 0)
         cursor.execute("SELECT COUNT(DISTINCT response_id) as count FROM answers")
-        total_responses = cursor.fetchone().count # Access by attribute if using pyodbc.Row
+        total_responses = cursor.fetchone()[0] # Access count by index
 
         if total_responses == 0:
             print("\nNo responses found in the database.")
             return
 
+        # SELECT r.response_id (0), date (1), q.question_text (2), a.answer_value (3)
         cursor.execute("""
             SELECT
                 r.response_id,
@@ -240,14 +245,14 @@ def view_responses(conn):
         current_id = None
 
         for row in cursor.fetchall():
-            if row.response_id != current_id: # Access by attribute
-                current_id = row.response_id
+            if row[0] != current_id: # Access response_id by index
+                current_id = row[0]
                 responses[current_id] = {
-                    'date': row.date,
+                    'date': row[1], # Access date by index
                     'answers': []
                 }
             responses[current_id]['answers'].append(
-                (row.question_text, row.answer_value) # Access by attribute
+                (row[2], row[3]) # Access question_text by index (2), answer_value by index (3)
             )
 
         print(f"\n=== SURVEY RESPONSES ({len(responses)} total) ===")
@@ -274,17 +279,18 @@ def main():
         # Get a connection for DDL operations in create_survey_tables
         # This connection should not specify a database initially
         conn_for_ddl = get_db_connection(database_name=None)
+        conn_for_ddl.autocommit = True # Explicitly set autocommit to True for DDL
         
         # Drop and create the main application database first
         # This requires connecting to master database
         cursor_ddl = conn_for_ddl.cursor()
         cursor_ddl.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_NAME}') DROP DATABASE {Config.DB_NAME}")
         cursor_ddl.execute(f"CREATE DATABASE {Config.DB_NAME}")
-        conn_for_ddl.commit()
+        # No explicit commit needed here because autocommit is True
         cursor_ddl.close()
         conn_for_ddl.close() # Close the DDL connection
 
-        # Create tables within the newly created Config.DB_NAME database
+        # Now, create tables within the newly created Config.DB_NAME database
         # This connection will be passed to create_survey_tables
         conn_for_tables = get_db_connection(database_name=Config.DB_NAME)
         create_survey_tables(conn_for_tables) # Pass connection to decorator
@@ -299,10 +305,10 @@ def main():
 
             if choice == '1':
                 # The decorator @with_db_connection will handle the connection for conduct_survey
-                conduct_survey(db_name=Config.DB_NAME) # Pass db_name to decorator
+                conduct_survey()
             elif choice == '2':
                 # The decorator @with_db_connection will handle the connection for view_responses
-                view_responses(db_name=Config.DB_NAME) # Pass db_name to decorator
+                view_responses()
             elif choice == '3':
                 print("Goodbye!")
                 break
