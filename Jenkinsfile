@@ -2,7 +2,6 @@ pipeline {
   agent any
 
   environment {
-    DB_HOST = '172.17.0.1'
     DB_NAME = 'patient_survey_db'
     IMAGE_TAG  = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
   }
@@ -12,6 +11,25 @@ pipeline {
   }
 
   stages {
+    stage('Deploy Infrastructure (Terraform)') {
+      steps {
+        script {
+          withCredentials([
+            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_VAR', passwordVariable: 'DB_PASSWORD_VAR')
+          ]) {
+            sh """
+              terraform init -backend-config="resource_group_name=MyPatientSurveyRG" -backend-config="storage_account_name=mypatientsurveytfstate" -backend-config="container_name=tfstate" -backend-config="key=patient_survey.tfstate"
+              terraform plan -out=tfplan.out -var="db_user=${DB_USER_VAR}" -var="db_password=${DB_PASSWORD_VAR}"
+              terraform apply -auto-approve tfplan.out
+            """
+            // Capture the FQDN output from Terraform and set it as a Jenkins environment variable
+            def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
+            env.DB_HOST = sqlServerFqdn // <-- THIS IS WHERE DB_HOST IS NOW SET
+            echo "Database Host FQDN: ${env.DB_HOST}"
+          }
+        }
+      }
+    }
     stage('Create .env File') {
       steps {
         withCredentials([
