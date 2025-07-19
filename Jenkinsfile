@@ -82,23 +82,26 @@ pipeline {
           export DEBIAN_FRONTEND=noninteractive
           export TZ=Etc/UTC
 
-          # Pre-seed license acceptance for msodbcsql17
-          echo "msodbcsql17 msodbcsql/accept-eula boolean true" | sudo debconf-set-selections
-
           # 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
           sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring
 
-          
           # 2. Import the Microsoft GPG key directly using tee
           curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /usr/share/keyrings/microsoft-prod.gpg > /dev/null
 
-          # 3. Add the Microsoft SQL Server repository
-          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | sudo tee /etc/apt/sources.list.d/mssql-release.list 
+          # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
+          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | sudo tee /etc/apt/sources.list.d/mssql-release.list
 
-          # 4. Update apt-get cache and install the ODBC driver
+          # 4. Update apt-get cache
           sudo apt-get update
+
+          # --- CRITICAL CHANGE: Move debconf-set-selections right before msodbcsql17 install ---
+          # Pre-seed license acceptance for msodbcsql17 (moved here)
+          echo "msodbcsql17 msodbcsql/accept-eula boolean true" | sudo debconf-set-selections
+
+          # 5. Install the ODBC driver (now it should be pre-seeded)
           sudo apt-get install -y msodbcsql17 unixodbc-dev
+          # --- END CRITICAL CHANGE ---
 
           echo "ODBC Driver installation complete."
 
