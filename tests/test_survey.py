@@ -1,15 +1,14 @@
 import os
 from dotenv import load_dotenv
-
-# Load .env before using Config
-load_dotenv()
-
 import unittest
-import mysql.connector
+import pyodbc
 from unittest.mock import patch, MagicMock
-from app.config import Config # Make sure this import is correct relative to where test_survey.py is
-
+from app.config import Config
+from app.utils.db_utils import get_db_connection # Import get_db_connection
 import json
+
+# Load .env before using Config for tests
+load_dotenv()
 
 class TestPatientSurveySystem(unittest.TestCase):
 
@@ -17,72 +16,78 @@ class TestPatientSurveySystem(unittest.TestCase):
     def setUpClass(cls):
         """Set up test database and tables"""
         try:
-            # Connect without specifying a database for initial setup
-            # Use **Config.DB_CONFIG to pass all settings, then override database if needed
-            # For setUpClass, you initially connect WITHOUT a specific database to create it.
-            # So, we'll create a temporary config dictionary for this specific connection.
-            initial_db_config = Config.DB_CONFIG.copy()
-            initial_db_config.pop('database', None) # Remove 'database' key if present for initial connection
-
-            cls.connection = mysql.connector.connect(**initial_db_config) # <<< FIXED HERE
+            # Connect to master to create/drop the test database
+            # get_db_connection(None) connects to the server without a specific database
+            cls.connection = get_db_connection(database_name=None)
             cls.cursor = cls.connection.cursor()
 
-            # Force reset the test database
-            cls.cursor.execute("DROP DATABASE IF EXISTS patient_survey_test")
-            cls.cursor.execute("CREATE DATABASE patient_survey_test")
-            cls.cursor.execute("USE patient_survey_test")
+            # SQL Server specific syntax for dropping and creating database
+            cls.cursor.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_TEST_NAME}') DROP DATABASE {Config.DB_TEST_NAME}")
+            cls.cursor.execute(f"CREATE DATABASE {Config.DB_TEST_NAME}")
+            cls.connection.commit() # Commit DDL
 
-            # Import and call the table creation function
+            # Close and re-open connection to switch database context to the newly created test DB
+            cls.connection.close()
+            cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
+            cls.cursor = cls.connection.cursor()
+            cls.cursor.row_factory = pyodbc.Row # Set row_factory for dictionary-like access
+
+            # Import and call the table creation function from main (needs a connection)
+            # This function will now use the pyodbc connection
             from app.main import create_survey_tables
-            create_survey_tables(cls.connection)
+            create_survey_tables(cls.connection) # Pass the connection to it
 
             # Verify survey exists and has correct questions
             cls.cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-            survey = cls.cursor.fetchone()
+            survey = cls.cursor.fetchone() # Will be a pyodbc.Row object
             if not survey:
                 raise Exception("Default survey not created")
 
-            cls.survey_id = survey[0]
+            cls.survey_id = survey.survey_id # Access by attribute
 
             # Store question IDs for tests
-            cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = %s ORDER BY question_id", (cls.survey_id,))
-            cls.questions = {row[1]: row[0] for row in cls.cursor.fetchall()}
+            cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ? ORDER BY question_id", (cls.survey_id,)) # Use ?
+            cls.questions = {row.question_text: row.question_id for row in cls.cursor.fetchall()} # Access by attribute
 
             if len(cls.questions) < 7:
                 raise Exception(f"Expected 7 questions, found {len(cls.questions)}")
 
-        except Exception as err:
-            cls.tearDownClass()
-            raise Exception(f"Test setup failed: {err}")
+        except pyodbc.Error as err: # Catch pyodbc specific errors
+            cls.tearDownClass() # Attempt cleanup
+            raise Exception(f"Test setup failed (pyodbc error): {err}")
+        except Exception as err: # Catch other general exceptions
+            cls.tearDownClass() # Attempt cleanup
+            raise Exception(f"Test setup failed (general error): {err}")
 
     @classmethod
     def tearDownClass(cls):
         """Clean up test database"""
         try:
-            if hasattr(cls, 'cursor'):
-                cls.cursor.execute("DROP DATABASE IF EXISTS patient_survey_test")
-                cls.connection.commit()
-                cls.cursor.close()
             if hasattr(cls, 'connection') and cls.connection.is_connected():
-                cls.connection.close()
-        except Exception as e:
+                cls.connection.close() # Close the test DB connection first
+
+            # Reconnect to master to drop the test database
+            temp_conn = get_db_connection(database_name=None)
+            temp_cursor = temp_conn.cursor()
+            temp_cursor.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_TEST_NAME}') DROP DATABASE {Config.DB_TEST_NAME}")
+            temp_conn.commit()
+            temp_conn.close()
+        except pyodbc.Error as e:
             print(f"Warning: Cleanup failed - {e}")
+        except Exception as e:
+            print(f"Warning: General cleanup failed - {e}")
 
     def setUp(self):
         """Fresh connection for each test"""
-        # Pass the entire Config.DB_CONFIG dictionary and then override 'database'
-        # Ensure Config.DB_CONFIG includes 'port': 1433
-        test_db_config = Config.DB_CONFIG.copy()
-        test_db_config['database'] = "patient_survey_test" # Always use test database for individual tests
-        self.conn = mysql.connector.connect(**test_db_config) # <<< FIXED HERE
-        self.cursor = self.conn.cursor(dictionary=True)
+        self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
+        self.cursor = self.conn.cursor()
+        self.cursor.row_factory = pyodbc.Row # Set row_factory for dictionary-like access
 
         # Ensure clean state but preserve survey structure
-        self.cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+        # TRUNCATE TABLE works for SQL Server
         self.cursor.execute("TRUNCATE TABLE answers")
         self.cursor.execute("TRUNCATE TABLE responses")
-        self.cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-        self.conn.commit()
+        self.conn.commit() # Commit truncate
 
     def tearDown(self):
         """Cleanup after each test"""
@@ -91,6 +96,8 @@ class TestPatientSurveySystem(unittest.TestCase):
                 self.cursor.close()
             if hasattr(self, 'conn') and self.conn.is_connected():
                 self.conn.close()
+        except pyodbc.Error as e:
+            print(f"Cleanup warning: {e}")
         except Exception as e:
             print(f"Cleanup warning: {e}")
 
@@ -98,39 +105,39 @@ class TestPatientSurveySystem(unittest.TestCase):
 
     def test_tables_created_correctly(self):
         """Verify all tables exist with correct structure"""
-        self.cursor.execute("SHOW TABLES")
-        tables = {row['Tables_in_patient_survey_test'] for row in self.cursor.fetchall()}
+        self.cursor.execute(f"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG='{Config.DB_TEST_NAME}'")
+        tables = {row.TABLE_NAME for row in self.cursor.fetchall()} # Access by attribute
         self.assertEqual(tables, {'surveys', 'questions', 'responses', 'answers'})
 
         # Verify surveys table columns
-        self.cursor.execute("DESCRIBE surveys")
-        survey_columns = {row['Field'] for row in self.cursor.fetchall()}
+        self.cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'surveys' AND TABLE_CATALOG='{Config.DB_TEST_NAME}'")
+        survey_columns = {row.COLUMN_NAME for row in self.cursor.fetchall()} # Access by attribute
         self.assertEqual(survey_columns, {'survey_id', 'title', 'description', 'created_at', 'is_active'})
 
     def test_default_survey_exists(self):
         """Verify default survey was created"""
-        self.cursor.execute("SELECT * FROM surveys WHERE title = 'Patient Experience Survey'")
+        self.cursor.execute("SELECT * FROM surveys WHERE title = ?", ('Patient Experience Survey',)) # Use ?
         survey = self.cursor.fetchone()
         self.assertIsNotNone(survey)
-        self.assertTrue(survey['is_active'])
-        self.assertEqual(survey['description'], 'Survey to collect feedback')
+        self.assertTrue(survey.is_active) # Access by attribute
+        self.assertEqual(survey.description, 'Survey to collect feedback') # Access by attribute
 
     def test_questions_created(self):
         """Verify all questions exist"""
-        self.cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = %s", (self.survey_id,))
-        self.assertEqual(self.cursor.fetchone()['COUNT(*)'], 7)
+        self.cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = ?", (self.survey_id,)) # Use ?
+        self.assertEqual(self.cursor.fetchone()[0], 7) # COUNT(*) returns a single value, access by index 0
 
         # Verify one sample question
         self.cursor.execute("""
             SELECT question_type, is_required, options
             FROM questions
-            WHERE question_text = 'Which site did you visit?'
-        """)
+            WHERE question_text = ?
+        """, ('Which site did you visit?',)) # Use ?
         question = self.cursor.fetchone()
-        self.assertEqual(question['question_type'], 'multiple_choice')
-        self.assertTrue(question['is_required'])
-        self.assertEqual(json.loads(question['options']),
-                         ['Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital'])
+        self.assertEqual(question.question_type, 'multiple_choice') # Access by attribute
+        self.assertTrue(question.is_required) # Access by attribute
+        self.assertEqual(json.loads(question.options), # Access by attribute
+                             ['Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital'])
 
     # --- Survey Conducting Tests ---
 
@@ -148,7 +155,8 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        conduct_survey(self.conn)
+        # conduct_survey is decorated with @with_db_connection, it will get its own connection
+        conduct_survey()
 
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
@@ -156,15 +164,15 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.assertIsNotNone(response)
 
         # Verify all answers were saved
-        self.cursor.execute("SELECT COUNT(*) FROM answers WHERE response_id = %s", (response['response_id'],))
-        self.assertEqual(self.cursor.fetchone()['COUNT(*)'], 7)
+        self.cursor.execute("SELECT COUNT(*) FROM answers WHERE response_id = ?", (response.response_id,)) # Use ?
+        self.assertEqual(self.cursor.fetchone()[0], 7)
 
         # Verify specific answers
         self.cursor.execute("""
             SELECT answer_value FROM answers
-            WHERE question_id = %s AND response_id = %s
-        """, (self.questions['What went well during your visit?'], response['response_id']))
-        self.assertEqual(self.cursor.fetchone()['answer_value'], 'Friendly staff')
+            WHERE question_id = ? AND response_id = ?
+        """, (self.questions['What went well during your visit?'], response.response_id)) # Use ?
+        self.assertEqual(self.cursor.fetchone().answer_value, 'Friendly staff')
 
     @patch('builtins.input')
     def test_required_field_validation(self, mock_input):
@@ -176,7 +184,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        conduct_survey(self.conn)
+        conduct_survey() # conduct_survey is decorated
 
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
@@ -192,7 +200,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        conduct_survey(self.conn)
+        conduct_survey() # conduct_survey is decorated
 
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
@@ -202,9 +210,9 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Verify optional answer was recorded as empty
         self.cursor.execute("""
             SELECT answer_value FROM answers
-            WHERE question_id = %s AND response_id = %s
-        """, (self.questions['What went well during your visit?'], response['response_id']))
-        self.assertEqual(self.cursor.fetchone()['answer_value'], '[No response]')
+            WHERE question_id = ? AND response_id = ?
+        """, (self.questions['What went well during your visit?'], response.response_id)) # Use ?
+        self.assertEqual(self.cursor.fetchone().answer_value, '[No response]')
 
     # --- View Responses Tests ---
 
@@ -212,16 +220,19 @@ class TestPatientSurveySystem(unittest.TestCase):
         """Test viewing when no responses exist"""
         from app.main import view_responses
         with patch('builtins.print') as mock_print:
-            view_responses(self.conn)
+            view_responses() # view_responses is decorated
             mock_print.assert_called_with("\nNo responses found in the database.")
 
     def test_view_multiple_responses(self):
         """Test viewing multiple responses"""
         # Create test responses
-        self.cursor.execute("INSERT INTO responses (survey_id) VALUES (%s)", (self.survey_id,))
-        response1 = self.cursor.lastrowid
-        self.cursor.execute("INSERT INTO responses (survey_id) VALUES (%s)", (self.survey_id,))
-        response2 = self.cursor.lastrowid
+        self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
+        self.cursor.execute("SELECT SCOPE_IDENTITY()")
+        response1 = int(self.cursor.fetchone()[0])
+
+        self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
+        self.cursor.execute("SELECT SCOPE_IDENTITY()")
+        response2 = int(self.cursor.fetchone()[0])
 
         # Add answers
         sample_answers = [
@@ -234,7 +245,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         for answer in sample_answers:
             self.cursor.execute("""
                 INSERT INTO answers (response_id, question_id, answer_value)
-                VALUES (%s, %s, %s)
+                VALUES (?, ?, ?) -- Use ?
             """, answer)
 
         self.conn.commit()
@@ -242,12 +253,12 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Test view function
         from app.main import view_responses
         with patch('builtins.print') as mock_print:
-            view_responses(self.conn)
+            view_responses() # view_responses is decorated
 
             # Verify responses were displayed
             output = "\n".join(str(call) for call in mock_print.call_args_list)
-            self.assertIn("Response ID: {}".format(response1), output)
-            self.assertIn("Response ID: {}".format(response2), output)
+            self.assertIn(f"Response ID: {response1}", output) # Use f-string
+            self.assertIn(f"Response ID: {response2}", output) # Use f-string
             self.assertIn("Princess Alexandra Hospital", output)
             self.assertIn("Herts & Essex Hospital", output)
 
@@ -265,7 +276,7 @@ class TestPatientSurveySystem(unittest.TestCase):
 
         from app.main import conduct_survey
         with patch('builtins.print') as mock_print:
-            conduct_survey(self.conn)
+            conduct_survey() # conduct_survey is decorated
 
             # Verify error message was shown
             output = "\n".join(str(call) for call in mock_print.call_args_list)
@@ -278,11 +289,11 @@ class TestPatientSurveySystem(unittest.TestCase):
     def test_database_constraints(self):
         """Verify foreign key constraints work"""
         # Try to insert answer with invalid question ID
-        with self.assertRaises(mysql.connector.Error):
+        with self.assertRaises(pyodbc.Error): # Catch pyodbc.Error
             self.cursor.execute("""
                 INSERT INTO answers (response_id, question_id, answer_value)
-                VALUES (1, 999, 'test')
-            """)
+                VALUES (?, ?, ?) -- Use ?
+            """, (1, 999, 'test'))
             self.conn.commit()
 
     # --- Performance Tests ---
@@ -293,11 +304,13 @@ class TestPatientSurveySystem(unittest.TestCase):
 
         # Create 100 test responses
         for i in range(100):
-            self.cursor.execute("INSERT INTO responses (survey_id) VALUES (%s)", (self.survey_id,))
-            response_id = self.cursor.lastrowid
+            self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
+            self.cursor.execute("SELECT SCOPE_IDENTITY()")
+            response_id = int(self.cursor.fetchone()[0])
+
             self.cursor.execute("""
                 INSERT INTO answers (response_id, question_id, answer_value)
-                VALUES (%s, %s, %s)
+                VALUES (?, ?, ?) -- Use ?
             """, (response_id, self.questions['Date of visit?'], f'2023-01-{i+1:02d}'))
 
         self.conn.commit()
@@ -305,7 +318,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Time the view operation
         import time
         start = time.time()
-        view_responses(self.conn)
+        view_responses() # view_responses is decorated
         duration = time.time() - start
 
         self.assertLess(duration, 1.0, "Viewing responses took too long")
