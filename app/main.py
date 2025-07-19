@@ -225,7 +225,17 @@ def conduct_survey(conn): # Now explicitly accepts conn
 
         cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey[0],)) # Access survey_id by index
         cursor.execute("SELECT SCOPE_IDENTITY()") # Get last inserted ID
-        response_id = int(cursor.fetchone()[0])
+        new_response_id_row = cursor.fetchone() # Fetch the row
+        
+        # CRITICAL FIX: Add robust check and fallback for SCOPE_IDENTITY in conduct_survey
+        if new_response_id_row is None or new_response_id_row[0] is None:
+            logger.warning("SCOPE_IDENTITY returned None in conduct_survey. Attempting to use @@IDENTITY as a fallback.")
+            cursor.execute("SELECT @@IDENTITY")
+            new_response_id_row = cursor.fetchone()
+            if new_response_id_row is None or new_response_id_row[0] is None:
+                raise Exception("Failed to retrieve any identity after inserting response in conduct_survey. Insert might have failed or returned no ID.")
+        
+        response_id = int(new_response_id_row[0]) # Convert to int
 
         for a in answers:
             cursor.execute("""
