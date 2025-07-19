@@ -129,12 +129,14 @@ pipeline {
             echo "Bandit scan complete."
 
             echo "Running dependency audit with pip-audit..."
-            pip-audit -r requirements.txt
+            # Added timeout and verbose flag for better debugging of pip-audit
+            timeout 5m pip-audit -r requirements.txt --verbose
             echo "pip-audit complete."
           """
         }
       }
     }
+
 
     stage('Run Tests') {
       steps {
