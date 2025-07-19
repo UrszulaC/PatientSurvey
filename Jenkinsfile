@@ -118,7 +118,8 @@ pipeline {
             set -ex # Added -x for debugging output, and -e for exiting on error
 
             echo "Installing security tools (bandit, pip-audit)..."
-            python3 -m pip install --user bandit pip-audit
+            # Added timeout to the pip install command for security tools
+            timeout 5m python3 -m pip install --user bandit pip-audit
             echo "Security tools installed."
 
             export PATH=$HOME/.local/bin:$PATH
