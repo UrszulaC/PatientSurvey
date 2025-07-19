@@ -66,9 +66,14 @@ pipeline {
       steps {
         sh """
           #!/usr/bin/env bash
-          set -e # Exit immediately if a command exits with a non-zero status.
+          set -e
 
           echo "Installing ODBC Driver for SQL Server..."
+
+          # --- ADD THESE LINES TO FORCE NON-INTERACTIVE MODE ---
+          export DEBIAN_FRONTEND=noninteractive
+          export TZ=Etc/UTC # Set a timezone to avoid prompts related to locale/timezone
+          # --- END ADDITIONS ---
 
           # 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
@@ -77,13 +82,11 @@ pipeline {
           # 2. Import the Microsoft GPG key
           curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
 
-          # 3. Adding Microsoft SQL Server repository
-          # For Ubuntu 22.04 (Jammy Jellyfish):
+          # 3. Add the Microsoft SQL Server repository
           echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
           | sudo tee /etc/apt/sources.list.d/mssql-release.list
 
-
-          # 4. Update apt-get cache and install the driver
+          # 4. Update apt-get cache and install the ODBC driver
           sudo apt-get update
           sudo apt-get install -y msodbcsql17 unixodbc-dev
 
@@ -92,8 +95,7 @@ pipeline {
           # Python dependencies
           python3 --version
           pip3 install --upgrade pip
-          pip install -r requirements.txt # This will now successfully install pyodbc
-
+          pip install -r requirements.txt
         """
       }
     }
