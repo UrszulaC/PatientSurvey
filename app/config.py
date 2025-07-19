@@ -9,6 +9,7 @@ class Config:
         'user': os.getenv('DB_USER'),
         'password': os.getenv('DB_PASSWORD'),
         'database': os.getenv('DB_NAME', 'patient_survey_db'),
+        'port': 1433,
         'raise_on_warnings': True
     }
     
