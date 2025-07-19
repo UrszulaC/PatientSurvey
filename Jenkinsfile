@@ -126,12 +126,13 @@ pipeline {
             echo "PATH updated: $PATH"
 
             echo "Running static code analysis with Bandit..."
-            bandit -r app/ -lll
+            # Scan the current directory (which is 'app')
+            bandit -r . -lll
             echo "Bandit scan complete."
 
             echo "Running dependency audit with pip-audit..."
-            # Added timeout and verbose flag for better debugging of pip-audit
-            timeout 5m pip-audit -r requirements.txt --verbose
+            # pip-audit needs to find requirements.txt in the parent directory (workspace root)
+            timeout 5m pip-audit -r ../requirements.txt --verbose
             echo "pip-audit complete."
           """
         }
