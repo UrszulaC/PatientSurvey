@@ -11,7 +11,7 @@ pipeline {
   }
 
   stages {
-   stage('Deploy Infrastructure (Terraform)') {
+    stage('Deploy Infrastructure (Terraform)') {
       steps {
         script {
           dir('infra/terraform') {
@@ -28,7 +28,7 @@ pipeline {
                 export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
                 export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
                 export ARM_TENANT_ID="${AZURE_TENANT_ID}"
-                export ARM_SUBSCRIPTION_ID="${azure_subscription_id}"
+                export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID}"
 
                 # Export DB credentials for Terraform - these are sensitive variables for Terraform
                 export DB_USER="${DB_USER_VAR}"
