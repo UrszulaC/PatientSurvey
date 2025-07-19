@@ -82,8 +82,6 @@ pipeline {
           export DEBIAN_FRONTEND=noninteractive
           export TZ=Etc/UTC
 
-          # REMOVED: echo "msodbcsql17 msodbcsql17/accept-eula boolean true" | sudo debconf-set-selections
-
           # 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
           sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring
@@ -98,8 +96,8 @@ pipeline {
           # 4. Update apt-get cache
           sudo apt-get update
 
-          # --- CRITICAL CHANGE: Pipe 'yes' directly to the install command for msodbcsql17 ---
-          yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
+          # --- CRITICAL CHANGE: Use ACCEPT_EULA=Y directly with the install command ---
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
           # --- END CRITICAL CHANGE ---
 
           echo "ODBC Driver installation complete."
