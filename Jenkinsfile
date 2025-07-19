@@ -93,9 +93,8 @@ pipeline {
           # 2. Import the Microsoft GPG key directly using tee
           curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /usr/share/keyrings/microsoft-prod.gpg > /dev/null
 
-          # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
-          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
-          | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          # 3. Add the Microsoft SQL Server repository
+          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | sudo tee /etc/apt/sources.list.d/mssql-release.list 
 
           # 4. Update apt-get cache and install the ODBC driver
           sudo apt-get update
