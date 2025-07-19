@@ -27,7 +27,7 @@ pipeline {
               string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
               string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
               string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-              string(credentialsId: 'azure-subscription-id', variable: 'AZURE_SUBSCRIPTION_ID_VAR') // Corrected variable name
+              string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR') // Corrected variable name
             ])  {
               sh """
                 # Export Azure credentials for Terraform
@@ -82,9 +82,7 @@ pipeline {
           export DEBIAN_FRONTEND=noninteractive
           export TZ=Etc/UTC
 
-          # --- CRITICAL CHANGE: Corrected debconf question identifier ---
-          echo "msodbcsql17 msodbcsql17/accept-eula boolean true" | sudo debconf-set-selections
-          # --- END CRITICAL CHANGE ---
+          # REMOVED: echo "msodbcsql17 msodbcsql17/accept-eula boolean true" | sudo debconf-set-selections
 
           # 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
@@ -100,8 +98,9 @@ pipeline {
           # 4. Update apt-get cache
           sudo apt-get update
 
-          # 5. Install the ODBC driver
-          sudo apt-get install -y msodbcsql17 unixodbc-dev
+          # --- CRITICAL CHANGE: Pipe 'yes' directly to the install command for msodbcsql17 ---
+          yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
+          # --- END CRITICAL CHANGE ---
 
           echo "ODBC Driver installation complete."
 
