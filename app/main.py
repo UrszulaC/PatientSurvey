@@ -98,7 +98,9 @@ def create_survey_tables(conn):
             # Get last inserted ID for pyodbc (SCOPE_IDENTITY() or @@IDENTITY)
             cursor.execute("SELECT SCOPE_IDENTITY()")
             new_survey_id_row = cursor.fetchone()
-            if new_survey_id_row is None:
+            # Debug print to see what fetchone returns
+            print(f"DEBUG: new_survey_id_row from SCOPE_IDENTITY(): {new_survey_id_row}")
+            if new_survey_id_row is None or new_survey_id_row[0] is None: # Check for None row or None value
                 raise Exception("Failed to retrieve SCOPE_IDENTITY after inserting survey. Insert might have failed or returned no ID.")
             survey_id = int(new_survey_id_row[0]) # SCOPE_IDENTITY returns decimal, cast to int
             active_surveys.inc()
@@ -183,7 +185,7 @@ def conduct_survey(conn):
             print(f"\n{q[1]}{' (required)' if q[3] else ''}") # Access question_text by index (1), is_required by index (3)
 
             if q[2] == 'multiple_choice': # question_type is at index 2
-                options = json.loads(q[4]) # options is at index 4
+                options = json.loads(q[4]) if q[4] is not None else [] # options is at index 4
                 for i, opt in enumerate(options, 1):
                     print(f"{i}. {opt}")
                 while True:
