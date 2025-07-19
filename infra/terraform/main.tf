@@ -38,7 +38,7 @@ resource "azurerm_container_group" "survey_app" {
 
   container {
     name  = "survey-app"
-    image = "urszulach/epa-feedback-app:latest" # Keep 'latest' for now, will update in Jenkins
+    image = "urszulach/epa-feedback-app:latest" 
     cpu    = "0.5"       # top-level in container
     memory = "1.0"       # top-level in container
 
@@ -50,16 +50,12 @@ resource "azurerm_container_group" "survey_app" {
 
 
     environment_variables = {
-      DB_HOST     = azurerm_sql_server.sql_server.fqdn # IMPORTANT CHANGE HERE!
-      DB_NAME     = "patient_survey_db" # Ensure this matches azurerm_sql_database.sql_database.name
+      DB_HOST     = azurerm_mssql_server.sql_server.fully_qualified_domain_name
+      DB_NAME     = "patient_survey_db"
       DB_USER     = var.db_user
       DB_PASSWORD = var.db_password
     }
   }
-}
-
-output "survey_app_fqdn" {
-  value = azurerm_container_group.survey_app.fqdn
 }
 
 output "survey_app_public_ip" {
