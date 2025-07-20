@@ -242,7 +242,12 @@ EOF
                 echo "DB_HOST=${DB_HOST}" > .env
                 echo "DB_USER=$DB_USER" >> .env
                 echo "DB_PASSWORD=$DB_PASSWORD" >> .env
-                echo "DB_NAME=${DB_NAME}" > .env
+                echo "DB_NAME=${DB_NAME}" >> .env
+
+                # NEW: Create __init__.py files to make 'app' discoverable Python package
+                echo "Creating app/__init__.py file..."
+                touch __init__.py # Makes 'app' a package
+                echo "app/__init__.py created."
               '''
             }
         }
@@ -323,17 +328,27 @@ EOF
 
     stage('Run Tests') {
       steps {
-        dir('app') { // Assuming tests are in tests/ within app/
-          withCredentials([
-            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
-          ]) {
-            sh '''
-              export PATH=$HOME/.local/bin:$PATH
-              export DB_USER=$DB_USER
-              export DB_PASSWORD=$DB_PASSWORD
-              python3 -m xmlrunner discover -s tests -o test-results
-            '''
-          }
+        // K14: Test Driven Development and Test Pyramid (Unit testing)
+        // S14: Write tests and follow TDD discipline
+        // S17: Code in a general-purpose programming language (Python tests)
+        withCredentials([
+          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
+        ]) {
+          sh '''
+            export PATH=$HOME/.local/bin:$PATH
+            export DB_USER=$DB_USER
+            export DB_PASSWORD=$DB_PASSWORD
+            # Ensure the current directory (workspace root) is in PYTHONPATH for module discovery
+            export PYTHONPATH=.:$PYTHONPATH
+            echo "PYTHONPATH updated: $PYTHONPATH"
+
+            # Ensure tests/ is a Python package for discovery
+            mkdir -p tests # Ensure tests directory exists at root
+            touch tests/__init__.py # Make 'tests' a package
+
+            # Discover tests in the 'tests' directory at the workspace root
+            python3 -m xmlrunner discover -s tests -o test-results
+          '''
         }
       }
     }
@@ -382,7 +397,7 @@ EOF
 
   post {
     always {
-      junit 'app/test-results/*.xml' // Corrected path for JUnit reports
+      junit 'test-results/*.xml' // Corrected path for JUnit reports
       cleanWs()
     }
   }
