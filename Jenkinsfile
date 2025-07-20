@@ -18,29 +18,7 @@ pipeline {
       }
     }
 
-    // NEW STAGE: Configure Sudo for Jenkins User
-    stage('Configure Sudo for Jenkins User') {
-      steps {
-        sh """
-          #!/usr/bin/env bash
-          set -e
-
-          echo "Configuring sudo for jenkins user to allow password-less apt-get, usermod, systemctl..."
-
-          # Create a new sudoers file for Jenkins user in /etc/sudoers.d/
-          # This allows the 'jenkins' user to run specific commands without a password.
-          # We use NOPASSWD for apt-get, usermod, systemctl as these are needed for installations.
-          sudo tee /etc/sudoers.d/jenkins-nopasswd > /dev/null <<EOF
-jenkins ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/usermod, /usr/bin/systemctl, /usr/bin/wget, /usr/bin/curl, /usr/bin/gpg, /usr/bin/tee, /usr/bin/install, /usr/bin/tar, /usr/bin/mv, /usr/bin/chown, /usr/bin/chmod, /usr/sbin/useradd, /usr/sbin/adduser
-EOF
-
-          # Set correct permissions for the new sudoers file
-          sudo chmod 0440 /etc/sudoers.d/jenkins-nopasswd
-
-          echo "Sudo configuration complete. This change will persist across reboots."
-        """
-      }
-    }
+    // Removed: Configure Sudo for Jenkins User stage - this must be done manually on the VM.
 
     // NEW STAGE: Install Terraform
     stage('Install Terraform') {
@@ -383,4 +361,3 @@ EOF
       cleanWs()
     }
   }
-}
