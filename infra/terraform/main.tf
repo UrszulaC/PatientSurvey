@@ -68,9 +68,4 @@ output "survey_app_public_ip" {
   value = azurerm_container_group.survey_app.ip_address
 }
 
-# Ensure you have an output for the SQL server FQDN if you need it elsewhere
-# This output assumes you have an azurerm_mssql_server resource named 'sql_server'
-# in another .tf file in the same directory (e.g., database.tf).
-output "sql_server_fqdn" {
-  value = azurerm_mssql_server.sql_server.fully_qualified_domain_name
-}
+
