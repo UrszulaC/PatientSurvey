@@ -269,7 +269,7 @@ EOF
           sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring
 
           # 2. Import the Microsoft GPG key
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg # Added --batch
 
           # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
           echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \\
