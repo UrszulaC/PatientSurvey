@@ -39,13 +39,13 @@ pipeline {
           sudo ACCEPT_EULA=Y apt-get install -y software-properties-common wget
 
           # Add HashiCorp GPG key
-          wget -O- https://apt.releases.hashicorp.com/gpg | \\
+          wget -O- [https://apt.releases.hashicorp.com/gpg](https://apt.releases.hashicorp.com/gpg) | \\
             gpg --dearmor | \\
             sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
 
           # Add HashiCorp Linux repository
           echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \\
-            https://apt.releases.hashicorp.com \$(lsb_release -cs) main" | \\
+            [https://apt.releases.hashicorp.com](https://apt.releases.hashicorp.com) \$(lsb_release -cs) main" | \\
             sudo tee /etc/apt/sources.list.d/hashicorp.list
 
           # Update and install Terraform
@@ -76,12 +76,12 @@ pipeline {
           sudo rm -f /etc/apt/keyrings/docker.gpg
 
           # CRITICAL FIX: Add --batch to gpg for non-interactive execution
-          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --batch -o /etc/apt/keyrings/docker.gpg
+          curl -fsSL [https://download.docker.com/linux/ubuntu/gpg](https://download.docker.com/linux/ubuntu/gpg) | sudo gpg --dearmor --batch -o /etc/apt/keyrings/docker.gpg
           sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
           # Add the repository to Apt sources:
           echo \\
-            "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \\
+            "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] [https://download.docker.com/linux/ubuntu](https://download.docker.com/linux/ubuntu) \\
             \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | \\
             sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
           sudo apt-get update
@@ -113,7 +113,7 @@ pipeline {
           echo "Installing Prometheus..."
           # Download Prometheus (adjust version as needed)
           PROMETHEUS_VERSION="2.53.0" # Check for latest stable version
-          wget https://github.com/prometheus/prometheus/releases/download/v\${PROMETHEUS_VERSION}/prometheus-\${PROMETHEUS_VERSION}.linux-amd64.tar.gz -O /tmp/prometheus.tar.gz
+          wget [https://github.com/prometheus/prometheus/releases/download/v](https://github.com/prometheus/prometheus/releases/download/v)\${PROMETHEUS_VERSION}/prometheus-\${PROMETHEUS_VERSION}.linux-amd64.tar.gz -O /tmp/prometheus.tar.gz
 
           # Extract and move to /usr/local/bin
           tar -xvf /tmp/prometheus.tar.gz -C /tmp/
@@ -178,8 +178,8 @@ EOF
           sudo mkdir -p /etc/apt/keyrings/
           # CRITICAL FIX: Remove existing grafana.gpg key file to prevent "File exists" error
           sudo rm -f /etc/apt/keyrings/grafana.gpg
-          wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor --batch -o /etc/apt/keyrings/grafana.gpg # Added --batch
-          echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+          wget -q -O - [https://apt.grafana.com/gpg.key](https://apt.grafana.com/gpg.key) | sudo gpg --dearmor --batch -o /etc/apt/keyrings/grafana.gpg # Added --batch
+          echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] [https://apt.grafana.com](https://apt.grafana.com) stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
           sudo apt-get update
           sudo apt-get install -y grafana
 
@@ -266,16 +266,16 @@ EOF
 
           # 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
-          # CRITICAL FIX: Install python3-pip here
-          sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip
+          # CRITICAL FIX: Install python3-pip and python3-venv here
+          sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
 
           # CRITICAL FIX: Remove existing microsoft-prod.gpg key file to prevent "File exists" error
           sudo rm -f /usr/share/keyrings/microsoft-prod.gpg
           # 2. Import the Microsoft GPG key
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg # Added --batch
+          curl -fsSL [https://packages.microsoft.com/keys/microsoft.asc](https://packages.microsoft.com/keys/microsoft.asc) | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg # Added --batch
 
           # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
-          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \\
+          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] [https://packages.microsoft.com/ubuntu/22.04/prod](https://packages.microsoft.com/ubuntu/22.04/prod) jammy main" \\
           | sudo tee /etc/apt/sources.list.d/mssql-release.list
 
           # 4. Update apt-get cache and install the ODBC driver
@@ -355,7 +355,7 @@ EOF
           set -e
           # install trivy if missing
           if ! command -v trivy &>/dev/null; then
-              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \\
+              curl -sfL [https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh](https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh) \\
                 | bash -s -- -b "\$HOME/.local/bin"
             fi
             export PATH="\$HOME/.local/bin:\$PATH"
@@ -370,7 +370,7 @@ EOF
       steps {
         script {
           dir('app') { // Assuming context for Docker commands might still be in app/
-            docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
+            docker.withRegistry('[https://index.docker.io/v1/](https://index.docker.io/v1/)', 'docker-hub-creds') {
               docker.image(IMAGE_TAG).push()
               docker.image(IMAGE_TAG).push('latest')
             }
