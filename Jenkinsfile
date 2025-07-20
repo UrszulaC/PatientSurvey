@@ -260,7 +260,8 @@ EOF
           export TZ=Etc/UTC
 
           # Pre-seed license acceptance for msodbcsql17
-          echo "msodbcsql17 msodbcsql/accept-eula boolean true" | sudo debconf-set-selections
+          # This line is now removed as it proved ineffective and caused issues.
+          # echo "msodbcsql17 msodbcsql/accept-eula boolean true" | sudo debconf-set-selections
 
           # 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
@@ -275,7 +276,8 @@ EOF
 
           # 4. Update apt-get cache and install the ODBC driver
           sudo apt-get update
-          sudo apt-get install -y msodbcsql17 unixodbc-dev
+          # CRITICAL FIX: Pipe 'yes' directly to the install command to accept EULA
+          yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
 
           echo "ODBC Driver installation complete."
 
@@ -372,3 +374,4 @@ EOF
     }
   }
 }
+
