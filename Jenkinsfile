@@ -234,7 +234,7 @@ pipeline {
             string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
             string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-            string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
+            string(credentialsId: 'azure-subscription-id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
           ]) {
             // K15: Continuous Delivery/Deployment (Automated deployment)
             // K8: Immutable infrastructure (Deploying container image)
