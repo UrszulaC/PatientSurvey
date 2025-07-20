@@ -268,6 +268,8 @@ EOF
           sudo apt-get update
           sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring
 
+          # CRITICAL FIX: Remove existing microsoft-prod.gpg key file to prevent "File exists" error
+          sudo rm -f /usr/share/keyrings/microsoft-prod.gpg
           # 2. Import the Microsoft GPG key
           curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg # Added --batch
 
