@@ -55,9 +55,9 @@ resource "azurerm_container_group" "survey_app" {
       DB_PASSWORD = var.db_password
     }
 
-    # CRITICAL FIX: Changed 'command' to 'commands' (plural)
-    # This tells the container to execute main.py when it starts
-    commands = ["python3", "/app/main.py"]
+    # CRITICAL FIX: Removed 'commands' argument here.
+    # This allows the CMD instruction in the Dockerfile (tail -f /dev/null) to be used.
+    # We will manually run the Python app after exec'ing into the container.
   }
 }
 
