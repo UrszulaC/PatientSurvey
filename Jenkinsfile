@@ -266,7 +266,8 @@ EOF
 
           # 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
-          sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring
+          # CRITICAL FIX: Install python3-pip here
+          sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip
 
           # CRITICAL FIX: Remove existing microsoft-prod.gpg key file to prevent "File exists" error
           sudo rm -f /usr/share/keyrings/microsoft-prod.gpg
