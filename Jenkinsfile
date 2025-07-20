@@ -349,7 +349,8 @@ EOF
             # now scan the image we just built
             trivy image --severity HIGH,CRITICAL ${IMAGE_TAG}
           """
-        }
+        // This was the problematic line. It was an extra '}' that caused the Groovy syntax error.
+        // It has been removed.
       }
     }
 
