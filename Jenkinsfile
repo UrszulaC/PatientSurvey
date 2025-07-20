@@ -8,7 +8,7 @@ pipeline {
   }
 
   options {
-    timeout(time: 20, unit: 'MINUTES')
+    timeout(time: 25, unit: 'MINUTES') // Increased timeout for more installations
   }
 
   stages {
@@ -17,6 +17,170 @@ pipeline {
         checkout scm
       }
     }
+
+    // NEW STAGE: Install Terraform
+    stage('Install Terraform') {
+      steps {
+        sh """
+          #!/usr/bin/env bash
+          set -e
+
+          echo "Installing Terraform..."
+
+          # Install prerequisites
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common wget
+
+          # Add HashiCorp GPG key
+          wget -O- https://apt.releases.hashicorp.com/gpg | \\
+            gpg --dearmor | \\
+            sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+
+          # Add HashiCorp Linux repository
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \\
+            https://apt.releases.hashicorp.com \$(lsb_release -cs) main" | \\
+            sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+          # Update and install Terraform
+          sudo apt-get update
+          sudo apt-get install -y terraform
+
+          echo "Terraform installation complete."
+          terraform version
+        """
+      }
+    }
+
+    // NEW STAGE: Install Docker
+    stage('Install Docker') {
+      steps {
+        sh """
+          #!/usr/bin/env bash
+          set -e
+
+          echo "Installing Docker..."
+
+          # Add Docker's official GPG key:
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl gnupg
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+          # Add the repository to Apt sources:
+          echo \\
+            "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \\
+            \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | \\
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo apt-get update
+
+          # Install Docker packages
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+          # Add jenkins user to the docker group to run docker commands without sudo
+          sudo usermod -aG docker jenkins
+
+          echo "Docker installation complete. Restarting Docker service and Jenkins for group changes to take effect."
+          sudo systemctl enable docker
+          sudo systemctl start docker
+
+          # Important: For group changes to take effect for the 'jenkins' user,
+          # the Jenkins process needs to restart. This will cause the current build to fail,
+          # but subsequent builds will have docker access.
+          # For a real pipeline, you might want to handle this restart more gracefully.
+          sudo systemctl restart jenkins || true # Use || true to prevent pipeline failure on Jenkins restart
+          echo "Jenkins service restart initiated. You might need to re-run the pipeline."
+        """
+      }
+    }
+
+    // NEW STAGE: Install Prometheus and Grafana
+    stage('Install Monitoring Tools') {
+      steps {
+        sh """
+          #!/usr/bin/env bash
+          set -e
+
+          echo "Installing Prometheus..."
+          # Download Prometheus (adjust version as needed)
+          PROMETHEUS_VERSION="2.53.0" # Check for latest stable version
+          wget https://github.com/prometheus/prometheus/releases/download/v\${PROMETHEUS_VERSION}/prometheus-\${PROMETHEUS_VERSION}.linux-amd64.tar.gz -O /tmp/prometheus.tar.gz
+
+          # Extract and move to /usr/local/bin
+          tar -xvf /tmp/prometheus.tar.gz -C /tmp/
+          sudo mv /tmp/prometheus-\${PROMETHEUS_VERSION}.linux-amd64/prometheus /usr/local/bin/
+          sudo mv /tmp/prometheus-\${PROMETHEUS_VERSION}.linux-amd64/promtool /usr/local/bin/
+
+          # Create Prometheus user and directories
+          sudo useradd --no-create-home --shell /bin/false prometheus || true # || true to ignore if user exists
+          sudo mkdir -p /etc/prometheus /var/lib/prometheus
+
+          # Set ownership
+          sudo chown prometheus:prometheus /usr/local/bin/prometheus
+          sudo chown prometheus:prometheus /usr/local/bin/promtool
+          sudo chown prometheus:prometheus /etc/prometheus
+          sudo chown prometheus:prometheus /var/lib/prometheus
+
+          # Basic Prometheus configuration (prometheus.yml)
+          sudo tee /etc/prometheus/prometheus.yml > /dev/null <<EOF
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+  - job_name: 'jenkins'
+    static_configs:
+      - targets: ['localhost:8080'] # Assuming Jenkins Exporter is running on 8080/metrics
+EOF
+
+          # Create systemd service file for Prometheus
+          sudo tee /etc/systemd/system/prometheus.service > /dev/null <<EOF
+[Unit]
+Description=Prometheus
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=prometheus
+Group=prometheus
+Type=simple
+ExecStart=/usr/local/bin/prometheus \\
+    --config.file /etc/prometheus/prometheus.yml \\
+    --storage.tsdb.path /var/lib/prometheus/ \\
+    --web.console.templates=/etc/prometheus/consoles \\
+    --web.console.libraries=/etc/prometheus/console_libraries
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+          # Reload systemd, enable and start Prometheus
+          sudo systemctl daemon-reload
+          sudo systemctl enable prometheus
+          sudo systemctl start prometheus
+          echo "Prometheus installation complete."
+
+
+          echo "Installing Grafana..."
+          # Install Grafana (using official APT repository)
+          sudo apt-get install -y apt-transport-https software-properties-common wget
+          sudo mkdir -p /etc/apt/keyrings/
+          wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+          sudo apt-get update
+          sudo apt-get install -y grafana
+
+          # Enable and start Grafana
+          sudo systemctl daemon-reload
+          sudo systemctl enable grafana-server
+          sudo systemctl start grafana-server
+          echo "Grafana installation complete."
+        """
+      }
+    }
+
 
     stage('Deploy Infrastructure (Terraform)') {
       steps {
