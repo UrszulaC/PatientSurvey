@@ -80,6 +80,14 @@ def create_survey_tables(conn):
             )
         """)
 
+        # CRITICAL FIX: Grant permissions to the DB_USER on the newly created database
+        # This assumes DB_USER is a server-level login that needs a user in this database
+        # and then permissions granted to that user.
+        # This must be run *after* the database is created and the connection is to that database.
+        cursor.execute(f"IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '{Config.DB_USER}') CREATE USER [{Config.DB_USER}] FOR LOGIN [{Config.DB_USER}]")
+        cursor.execute(f"ALTER ROLE db_owner ADD MEMBER [{Config.DB_USER}]") # Grant db_owner for simplicity during debug
+
+
         survey_id = None # Initialize survey_id
 
         # Check if default survey exists
@@ -225,7 +233,7 @@ def conduct_survey(conn): # Now explicitly accepts conn
 
         cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey[0],)) # Access survey_id by index
         cursor.execute("SELECT SCOPE_IDENTITY()") # Get last inserted ID
-        new_response_id_row = cursor.fetchone() # Fetch the row
+        new_response_id_row = cursor.fetchone()
         
         # CRITICAL FIX: Add robust check and fallback for SCOPE_IDENTITY in conduct_survey
         if new_response_id_row is None or new_response_id_row[0] is None:
@@ -236,6 +244,7 @@ def conduct_survey(conn): # Now explicitly accepts conn
                 raise Exception("Failed to retrieve any identity after inserting response in conduct_survey. Insert might have failed or returned no ID.")
         
         response_id = int(new_response_id_row[0]) # Convert to int
+
 
         for a in answers:
             cursor.execute("""
@@ -368,3 +377,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
