@@ -18,8 +18,6 @@ pipeline {
       }
     }
 
-    // Removed: Configure Sudo for Jenkins User stage - this must be done manually on the VM.
-
     // NEW STAGE: Install Terraform
     stage('Install Terraform') {
       steps {
@@ -28,6 +26,12 @@ pipeline {
           set -e
 
           echo "Installing Terraform..."
+
+          # --- CRITICAL CLEANUP FIX: Remove problematic azure-cli.list before apt-get update ---
+          # This addresses the 'E: Malformed entry 1 in list file /etc/apt/sources.list.d/azure-cli.list' error.
+          # It does NOT install Azure CLI; it only cleans up a lingering corrupted file.
+          echo "Cleaning up any existing malformed azure-cli.list file..."
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list
 
           # Install prerequisites
           sudo apt-get update
@@ -185,6 +189,8 @@ EOF
       }
     }
 
+    // Removed: Install Azure CLI stage, as per user's request to manage outside Jenkinsfile.
+    // The resource group 'MyPatientSurveyRG' is now manually created.
 
     stage('Deploy Infrastructure (Terraform)') {
       steps {
