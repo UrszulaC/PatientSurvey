@@ -125,7 +125,7 @@ pipeline {
 
     stage('Security Scan') {
       steps {
-        dir('app') { # Assuming app files are in 'app/' directory for Bandit scan context
+        dir('app') { 
           sh """
             #!/usr/bin/env bash
             set -ex # Added -x for debugging output, and -e for exiting on error
