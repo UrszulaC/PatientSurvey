@@ -66,6 +66,10 @@ pipeline {
           sudo apt-get update
           sudo apt-get install -y ca-certificates curl gnupg
           sudo install -m 0755 -d /etc/apt/keyrings
+
+          # CRITICAL FIX: Remove existing key file before adding to prevent "File exists" and "no valid OpenPGP data" errors
+          sudo rm -f /etc/apt/keyrings/docker.gpg
+
           # CRITICAL FIX: Add --batch to gpg for non-interactive execution
           curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --batch -o /etc/apt/keyrings/docker.gpg
           sudo chmod a+r /etc/apt/keyrings/docker.gpg
