@@ -87,16 +87,13 @@ pipeline {
           # Add jenkins user to the docker group to run docker commands without sudo
           sudo usermod -aG docker jenkins
 
-          echo "Docker installation complete. Restarting Docker service and Jenkins for group changes to take effect."
+          echo "Docker installation complete. Starting Docker service."
           sudo systemctl enable docker
           sudo systemctl start docker
 
-          # Important: For group changes to take effect for the 'jenkins' user,
-          # the Jenkins process needs to restart. This will cause the current build to fail,
-          # but subsequent builds will have docker access.
-          # For a real pipeline, you might want to handle this restart more gracefully.
-          sudo systemctl restart jenkins || true # Use || true to prevent pipeline failure on Jenkins restart
-          echo "Jenkins service restart initiated. You might need to re-run the pipeline."
+          # IMPORTANT: The Jenkins service restart has been REMOVED from the pipeline.
+          # You MUST manually restart Jenkins AFTER this build completes for Docker permissions to take effect.
+          echo "Manual Jenkins service restart required for Docker permissions to apply."
         """
       }
     }
@@ -265,7 +262,7 @@ EOF
           curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
 
           # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
-          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
+          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \\
           | sudo tee /etc/apt/sources.list.d/mssql-release.list
 
           # 4. Update apt-get cache and install the ODBC driver
