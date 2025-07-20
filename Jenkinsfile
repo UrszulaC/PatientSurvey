@@ -8,7 +8,7 @@ pipeline {
   }
 
   options {
-    timeout(time: 20, unit: 'MINUTES')
+    timeout(time: 20, unit: 'MIN')
   }
 
   stages {
@@ -27,7 +27,7 @@ pipeline {
               string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
               string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
               string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-              string(credentialsId: 'azure-subscription-id', variable: 'AZURE_SUBSCRIPTION_ID_VAR') // Corrected variable name
+              string(credentialsId: 'azure-subscription-id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
             ])  {
               sh """
                 # Export Azure credentials for Terraform
@@ -65,6 +65,14 @@ pipeline {
                 echo "DB_USER=$DB_USER" >> .env
                 echo "DB_PASSWORD=$DB_PASSWORD" >> .env
                 echo "DB_NAME=${DB_NAME}" >> .env
+
+                # NEW: Create __init__.py files to make 'app' and 'tests' discoverable Python packages
+                echo "Creating __init__.py files..."
+                touch __init__.py # Makes 'app' a package
+                # The tests/__init__.py will be handled by the Run Tests stage if tests/ is at root
+                # If app/tests/ is also a package, you might need mkdir -p tests && touch tests/__init__.py here
+                # but for now, assuming app/ is the only package under app/
+                echo "__init__.py files created."
               '''
             }
         }
@@ -90,15 +98,14 @@ pipeline {
           curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /usr/share/keyrings/microsoft-prod.gpg > /dev/null
 
           # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
-          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
+          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \\
           | sudo tee /etc/apt/sources.list.d/mssql-release.list
 
           # 4. Update apt-get cache
           sudo apt-get update
 
-          # --- CRITICAL CHANGE: Use ACCEPT_EULA=Y directly with the install command ---
+          # CRITICAL CHANGE: Use ACCEPT_EULA=Y directly with the install command
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
-          # --- END CRITICAL CHANGE ---
 
           echo "ODBC Driver installation complete."
 
@@ -112,7 +119,7 @@ pipeline {
 
     stage('Security Scan') {
       steps {
-        dir('app') { // Assuming app files are in 'app/' directory
+        dir('app') { // Assuming app files are in 'app/' directory for Bandit scan context
           sh """
             #!/usr/bin/env bash
             set -ex # Added -x for debugging output, and -e for exiting on error
@@ -141,7 +148,7 @@ pipeline {
 
     stage('Run Tests') {
       steps {
-        // --- CRITICAL CHANGE: Removed dir('app') as tests are at repository root ---
+        // CRITICAL CHANGE: Removed dir('app') as tests are at repository root
         // Tests are in tests/test_survey.py at the repository root
         withCredentials([
           usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
@@ -164,48 +171,45 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         script {
-          dir('app') { // Assuming Dockerfile is in 'app/' directory
-            docker.build(IMAGE_TAG)
-          }
+          // CRITICAL FIX: Removed dir('app') - Dockerfile is at repository root
+          docker.build(IMAGE_TAG, '.') // Explicitly set build context to current directory (repo root)
         }
       }
     }
 
     stage('Container Scan') {
       steps {
-        dir('app') { // Assuming the image context is from 'app/'
-          sh """
-            #!/usr/bin/env bash
-            set -ex # Added -x for debugging output, and -e for exiting on error
+        // CRITICAL FIX: Removed dir('app') - Trivy operates on the image, not the Dockerfile context
+        sh """
+          #!/usr/bin/env bash
+          set -ex # Added -x for debugging output, and -e for exiting on error
 
-            echo "Installing Trivy..."
-            # install trivy if missing, with a timeout
-            if ! command -v trivy &>/dev/null; then
-              timeout 5m curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \\
-                | bash -s -- -b "\$HOME/.local/bin"
-            fi
-            echo "Trivy installed."
+          echo "Installing Trivy..."
+          # install trivy if missing, with a timeout
+          if ! command -v trivy &>/dev/null; then
+            timeout 5m curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \\
+              | bash -s -- -b "\$HOME/.local/bin"
+          fi
+          echo "Trivy installed."
 
-            export PATH="\$HOME/.local/bin:\$PATH"
-            echo "PATH updated for Trivy: \$PATH"
+          export PATH="\$HOME/.local/bin:\$PATH"
+          echo "PATH updated for Trivy: \$PATH"
 
-            echo "Running container scan with Trivy..."
-            # now scan the image we just built, with a timeout
-            timeout 10m trivy image --severity HIGH,CRITICAL ${IMAGE_TAG}
-            echo "Trivy scan complete."
-          """
-        }
+          echo "Running container scan with Trivy..."
+          # now scan the image we just built, with a timeout
+          timeout 10m trivy image --severity HIGH,CRITICAL ${IMAGE_TAG}
+          echo "Trivy scan complete."
+        """
       }
     }
 
     stage('Push Docker Image') {
       steps {
         script {
-          dir('app') { // Assuming context for Docker commands might still be in app/
-            docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-              docker.image(IMAGE_TAG).push()
-              docker.image(IMAGE_TAG).push('latest')
-            }
+          // CRITICAL FIX: Removed dir('app') - Docker push operates on the image tag
+          docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
+            docker.image(IMAGE_TAG).push()
+            docker.image(IMAGE_TAG).push('latest')
           }
         }
       }
@@ -214,7 +218,7 @@ pipeline {
 
   post {
     always {
-      junit 'test-results/*.xml'
+      junit 'test-results/*.xml' // Corrected path for JUnit reports
       cleanWs()
     }
   }
