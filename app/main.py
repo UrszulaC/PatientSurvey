@@ -80,12 +80,12 @@ def create_survey_tables(conn):
             )
         """)
 
-        # CRITICAL FIX: Grant permissions to the DB_USER on the newly created database
-        # This assumes DB_USER is a server-level login that needs a user in this database
-        # and then permissions granted to that user.
-        # This must be run *after* the database is created and the connection is to that database.
-        cursor.execute(f"IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '{Config.DB_USER}') CREATE USER [{Config.DB_USER}] FOR LOGIN [{Config.DB_USER}]")
-        cursor.execute(f"ALTER ROLE db_owner ADD MEMBER [{Config.DB_USER}]") # Grant db_owner for simplicity during debug
+        # REMOVED CRITICAL FIX: Grant permissions to the DB_USER on the newly created database
+        # This is removed because the DB_USER (adminuser) is the server admin and implicitly
+        # becomes the dbo of the newly created database, making these explicit grants redundant
+        # and causing the "login already has an account with the user name 'dbo'" error.
+        # cursor.execute(f"IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '{Config.DB_USER}') CREATE USER [{Config.DB_USER}] FOR LOGIN [{Config.DB_USER}]")
+        # cursor.execute(f"ALTER ROLE db_owner ADD MEMBER [{Config.DB_USER}]") # Grant db_owner for simplicity during debug
 
 
         survey_id = None # Initialize survey_id
@@ -377,4 +377,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
