@@ -35,8 +35,8 @@ pipeline {
 
           # Install prerequisites
           sudo apt-get update
-          # CRITICAL FIX: Pipe 'yes' to apt-get install to accept any potential EULA prompts
-          yes | sudo apt-get install -y software-properties-common wget
+          # CRITICAL FIX: Use ACCEPT_EULA=Y for msodbcsql17 which might be pulled in as a dependency
+          sudo ACCEPT_EULA=Y apt-get install -y software-properties-common wget
 
           # Add HashiCorp GPG key
           wget -O- https://apt.releases.hashicorp.com/gpg | \\
@@ -349,8 +349,6 @@ EOF
             # now scan the image we just built
             trivy image --severity HIGH,CRITICAL ${IMAGE_TAG}
           """
-        // This was the problematic line. It was an extra '}' that caused the Groovy syntax error.
-        // It has been removed.
       }
     }
 
