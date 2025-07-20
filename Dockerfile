@@ -4,6 +4,7 @@
 FROM python:3.9-slim-bullseye
 
 # Set the working directory in the container
+# All subsequent commands will be run relative to this directory.
 WORKDIR /app
 
 # Install ODBC Driver for SQL Server
@@ -21,10 +22,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# CRITICAL FIX: Copy the *contents* of the local 'app' directory into the WORKDIR (/app)
+# This will place main.py, config.py, utils/, etc., directly under /app
+COPY app/ .
 
 # Install any needed Python packages specified in requirements.txt
+# Assuming requirements.txt is located within the 'app/' directory in your repo,
+# and will be copied to /app by the previous COPY command.
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose port 8000 for Prometheus metrics
