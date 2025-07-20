@@ -175,7 +175,7 @@ EOF
           # Install Grafana (using official APT repository)
           sudo apt-get install -y apt-transport-https software-properties-common wget
           sudo mkdir -p /etc/apt/keyrings/
-          wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
+          wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor --batch -o /etc/apt/keyrings/grafana.gpg # Added --batch
           echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
           sudo apt-get update
           sudo apt-get install -y grafana
