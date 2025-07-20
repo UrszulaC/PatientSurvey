@@ -26,9 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # This will place main.py, config.py, utils/, etc., directly under /app
 COPY app/ .
 
+# CRITICAL FIX: Copy requirements.txt from the root of the build context to /app
+# This assumes requirements.txt is at the top level of your Git repository.
+COPY requirements.txt .
+
 # Install any needed Python packages specified in requirements.txt
-# Assuming requirements.txt is located within the 'app/' directory in your repo,
-# and will be copied to /app by the previous COPY command.
+# Since WORKDIR is /app, it will look for requirements.txt directly in /app.
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose port 8000 for Prometheus metrics
