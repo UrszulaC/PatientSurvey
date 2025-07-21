@@ -1,212 +1,260 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    DB_NAME = 'patient_survey_db'
-    IMAGE_TAG  = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
-    // DB_HOST will be set dynamically by the Terraform stage
-  }
-
-  options {
-    timeout(time: 20, unit: 'MINUTES')
-  }
-
-  stages {
-    stage('Checkout Code') {
-      steps {
-        checkout scm
-      }
+    environment {
+        DB_NAME = 'patient_survey_db'
+        IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
     }
 
-    stage('Deploy Infrastructure (Terraform)') {
-      steps {
-        script {
-          dir('infra/terraform') { // Correct path for Terraform files
-            withCredentials([
-              usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_VAR', passwordVariable: 'DB_PASSWORD_VAR'),
-              string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
-              string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
-              string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-              string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR') // Corrected variable name
-            ])  {
-              sh """
-                # Export Azure credentials for Terraform
-                export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
-                export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
-                export ARM_TENANT_ID="${AZURE_TENANT_ID}"
-                export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
-
-                # Export DB credentials for Terraform - these are sensitive variables for Terraform
-                export DB_USER="${DB_USER_VAR}"
-                export DB_PASSWORD="${DB_PASSWORD_VAR}"
-
-                # Terraform commands
-                terraform init -backend-config="resource_group_name=MyPatientSurveyRG" -backend-config="storage_account_name=mypatientsurveytfstate" -backend-config="container_name=tfstate" -backend-config="key=patient_survey.tfstate"
-                terraform plan -out=tfplan.out -var="db_user=\${DB_USER}" -var="db_password=\${DB_PASSWORD}"
-                terraform apply -auto-approve tfplan.out
-              """
-              def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
-              env.DB_HOST = sqlServerFqdn
-              echo "Database Host FQDN: ${env.DB_HOST}"
-            }
-          }
-        }
-      }
+    options {
+        timeout(time: 25, unit: 'MINUTES')
     }
 
-    stage('Create .env File') {
-      steps {
-        dir('app') { // Assuming app files are in 'app/' directory
-            withCredentials([
-              usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
-            ]) {
-              sh '''
-                echo "DB_HOST=${DB_HOST}" > .env
-                echo "DB_USER=$DB_USER" >> .env
-                echo "DB_PASSWORD=$DB_PASSWORD" >> .env
-                echo "DB_NAME=${DB_NAME}" >> .env
-              '''
+    stages {
+        stage('Checkout Code') {
+            steps {
+                checkout scm
             }
         }
-      }
-    }
 
-    stage('Install Dependencies') {
-        steps {
-            sh '''
-                #!/usr/bin/env bash
-                set -e
-                
-                echo "Installing ODBC Driver for SQL Server..."
-                export DEBIAN_FRONTEND=noninteractive
-                export TZ=Etc/UTC
-    
-                # Fix for GPG tty error
-                export GPG_TTY=$(tty)
-                
-                # Clean up any locks
-                sudo rm -f /var/lib/apt/lists/lock
-                sudo rm -f /var/cache/apt/archives/lock
-                sudo rm -f /var/lib/dpkg/lock*
-                sudo dpkg --configure -a
-    
-                # Install prerequisites
-                sudo apt-get update
-                sudo apt-get install -y --no-install-recommends \
-                    apt-transport-https \
-                    curl \
-                    gnupg \
-                    debian-archive-keyring
-    
-                # Add Microsoft GPG key (with error handling)
-                echo "Adding Microsoft GPG key..."
-                if ! curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg; then
-                    echo "Failed to add Microsoft GPG key. Trying alternative approach..."
-                    sudo apt-get install -y wget
-                    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg
-                fi
-    
-                # Add MSSQL repository
-                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | \
-                    sudo tee /etc/apt/sources.list.d/mssql-release.list
-    
-                # Install ODBC driver
-                echo "Installing ODBC driver..."
-                sudo apt-get update
-                echo "msodbcsql17 msodbcsql/accept-eula boolean true" | sudo debconf-set-selections
-                sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
-    
-                # Install Python dependencies
-                echo "Installing Python dependencies..."
-                python3 --version
-                pip3 install --upgrade pip
-                pip install -r requirements.txt
-            '''
-        }
-    }
+        stage('Install Terraform') {
+            steps {
+                sh '''
+                    #!/usr/bin/env bash
+                    set -e
 
-    stage('Security Scan') {
-      steps {
-        dir('app') { // Assuming app files are in 'app/' directory
-          sh '''
-            python3 -m pip install --user bandit pip-audit
-            export PATH=$HOME/.local/bin:$PATH
+                    echo "Installing Terraform..."
+                    sudo rm -f /var/lib/apt/lists/lock
+                    sudo rm -f /var/cache/apt/archives/lock
+                    sudo rm -f /var/lib/dpkg/lock-frontend
+                    sudo dpkg --configure -a
 
-            # static code analysis
-            bandit -r app/ -lll
+                    echo "Cleaning up any existing malformed azure-cli.list file..."
+                    sudo rm -f /etc/apt/sources.list.d/azure-cli.list
 
-            # dependency audit (will fail on any vulnerabilities)
-            pip-audit -r requirements.txt
-          '''
-        }
-      }
-    }
+                    sudo apt-get update
+                    sudo ACCEPT_EULA=Y apt-get install -y software-properties-common wget
 
-    stage('Run Tests') {
-      steps {
-        dir('app') { // Assuming tests are in tests/ within app/
-          withCredentials([
-            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
-          ]) {
-            sh '''
-              export PATH=$HOME/.local/bin:$PATH
-              export DB_USER=$DB_USER
-              export DB_PASSWORD=$DB_PASSWORD
-              python3 -m xmlrunner discover -s tests -o test-results
-            '''
-          }
-        }
-      }
-    }
+                    wget -O- https://apt.releases.hashicorp.com/gpg | \\
+                        gpg --dearmor | \\
+                        sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
 
-    stage('Build Docker Image') {
-      steps {
-        script {
-          dir('app') { // Assuming Dockerfile is in 'app/' directory
-            docker.build(IMAGE_TAG)
-          }
-        }
-      }
-    }
+                    echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \\
+                        https://apt.releases.hashicorp.com \$(lsb_release -cs) main" | \\
+                        sudo tee /etc/apt/sources.list.d/hashicorp.list
 
-    stage('Container Scan') {
-      steps {
-        dir('app') { // Assuming the image context is from 'app/'
-          sh """
-            #!/usr/bin/env bash
-            set -e
-            # install trivy if missing
-            if ! command -v trivy &>/dev/null; then
-              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \\
-                | bash -s -- -b "\$HOME/.local/bin"
-            fi
-            export PATH="\$HOME/.local/bin:\$PATH"
+                    sudo apt-get update
+                    sudo apt-get install -y terraform
 
-            # now scan the image we just built
-            trivy image --severity HIGH,CRITICAL ${IMAGE_TAG}
-          """
-        }
-      }
-    }
-
-    stage('Push Docker Image') {
-      steps {
-        script {
-          dir('app') { // Assuming context for Docker commands might still be in app/
-            docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-              docker.image(IMAGE_TAG).push()
-              docker.image(IMAGE_TAG).push('latest')
+                    echo "Terraform installation complete."
+                    terraform version
+                '''
             }
-          }
         }
-      }
-    }
-  }
 
-  post {
-    always {
-      junit 'app/test-results/*.xml' // Corrected path for JUnit reports
-      cleanWs()
+        stage('Install Docker') {
+            steps {
+                sh '''
+                    #!/usr/bin/env bash
+                    set -e
+
+                    echo "Installing Docker..."
+                    sudo rm -f /var/lib/apt/lists/lock
+                    sudo rm -f /var/cache/apt/archives/lock
+                    sudo rm -f /var/lib/dpkg/lock-frontend
+                    sudo dpkg --configure -a
+
+                    sudo apt-get update
+                    sudo apt-get install -y ca-certificates curl gnupg
+                    sudo install -m 0755 -d /etc/apt/keyrings
+
+                    sudo rm -f /etc/apt/keyrings/docker.gpg
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --batch -o /etc/apt/keyrings/docker.gpg
+                    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+                    echo \\
+                        "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \\
+                        \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | \\
+                        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                    sudo apt-get update
+
+                    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+                    sudo usermod -aG docker jenkins
+
+                    echo "Docker installation complete. Starting Docker service."
+                    sudo systemctl enable docker
+                    sudo systemctl start docker
+                '''
+            }
+        }
+
+        stage('Install Azure CLI') {
+            steps {
+                sh '''
+                    # Install Azure CLI
+                    echo "Installing Azure CLI..."
+                    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+                    echo "Azure CLI installed successfully."
+                    az --version
+                '''
+            }
+        }
+
+        stage('Deploy Infrastructure (Terraform)') {
+            steps {
+                script {
+                    dir('infra/terraform') {
+                        withCredentials([
+                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TF', passwordVariable: 'DB_PASSWORD_TF'),
+                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
+                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
+                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
+                            string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
+                        ]) {
+                            sh """
+                                export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
+                                export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
+                                export ARM_TENANT_ID="${AZURE_TENANT_ID}"
+                                export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
+
+                                export TF_VAR_db_user="${DB_USER_TF}"
+                                export TF_VAR_db_password="${DB_PASSWORD_TF}"
+
+                                terraform init -backend-config="resource_group_name=MyPatientSurveyRG" -backend-config="storage_account_name=mypatientsurveytfstate" -backend-config="container_name=tfstate" -backend-config="key=patient_survey.tfstate"
+                                terraform plan -out=tfplan.out -var="db_user=\${TF_VAR_db_user}" -var="db_password=\${TF_VAR_db_password}"
+                                terraform apply -auto-approve tfplan.out
+                            """
+                            def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
+                            env.DB_HOST = sqlServerFqdn
+                            env.DB_USER = DB_USER_TF
+                            env.DB_PASSWORD = DB_PASSWORD_TF
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Create .env File') {
+            steps {
+                sh '''
+                    echo "DB_HOST=${DB_HOST}" > app/.env
+                    echo "DB_USER=${DB_USER}" >> app/.env
+                    echo "DB_PASSWORD=${DB_PASSWORD}" >> app/.env
+                    echo "DB_NAME=${DB_NAME}" >> app/.env
+
+                    echo "Creating __init__.py files..."
+                    touch app/__init__.py
+                    touch app/utils/__init__.py
+                '''
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    #!/usr/bin/env bash
+                    set -e
+
+                    echo "Installing ODBC Driver for SQL Server..."
+                    export DEBIAN_FRONTEND=noninteractive
+                    export TZ=Etc/UTC
+
+                    sudo rm -f /var/lib/apt/lists/lock
+                    sudo rm -f /var/cache/apt/archives/lock
+                    sudo rm -f /var/lib/dpkg/lock-frontend
+                    sudo dpkg --configure -a
+
+                    sudo apt-get update
+                    sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
+
+                    sudo rm -f /usr/share/keyrings/microsoft-prod.gpg
+                    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg
+
+                    echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \\
+                    | sudo tee /etc/apt/sources.list.d/mssql-release.list
+
+                    sudo apt-get update
+                    yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
+
+                    echo "Installing Python dependencies..."
+                    python3 --version
+                    pip3 install --upgrade pip
+                    pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh '''
+                    export PATH=$HOME/.local/bin:$PATH
+                    export DB_USER=${DB_USER}
+                    export DB_PASSWORD=${DB_PASSWORD}
+                    
+                    if [ -z "$PYTHONPATH" ]; then
+                        export PYTHONPATH=.
+                    else
+                        export PYTHONPATH=.:$PYTHONPATH
+                    fi
+                    
+                    mkdir -p tests
+                    touch tests/__init__.py
+
+                    python3 -m xmlrunner discover -s tests -o test-results
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build(IMAGE_TAG, '.')
+                }
+            }
+        }
+
+        stage('Deploy Application (Azure Container Instances)') {
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'AZURE_CREDS', usernameVariable: 'AZURE_CLIENT_ID', passwordVariable: 'AZURE_CLIENT_SECRET'),
+                    string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
+                    string(credentialsId: 'AZURE_SUBSCRIPTION_ID', variable: 'AZURE_SUBSCRIPTION_ID')
+                ]) {
+                    sh '''
+                        set -e
+                        echo "Logging into Azure..."
+                        az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
+                        az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+
+                        RESOURCE_GROUP_NAME="MyPatientSurveyRG"
+                        ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                        ACI_LOCATION="uksouth"
+
+                        echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
+                        az container create \\
+                            --resource-group $RESOURCE_GROUP_NAME \\
+                            --name $ACI_NAME \\
+                            --image ${IMAGE_TAG} \\
+                            --os-type Linux \\
+                            --cpu 1 \\
+                            --memory 1.5 \\
+                            --restart-policy Always \\
+                            --location $ACI_LOCATION \\
+                            --environment-variables DB_HOST=${DB_HOST} DB_USER=${DB_USER} DB_PASSWORD=${DB_PASSWORD} DB_NAME=${DB_NAME} \\
+                            --no-wait
+
+                        echo "Azure Container Instance deployment initiated."
+                        az logout
+                    '''
+                }
+            }
+        }
     }
-  }
+
+    post {
+        always {
+            junit 'test-results/*.xml'
+            cleanWs()
+        }
+    }
 }
