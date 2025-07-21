@@ -188,17 +188,23 @@ pipeline {
           steps {
             sh '''
               export PATH=$HOME/.local/bin:$PATH
-              export DB_USER=${DB_USER}  # Directly use the variable passed from Jenkins environment
+              export DB_USER=${DB_USER}
               export DB_PASSWORD=${DB_PASSWORD}
-              # Ensure the workspace root is in PYTHONPATH for module discovery
-              export PYTHONPATH=.:$PYTHONPATH
-              echo "PYTHONPATH updated: $PYTHONPATH"
+              
+              # Initialize PYTHONPATH if not set
+              if [ -z "$PYTHONPATH" ]; then
+                  export PYTHONPATH=.
+              else
+                  export PYTHONPATH=.:$PYTHONPATH
+              fi
+              
+              echo "PYTHONPATH set to: $PYTHONPATH"
         
               # Ensure tests/ is a Python package for discovery
-              mkdir -p tests # Ensure tests directory exists at root
-              touch tests/__init__.py # Make 'tests' a package
+              mkdir -p tests
+              touch tests/__init__.py
         
-              # Discover tests in the 'tests' directory at the workspace root
+              # Discover and run tests
               python3 -m xmlrunner discover -s tests -o test-results
             '''
           }
