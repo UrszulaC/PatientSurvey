@@ -4,7 +4,7 @@ pipeline {
   environment {
     DB_NAME = 'patient_survey_db'
     IMAGE_TAG  = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
-    // DB_HOST will be set dynamically by the Terraform stage
+    // DB_HOST, DB_USER, DB_PASSWORD will be set dynamically by the Terraform stage
   }
 
   options {
@@ -252,8 +252,11 @@ EOF
               """
               def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
               env.DB_HOST = sqlServerFqdn
-              // Do NOT set DB_USER/DB_PASSWORD in env here. They will be pulled directly in later stages.
+              // Set DB_USER and DB_PASSWORD as global pipeline environment variables
+              env.DB_USER = DB_USER_TF
+              env.DB_PASSWORD = DB_PASSWORD_TF
               echo "Database Host FQDN: ${env.DB_HOST}"
+              echo "DB User (set in env): ${env.DB_USER}"
             }
           }
         }
@@ -263,22 +266,19 @@ EOF
     stage('Create .env File') {
       steps {
         // Operate from the workspace root to correctly create package __init__.py files
-        withCredentials([
-          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_ENV', passwordVariable: 'DB_PASSWORD_ENV') // Renamed for clarity
-        ]) {
-          sh '''
-            echo "DB_HOST=${DB_HOST}" > app/.env
-            echo "DB_USER=${DB_USER_ENV}" >> app/.env # Use the credential variable
-            echo "DB_PASSWORD=${DB_PASSWORD_ENV}" >> app/.env # Use the credential variable
-            echo "DB_NAME=${DB_NAME}" >> app/.env
+        // Now using env.DB_USER and env.DB_PASSWORD directly
+        sh '''
+          echo "DB_HOST=${DB_HOST}" > app/.env
+          echo "DB_USER=${DB_USER}" >> app/.env # Use env.DB_USER
+          echo "DB_PASSWORD=${DB_PASSWORD}" >> app/.env # Use env.DB_PASSWORD
+          echo "DB_NAME=${DB_NAME}" >> app/.env
 
-            # NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
-            echo "Creating __init__.py files..."
-            touch app/__init__.py # Makes 'app' a package
-            touch app/utils/__init__.py # Makes 'utils' a subpackage within 'app'
-            echo "__init__.py files created."
-          '''
-        }
+          # NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
+          echo "Creating __init__.py files..."
+          touch app/__init__.py # Makes 'app' a package
+          touch app/utils/__init__.py # Makes 'utils' a subpackage within 'app'
+          echo "__init__.py files created."
+        '''
       }
     }
 
@@ -359,39 +359,35 @@ EOF
 
     stage('Run Tests') {
       steps {
-        # K14: Test Driven Development and Test Pyramid (Unit testing)
-        # S14: Write tests and follow TDD discipline
-        # S17: Code in a general-purpose programming language (Python tests)
-        withCredentials([
-          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TEST', passwordVariable: 'DB_PASSWORD_TEST') # Renamed for clarity
-        ]) {
-          sh '''
-            export PATH=$HOME/.local/bin:$PATH
-            export DB_USER=$DB_USER_TEST # Use the credential variable
-            export DB_PASSWORD=$DB_PASSWORD_TEST # Use the credential variable
-            # Ensure the workspace root is in PYTHONPATH for module discovery
-            export PYTHONPATH=.:$PYTHONPATH
-            echo "PYTHONPATH updated: $PYTHONPATH"
+        // K14: Test Driven Development and Test Pyramid (Unit testing)
+        // S14: Write tests and follow TDD discipline
+        // S17: Code in a general-purpose programming language (Python tests)
+        // Using env.DB_USER and env.DB_PASSWORD directly as they are now global
+        sh '''
+          export PATH=$HOME/.local/bin:$PATH
+          export DB_USER=${env.DB_USER} # Use env.DB_USER
+          export DB_PASSWORD=${env.DB_PASSWORD} # Use env.DB_PASSWORD
+          # Ensure the workspace root is in PYTHONPATH for module discovery
+          export PYTHONPATH=.:$PYTHONPATH
+          echo "PYTHONPATH updated: $PYTHONPATH"
 
-            # Ensure tests/ is a Python package for discovery (already handled by touch app/tests/__init__.py if tests are inside app)
-            # If tests/ is at the root, ensure tests/__init__.py is created at root
-            mkdir -p tests # Ensure tests directory exists at root
-            touch tests/__init__.py # Make 'tests' a package
+          # Ensure tests/ is a Python package for discovery
+          mkdir -p tests # Ensure tests directory exists at root
+          touch tests/__init__.py # Make 'tests' a package
 
-            # Discover tests in the 'tests' directory at the workspace root
-            python3 -m xmlrunner discover -s tests -o test-results
-          '''
-        }
+          # Discover tests in the 'tests' directory at the workspace root
+          python3 -m xmlrunner discover -s tests -o test-results
+        '''
       }
     }
 
     stage('Build Docker Image') {
       steps {
         script {
-          # The Dockerfile is at the repository root, so build from the workspace root.
-          # Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
+          // The Dockerfile is at the repository root, so build from the workspace root.
+          // Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
           echo "Building Docker image ${IMAGE_TAG}..."
-          docker.build(IMAGE_TAG, '.') # Explicitly set build context to current directory (repo root)
+          docker.build(IMAGE_TAG, '.') // Explicitly set build context to current directory (repo root)
           echo "Docker image built successfully."
         }
       }
@@ -422,12 +418,12 @@ EOF
     stage('Push Docker Image') {
       steps {
         script {
-          # K1: Continuous Integration (Build artifacts)
-          # K15: Continuous Integration/Delivery/Deployment principles
+          // K1: Continuous Integration (Build artifacts)
+          // K15: Continuous Integration/Delivery/Deployment principles
           echo "Pushing Docker image ${IMAGE_TAG} to Docker Hub..."
           docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
             docker.image(IMAGE_TAG).push()
-            docker.image(IMAGE_TAG).push('latest') # Optional: push as latest for easier pulling
+            docker.image(IMAGE_TAG).push('latest') // Optional: push as latest for easier pulling
           }
           echo "Docker image pushed successfully."
         }
@@ -441,8 +437,8 @@ EOF
             string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
             string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-            string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR'),
-            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_DEPLOY', passwordVariable: 'DB_PASSWORD_DEPLOY') // Renamed for clarity
+            string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
+            // Removed: usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_DEPLOY', passwordVariable: 'DB_PASSWORD_DEPLOY')
           ]) {
             // K15: Continuous Delivery/Deployment (Automated deployment)
             // K8: Immutable infrastructure (Deploying container image)
@@ -470,7 +466,7 @@ EOF
                 --memory 1.5 \\
                 --restart-policy Always \\
                 --location \$ACI_LOCATION \\
-                --environment-variables DB_HOST=${env.DB_HOST} DB_USER=${DB_USER_DEPLOY} DB_PASSWORD=${DB_PASSWORD_DEPLOY} DB_NAME=${env.DB_NAME} \\
+                --environment-variables DB_HOST=${env.DB_HOST} DB_USER=${env.DB_USER} DB_PASSWORD=${env.DB_PASSWORD} DB_NAME=${env.DB_NAME} \\
                 --no-wait # Do not wait for deployment to complete to speed up pipeline
 
               echo "Azure Container Instance deployment initiated. Check Azure portal for status."
