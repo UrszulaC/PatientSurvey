@@ -214,7 +214,7 @@ pipeline {
             }
         }
 
-        stage('Deploy Application (Azure Container Instances)') {
+       stage('Deploy Application (Azure Container Instances)') {
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'AZURE_CREDS', usernameVariable: 'AZURE_CLIENT_ID', passwordVariable: 'AZURE_CLIENT_SECRET'),
