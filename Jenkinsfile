@@ -29,6 +29,12 @@ pipeline {
 
           echo "Installing Terraform..."
 
+          # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
+          sudo rm -f /var/lib/apt/lists/lock
+          sudo rm -f /var/cache/apt/archives/lock
+          sudo dpkg --configure -a # Fix any broken packages
+          # --- END CRITICAL FIX ---
+
           # --- CRITICAL CLEANUP FIX: Remove problematic azure-cli.list before apt-get update ---
           # This addresses the 'E: Malformed entry 1 in list file /etc/apt/sources.list.d/azure-cli.list' error.
           # It does NOT install Azure CLI; it only cleans up a lingering corrupted file.
@@ -68,6 +74,12 @@ pipeline {
           set -e
 
           echo "Installing Docker..."
+
+          # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
+          sudo rm -f /var/lib/apt/lists/lock
+          sudo rm -f /var/cache/apt/archives/lock
+          sudo dpkg --configure -a # Fix any broken packages
+          # --- END CRITICAL FIX ---
 
           # Add Docker's official GPG key:
           sudo apt-get update
@@ -113,6 +125,12 @@ pipeline {
           set -e
 
           echo "Installing Prometheus..."
+          # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
+          sudo rm -f /var/lib/apt/lists/lock
+          sudo rm -f /var/cache/apt/archives/lock
+          sudo dpkg --configure -a # Fix any broken packages
+          # --- END CRITICAL FIX ---
+
           # Download Prometheus (adjust version as needed)
           PROMETHEUS_VERSION="2.53.0" # Check for latest stable version
           wget https://github.com/prometheus/prometheus/releases/download/v\${PROMETHEUS_VERSION}/prometheus-\${PROMETHEUS_VERSION}.linux-amd64.tar.gz -O /tmp/prometheus.tar.gz
@@ -175,7 +193,14 @@ EOF
 
 
           echo "Installing Grafana..."
+          # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
+          sudo rm -f /var/lib/apt/lists/lock
+          sudo rm -f /var/cache/apt/archives/lock
+          sudo dpkg --configure -a # Fix any broken packages
+          # --- END CRITICAL FIX ---
+          
           # Install Grafana (using official APT repository)
+          sudo apt-get update
           sudo apt-get install -y apt-transport-https software-properties-common wget
           sudo mkdir -p /etc/apt/keyrings/
           # CRITICAL FIX: Remove existing grafana.gpg key file to prevent "File exists" error
@@ -272,31 +297,37 @@ EOF
           export DEBIAN_FRONTEND=noninteractive
           export TZ=Etc/UTC
 
-          // 1. Install prerequisites for adding Microsoft repositories
+          # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
+          sudo rm -f /var/lib/apt/lists/lock
+          sudo rm -f /var/cache/apt/archives/lock
+          sudo dpkg --configure -a # Fix any broken packages
+          # --- END CRITICAL FIX ---
+
+          # 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
-          // CRITICAL FIX: Install python3-pip and python3-venv here
+          # CRITICAL FIX: Install python3-pip and python3-venv here
           sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
 
-          // CRITICAL FIX: Remove existing microsoft-prod.gpg key file to prevent "File exists" error
+          # CRITICAL FIX: Remove existing microsoft-prod.gpg key file to prevent "File exists" error
           sudo rm -f /usr/share/keyrings/microsoft-prod.gpg
-          // 2. Import the Microsoft GPG key
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg // Added --batch
+          # 2. Import the Microsoft GPG key
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg # Added --batch
 
-          // 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
+          # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
           echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \\
           | sudo tee /etc/apt/sources.list.d/mssql-release.list
 
-          // 4. Update apt-get cache and install the ODBC driver
+          # 4. Update apt-get cache and install the ODBC driver
           sudo apt-get update
-          // CRITICAL FIX: Pipe 'yes' directly to the install command to accept EULA
+          # CRITICAL FIX: Pipe 'yes' directly to the install command to accept EULA
           yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
 
           echo "ODBC Driver installation complete."
 
-          // Now, proceed with Python dependencies
+          # Now, proceed with Python dependencies
           python3 --version
           pip3 install --upgrade pip
-          pip install -r app/requirements.txt // Correct path to requirements.txt
+          pip install -r app/requirements.txt # Correct path to requirements.txt
         """
       }
     }
@@ -466,3 +497,4 @@ EOF
     }
   }
 }
+
