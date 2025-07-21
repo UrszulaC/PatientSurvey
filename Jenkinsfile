@@ -214,48 +214,49 @@ pipeline {
             }
         }
 
-    stage('Deploy Application (Azure Container Instances)') {
-            steps {
-                withCredentials([
-                    usernamePassword(credentialsId: 'AZURE_CREDS', usernameVariable: 'AZURE_CLIENT_ID', passwordVariable: 'AZURE_CLIENT_SECRET'),
-                    string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-                    string(credentialsId: 'AZURE_SUBSCRIPTION_ID', variable: 'AZURE_SUBSCRIPTION_ID')
-                ]) {
-                    sh '''
-                        set -e
-                        echo "Logging into Azure..."
-                        az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
-                        az account set --subscription "$AZURE_SUBSCRIPTION_ID"
-
-                        RESOURCE_GROUP_NAME="MyPatientSurveyRG"
-                        ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-                        ACI_LOCATION="uksouth"
-
-                        echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
-                        az container create \\
-                            --resource-group $RESOURCE_GROUP_NAME \\
-                            --name $ACI_NAME \\
-                            --image ${IMAGE_TAG} \\
-                            --os-type Linux \\
-                            --cpu 1 \\
-                            --memory 1.5 \\
-                            --restart-policy Always \\
-                            --location $ACI_LOCATION \\
-                            --environment-variables DB_HOST=${DB_HOST} DB_USER=${DB_USER} DB_PASSWORD=${DB_PASSWORD} DB_NAME=${DB_NAME} \\
-                            --no-wait
-
-                        echo "Azure Container Instance deployment initiated."
-                        az logout
-                    '''
-                }
+        stage('Deploy Application (Azure Container Instances)') {
+          steps {
+            withCredentials([
+                string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID_VAR'),
+                string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET_VAR'),
+                string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID_VAR'),
+                string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
+            ]) {
+              sh '''
+                set -e
+                echo "Logging into Azure..."
+                az login --service-principal -u "${AZURE_CLIENT_ID_VAR}" -p "${AZURE_CLIENT_SECRET_VAR}" --tenant "${AZURE_TENANT_ID_VAR}"
+                az account set --subscription "${AZURE_SUBSCRIPTION_ID_VAR}"
+    
+                RESOURCE_GROUP_NAME="MyPatientSurveyRG"
+                ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                ACI_LOCATION="uksouth"
+    
+                echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
+                az container create \\
+                    --resource-group $RESOURCE_GROUP_NAME \\
+                    --name $ACI_NAME \\
+                    --image ${IMAGE_TAG} \\
+                    --os-type Linux \\
+                    --cpu 1 \\
+                    --memory 1.5 \\
+                    --restart-policy Always \\
+                    --location $ACI_LOCATION \\
+                    --environment-variables DB_HOST=${DB_HOST} DB_USER=${DB_USER} DB_PASSWORD=${DB_PASSWORD} DB_NAME=${DB_NAME} \\
+                    --no-wait
+    
+                echo "Azure Container Instance deployment initiated."
+                az logout
+              '''
             }
+          }
         }
-    }
+      }
     
 
     post {
         always {
-            junit 'test-results/*.xml'
+            junit 'app/test-results/*.xml'
             cleanWs()
         }
     }
