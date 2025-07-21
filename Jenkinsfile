@@ -32,6 +32,7 @@ pipeline {
           # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
           sudo rm -f /var/lib/apt/lists/lock
           sudo rm -f /var/cache/apt/archives/lock
+          sudo rm -f /var/lib/dpkg/lock-frontend
           sudo dpkg --configure -a # Fix any broken packages
           # --- END CRITICAL FIX ---
 
@@ -78,6 +79,7 @@ pipeline {
           # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
           sudo rm -f /var/lib/apt/lists/lock
           sudo rm -f /var/cache/apt/archives/lock
+          sudo rm -f /var/lib/dpkg/lock-frontend
           sudo dpkg --configure -a # Fix any broken packages
           # --- END CRITICAL FIX ---
 
@@ -128,6 +130,7 @@ pipeline {
           # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
           sudo rm -f /var/lib/apt/lists/lock
           sudo rm -f /var/cache/apt/archives/lock
+          sudo rm -f /var/lib/dpkg/lock-frontend
           sudo dpkg --configure -a # Fix any broken packages
           # --- END CRITICAL FIX ---
 
@@ -196,6 +199,7 @@ EOF
           # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
           sudo rm -f /var/lib/apt/lists/lock
           sudo rm -f /var/cache/apt/archives/lock
+          sudo rm -f /var/lib/dpkg/lock-frontend
           sudo dpkg --configure -a # Fix any broken packages
           # --- END CRITICAL FIX ---
           
@@ -300,6 +304,7 @@ EOF
           # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
           sudo rm -f /var/lib/apt/lists/lock
           sudo rm -f /var/cache/apt/archives/lock
+          sudo rm -f /var/lib/dpkg/lock-frontend
           sudo dpkg --configure -a # Fix any broken packages
           # --- END CRITICAL FIX ---
 
@@ -327,7 +332,7 @@ EOF
           # Now, proceed with Python dependencies
           python3 --version
           pip3 install --upgrade pip
-          pip install -r app/requirements.txt # Correct path to requirements.txt
+          pip install -r requirements.txt # Corrected path to requirements.txt
         """
       }
     }
@@ -353,7 +358,7 @@ EOF
             echo "Bandit scan complete."
 
             echo "Running dependency audit with pip-audit..."
-            timeout 5m pip-audit -r requirements.txt --verbose # requirements.txt is in app/
+            timeout 5m pip-audit -r ../requirements.txt --verbose # Corrected path to requirements.txt
             echo "pip-audit complete."
           """
         }
@@ -497,4 +502,3 @@ EOF
     }
   }
 }
-
