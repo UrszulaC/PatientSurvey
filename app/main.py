@@ -171,9 +171,7 @@ def create_survey_tables(conn):
 from app.utils.db_utils import with_db_connection # Ensure this import is here
 
 @with_db_connection
-def conduct_survey(conn=None):
-    if conn is None:
-        conn = get_db_connection()
+def conduct_survey(conn):
     """Conduct the survey and store responses"""
     try:
         start_time = time.time()  # Starting timer
