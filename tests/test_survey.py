@@ -293,4 +293,77 @@ class TestPatientSurveySystem(unittest.TestCase):
             output = "\n".join(str(call) for call in mock_print.call_args_list)
             self.assertIn(f"Response ID: {response1}", output) # Use f-string
             self.assertIn(f"Response ID: {response2}", output) # Use f-string
-            self.assertIn("Princess Alexandra Hospital", outp
+            self.assertIn("Princess Alexandra Hospital", output)
+            self.assertIn("Herts & Essex Hospital", output)
+
+    # --- Edge Cases ---
+
+    @patch('builtins.input')
+    def test_invalid_multiple_choice_input(self, mock_input):
+        """Test handling of invalid multiple choice selections"""
+        mock_input.side_effect = [
+            '2023-01-01',
+            '5',  # Invalid choice (only 3 options)
+            '1',  # Then valid choice
+            'John', '3', '1', 'Good', '5'
+        ]
+
+        from app.main import conduct_survey
+        with patch('builtins.print') as mock_print:
+            conduct_survey(self.conn) # Pass the test connection
+
+            # Verify error message was shown
+            output = "\n".join(str(call) for call in mock_print.call_args_list)
+            self.assertIn("Please enter a number between 1 and 3", output)
+
+        # Verify response was still recorded
+        self.cursor.execute("SELECT * FROM responses")
+        self.assertIsNotNone(self.cursor.fetchone())
+
+    def test_database_constraints(self):
+        """Verify foreign key constraints work"""
+        # Try to insert answer with invalid question ID
+        with self.assertRaises(pyodbc.Error): # Catch pyodbc.Error
+            self.cursor.execute("""
+                INSERT INTO answers (response_id, question_id, answer_value)
+                VALUES (?, ?, ?) -- Use ?
+            """, (1, 999, 'test'))
+            self.conn.commit()
+
+    # --- Performance Tests ---
+
+    def test_multiple_response_performance(self):
+        """Test performance with many responses"""
+        from app.main import view_responses
+        
+        # Create 100 test responses
+        for i in range(100):
+            self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
+            self.cursor.execute("SELECT SCOPE_IDENTITY()")
+            new_response_id_row = self.cursor.fetchone()
+            if new_response_id_row is None or new_response_id_row[0] is None:
+                self.cursor.execute("SELECT @@IDENTITY")
+                new_response_id_row = self.cursor.fetchone()
+                if new_response_id_row is None or new_response_id_row[0] is None:
+                    raise Exception("Failed to retrieve any identity after inserting response.")
+            response_id = int(new_response_id_row[0])
+
+            self.cursor.execute("""
+                INSERT INTO answers (response_id, question_id, answer_value)
+                VALUES (?, ?, ?) -- Use ?
+            """, (response_id, self.questions['Date of visit?'], f'2023-01-{i+1:02d}'))
+
+        self.conn.commit()
+
+        # Time the view operation
+        import time
+        start = time.time()
+        view_responses(self.conn) # Pass the test connection
+        duration = time.time() - start
+
+        self.assertLess(duration, 1.0, "Viewing responses took too long")
+
+
+if __name__ == "__main__":
+    import xmlrunner
+    unittest.main(testRunner=xmlrunner.XMLTestRunner(output='test-results'))
