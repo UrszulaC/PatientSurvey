@@ -126,13 +126,13 @@ pipeline {
 
     stage('Security Scan') {
       steps {
-        dir('app') { # Assuming app files are in 'app/' directory for Bandit scan context
+        dir('app') { // Assuming app files are in 'app/' directory for Bandit scan context
+          // K5: Modern security tools (Bandit, Pip-audit)
+          // S9: Application of cloud security tools into automated pipeline
           sh """
             #!/usr/bin/env bash
             set -ex # Added -x for debugging output, and -e for exiting on error
 
-            # K5: Modern security tools (Bandit, Pip-audit)
-            # S9: Application of cloud security tools into automated pipeline
             echo "Installing security tools (bandit, pip-audit)..."
             timeout 5m python3 -m pip install --user bandit pip-audit
             echo "Security tools installed."
