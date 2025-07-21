@@ -185,24 +185,23 @@ pipeline {
         }
 
         stage('Run Tests') {
-            steps {
-                sh '''
-                    export PATH=$HOME/.local/bin:$PATH
-                    export DB_USER=${DB_USER}
-                    export DB_PASSWORD=${DB_PASSWORD}
-                    
-                    if [ -z "$PYTHONPATH" ]; then
-                        export PYTHONPATH=.
-                    else
-                        export PYTHONPATH=.:$PYTHONPATH
-                    fi
-                    
-                    mkdir -p tests
-                    touch tests/__init__.py
-
-                    python3 -m xmlrunner discover -s tests -o test-results
-                '''
-            }
+          steps {
+            sh '''
+              export PATH=$HOME/.local/bin:$PATH
+              export DB_USER=${DB_USER}  # Directly use the variable passed from Jenkins environment
+              export DB_PASSWORD=${DB_PASSWORD}
+              # Ensure the workspace root is in PYTHONPATH for module discovery
+              export PYTHONPATH=.:$PYTHONPATH
+              echo "PYTHONPATH updated: $PYTHONPATH"
+        
+              # Ensure tests/ is a Python package for discovery
+              mkdir -p tests # Ensure tests directory exists at root
+              touch tests/__init__.py # Make 'tests' a package
+        
+              # Discover tests in the 'tests' directory at the workspace root
+              python3 -m xmlrunner discover -s tests -o test-results
+            '''
+          }
         }
 
         stage('Build Docker Image') {
