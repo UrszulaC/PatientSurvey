@@ -171,7 +171,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        conduct_survey() # Removed self.conn as argument
+        conduct_survey(db_name=Config.DB_TEST_NAME) # Pass db_name to decorator
         # ... rest of the test ...
 
         # Verify response was created
@@ -202,7 +202,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        conduct_survey() # Removed self.conn as argument
+        conduct_survey(db_name=Config.DB_TEST_NAME) # Pass db_name to decorator
 
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
@@ -218,7 +218,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        conduct_survey() # Removed self.conn as argument
+        conduct_survey(db_name=Config.DB_TEST_NAME) # Pass db_name to decorator
 
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
@@ -239,7 +239,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         """Test viewing when no responses exist"""
         from app.main import view_responses
         with patch('builtins.print') as mock_print:
-            view_responses() # Removed self.conn as argument
+            view_responses(db_name=Config.DB_TEST_NAME) # Pass db_name to decorator
             mock_print.assert_called_with("\nNo responses found in the database.")
 
     def test_view_multiple_responses(self):
@@ -286,7 +286,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Test view function
         from app.main import view_responses
         with patch('builtins.print') as mock_print:
-            view_responses() # Removed self.conn as argument
+            view_responses(db_name=Config.DB_TEST_NAME) # Pass db_name to decorator
 
             # Verify responses were displayed
             # The view_responses function itself prints, so we check the printed output
@@ -310,7 +310,7 @@ class TestPatientSurveySystem(unittest.TestCase):
 
         from app.main import conduct_survey
         with patch('builtins.print') as mock_print:
-            conduct_survey() # Removed self.conn as argument
+            conduct_survey(db_name=Config.DB_TEST_NAME) # Pass db_name to decorator
 
             # Verify error message was shown
             output = "\n".join(str(call) for call in mock_print.call_args_list)
@@ -358,7 +358,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Time the view operation
         import time
         start = time.time()
-        view_responses() # Removed self.conn as argument
+        view_responses(db_name=Config.DB_TEST_NAME) # Pass db_name to decorator
         duration = time.time() - start
 
         self.assertLess(duration, 1.0, "Viewing responses took too long")
@@ -367,3 +367,4 @@ class TestPatientSurveySystem(unittest.TestCase):
 if __name__ == "__main__":
     import xmlrunner
     unittest.main(testRunner=xmlrunner.XMLTestRunner(output='test-results'))
+
