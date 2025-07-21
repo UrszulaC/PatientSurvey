@@ -172,6 +172,7 @@ class TestPatientSurveySystem(unittest.TestCase):
 
         from app.main import conduct_survey
         conduct_survey(self.conn) # Pass the test connection
+        # ... rest of the test ...
 
         # Verify response was created
         # SELECT * FROM responses (response_id is at index 0)
@@ -366,4 +367,3 @@ class TestPatientSurveySystem(unittest.TestCase):
 if __name__ == "__main__":
     import xmlrunner
     unittest.main(testRunner=xmlrunner.XMLTestRunner(output='test-results'))
-
