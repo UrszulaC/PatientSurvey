@@ -275,8 +275,8 @@ EOF
 
           // NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
           echo "Creating __init__.py files..."
-          touch app/__init__.py // Makes 'app' a package
-          touch app/utils/__init__.py // Makes 'utils' a subpackage within 'app'
+          touch app/__init__.py # Makes 'app' a package
+          touch app/utils/__init__.py # Makes 'utils' a subpackage within 'app'
           echo "__init__.py files created."
         '''
       }
@@ -437,12 +437,12 @@ EOF
             string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
             // Removed: usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_DEPLOY', passwordVariable: 'DB_PASSWORD_DEPLOY')
           ]) {
-            # K15: Continuous Delivery/Deployment (Automated deployment)
-            # K8: Immutable infrastructure (Deploying container image)
-            # S5: Deploy immutable infrastructure
-            # S12: Automate tasks (Azure CLI deployment)
-            # Note: This deploys the console app in a container. For an API-based app,
-            # the application code itself would need refactoring to expose an API.
+            // K15: Continuous Delivery/Deployment (Automated deployment)
+            // K8: Immutable infrastructure (Deploying container image)
+            // S5: Deploy immutable infrastructure
+            // S12: Automate tasks (Azure CLI deployment)
+            // Note: This deploys the console app in a container. For an API-based app,
+            // the application code itself would need refactoring to expose an API.
             sh """
               echo "Logging into Azure..."
               az login --service-principal -u "${AZURE_CLIENT_ID}" -p "${AZURE_CLIENT_SECRET}" --tenant "${AZURE_TENANT_ID}"
