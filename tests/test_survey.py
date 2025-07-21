@@ -31,6 +31,7 @@ class TestPatientSurveySystem(unittest.TestCase):
             # For subsequent operations on the test database, autocommit can be False (default)
             cls.connection.close()
             cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
+            cls.connection.autocommit = True # Explicitly set autocommit for this connection
             cls.cursor = cls.connection.cursor()
             # Removed: cls.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
@@ -90,11 +91,14 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.cursor = self.conn.cursor()
         # Removed: self.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
-        # Ensure clean state but preserve survey structure
-        # TRUNCATE TABLE works for SQL Server
-        self.cursor.execute("TRUNCATE TABLE answers")
-        self.cursor.execute("TRUNCATE TABLE responses")
-        self.conn.commit() # Commit truncate
+        # --- CRITICAL FIX: Use DELETE FROM instead of TRUNCATE TABLE for tables with FK constraints ---
+        # Delete from child tables first, then parent tables
+        self.cursor.execute("DELETE FROM answers")
+        self.cursor.execute("DELETE FROM responses")
+        # No need to delete from questions or surveys here, as they are part of the initial setup
+        # and are dropped/recreated in setUpClass. setUp only needs to clear transactional data.
+        self.conn.commit() # Commit delete operations
+        # --- END CRITICAL FIX ---
 
     def tearDown(self):
         """Cleanup after each test"""
@@ -167,8 +171,8 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        # conduct_survey is decorated with @with_db_connection, it will get its own connection
-        conduct_survey()
+        conduct_survey(self.conn) # Pass the test connection
+        # ... rest of the test ...
 
         # Verify response was created
         # SELECT * FROM responses (response_id is at index 0)
@@ -198,7 +202,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        conduct_survey() # conduct_survey is decorated
+        conduct_survey(self.conn) # Pass the test connection
 
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
@@ -214,7 +218,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         ]
 
         from app.main import conduct_survey
-        conduct_survey() # conduct_survey is decorated
+        conduct_survey(self.conn) # Pass the test connection
 
         # Verify response was created
         self.cursor.execute("SELECT * FROM responses")
@@ -235,7 +239,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         """Test viewing when no responses exist"""
         from app.main import view_responses
         with patch('builtins.print') as mock_print:
-            view_responses() # view_responses is decorated
+            view_responses(self.conn) # Pass the test connection
             mock_print.assert_called_with("\nNo responses found in the database.")
 
     def test_view_multiple_responses(self):
@@ -243,11 +247,25 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Create test responses
         self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
         self.cursor.execute("SELECT SCOPE_IDENTITY()")
-        response1 = int(self.cursor.fetchone()[0])
+        new_response_id_row = self.cursor.fetchone()
+        if new_response_id_row is None or new_response_id_row[0] is None:
+            # Fallback to @@IDENTITY if SCOPE_IDENTITY is None
+            self.cursor.execute("SELECT @@IDENTITY")
+            new_response_id_row = self.cursor.fetchone()
+            if new_response_id_row is None or new_response_id_row[0] is None:
+                raise Exception("Failed to retrieve any identity after inserting response.")
+        response1 = int(new_response_id_row[0])
 
         self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
         self.cursor.execute("SELECT SCOPE_IDENTITY()")
-        response2 = int(self.cursor.fetchone()[0])
+        new_response_id_row = self.cursor.fetchone()
+        if new_response_id_row is None or new_response_id_row[0] is None:
+            # Fallback to @@IDENTITY if SCOPE_IDENTITY is None
+            self.cursor.execute("SELECT @@IDENTITY")
+            new_response_id_row = self.cursor.fetchone()
+            if new_response_id_row is None or new_response_id_row[0] is None:
+                raise Exception("Failed to retrieve any identity after inserting response.")
+        response2 = int(new_response_id_row[0])
 
         # Add answers
         sample_answers = [
@@ -268,7 +286,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Test view function
         from app.main import view_responses
         with patch('builtins.print') as mock_print:
-            view_responses() # view_responses is decorated
+            view_responses(self.conn) # Pass the test connection
 
             # Verify responses were displayed
             # The view_responses function itself prints, so we check the printed output
@@ -292,7 +310,7 @@ class TestPatientSurveySystem(unittest.TestCase):
 
         from app.main import conduct_survey
         with patch('builtins.print') as mock_print:
-            conduct_survey() # conduct_survey is decorated
+            conduct_survey(self.conn) # Pass the test connection
 
             # Verify error message was shown
             output = "\n".join(str(call) for call in mock_print.call_args_list)
@@ -317,12 +335,18 @@ class TestPatientSurveySystem(unittest.TestCase):
     def test_multiple_response_performance(self):
         """Test performance with many responses"""
         from app.main import view_responses
-
+        
         # Create 100 test responses
         for i in range(100):
             self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
             self.cursor.execute("SELECT SCOPE_IDENTITY()")
-            response_id = int(self.cursor.fetchone()[0])
+            new_response_id_row = self.cursor.fetchone()
+            if new_response_id_row is None or new_response_id_row[0] is None:
+                self.cursor.execute("SELECT @@IDENTITY")
+                new_response_id_row = self.cursor.fetchone()
+                if new_response_id_row is None or new_response_id_row[0] is None:
+                    raise Exception("Failed to retrieve any identity after inserting response.")
+            response_id = int(new_response_id_row[0])
 
             self.cursor.execute("""
                 INSERT INTO answers (response_id, question_id, answer_value)
@@ -334,7 +358,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Time the view operation
         import time
         start = time.time()
-        view_responses() # view_responses is decorated
+        view_responses(self.conn) # Pass the test connection
         duration = time.time() - start
 
         self.assertLess(duration, 1.0, "Viewing responses took too long")
@@ -343,3 +367,4 @@ class TestPatientSurveySystem(unittest.TestCase):
 if __name__ == "__main__":
     import xmlrunner
     unittest.main(testRunner=xmlrunner.XMLTestRunner(output='test-results'))
+
