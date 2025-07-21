@@ -224,10 +224,10 @@ pipeline {
                         export PYTHONPATH=.:$PYTHONPATH
                     fi
                     
-                    mkdir -p tests
+                    mkdir -p tests-results
                     touch tests/__init__.py
 
-                    python3 -m xmlrunner discover -s tests -o test-results
+                    python3 -m xmlrunner discover -s tests -o test-results --failfast --verbose
                 '''
             }
         }
@@ -241,50 +241,6 @@ pipeline {
             }
         }
         
-
-
-      //   stage('Deploy Application (Azure Container Instances)') {
-      //     steps {
-      //       withCredentials([
-      //           string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID_VAR'),
-      //           string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET_VAR'),
-      //           string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID_VAR'),
-      //           string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR'),
-      //           usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD') // Add Docker Hub credentials
-      //       ]) {
-      //         sh '''
-      //           set -e
-      //           echo "Logging into Azure..."
-      //           az login --service-principal -u "${AZURE_CLIENT_ID_VAR}" -p "${AZURE_CLIENT_SECRET_VAR}" --tenant "${AZURE_TENANT_ID_VAR}"
-      //           az account set --subscription "${AZURE_SUBSCRIPTION_ID_VAR}"
-    
-      //           RESOURCE_GROUP_NAME="MyPatientSurveyRG"
-      //           ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-      //           ACI_LOCATION="uksouth"
-    
-      //           echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
-      //           az container create \\
-      //               --resource-group $RESOURCE_GROUP_NAME \\
-      //               --name $ACI_NAME \\
-      //               --image ${IMAGE_TAG} \\
-      //               --os-type Linux \\
-      //               --cpu 1 \\
-      //               --memory 1.5 \\
-      //               --restart-policy Always \\
-      //               --location $ACI_LOCATION \\
-      //               --environment-variables DB_HOST=${DB_HOST} DB_USER=${DB_USER} DB_PASSWORD=${DB_PASSWORD} DB_NAME=${DB_NAME} \\
-      //               --registry-login-server index.docker.io \\
-      //               --registry-username "${DOCKER_USERNAME}" \\
-      //               --registry-password "${DOCKER_PASSWORD}" \\
-      //               --no-wait
-    
-      //           echo "Azure Container Instance deployment initiated."
-      //           az logout
-      //         '''
-      //       }
-      //     }
-      //   }
-      // }
            stage('Deploy Application (Azure Container Instances)') {
             steps {
                 script {
@@ -359,7 +315,7 @@ pipeline {
     }
     post {
         always {
-            junit 'app/test-results/*.xml'
+            junit 'test-results/*.xml'
             cleanWs()
         }
     }
