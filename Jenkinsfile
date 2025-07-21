@@ -209,7 +209,7 @@ EOF
               // Reverted to azure_subscription_id (underscore)
               string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
             ])  {
-              # <<< THIS IS THE CRUCIAL SH BLOCK THAT MUST BE HERE >>>
+              // <<< THIS IS THE CRUCIAL SH BLOCK THAT MUST BE HERE >>>
               sh """
                 # Export Azure credentials for Terraform
                 export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
@@ -237,7 +237,7 @@ EOF
 
     stage('Create .env File') {
       steps {
-        # Operate from the workspace root to correctly create package __init__.py files
+        // Operate from the workspace root to correctly create package __init__.py files
         withCredentials([
           usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
         ]) {
@@ -299,9 +299,9 @@ EOF
 
     stage('Security Scan') {
       steps {
-        dir('app') { # Assuming app files are in 'app/' directory for Bandit scan context
-          # K5: Modern security tools (Bandit, Pip-audit)
-          # S9: Application of cloud security tools into automated pipeline
+        dir('app') { // Assuming app files are in 'app/' directory for Bandit scan context
+          // K5: Modern security tools (Bandit, Pip-audit)
+          // S9: Application of cloud security tools into automated pipeline
           sh """
             #!/usr/bin/env bash
             set -ex # Added -x for debugging output, and -e for exiting on error
@@ -327,9 +327,9 @@ EOF
 
     stage('Run Tests') {
       steps {
-        # K14: Test Driven Development and Test Pyramid (Unit testing)
-        # S14: Write tests and follow TDD discipline
-        # S17: Code in a general-purpose programming language (Python tests)
+        // K14: Test Driven Development and Test Pyramid (Unit testing)
+        // S14: Write tests and follow TDD discipline
+        // S17: Code in a general-purpose programming language (Python tests)
         withCredentials([
           usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
         ]) {
@@ -359,7 +359,7 @@ EOF
           # The Dockerfile is at the repository root, so build from the workspace root.
           # Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
           echo "Building Docker image ${IMAGE_TAG}..."
-          docker.build(IMAGE_TAG, '.') # Explicitly set build context to current directory (repo root)
+          docker.build(IMAGE_TAG, '.') // Explicitly set build context to current directory (repo root)
           echo "Docker image built successfully."
         }
       }
@@ -398,7 +398,7 @@ EOF
           echo "Pushing Docker image ${IMAGE_TAG} to Docker Hub..."
           docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
             docker.image(IMAGE_TAG).push()
-            docker.image(IMAGE_TAG).push('latest') # Optional: push as latest for easier pulling
+            docker.image(IMAGE_TAG).push('latest') // Optional: push as latest for easier pulling
           }
           echo "Docker image pushed successfully."
         }
@@ -412,15 +412,15 @@ EOF
             string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
             string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-            # Reverted to azure_subscription_id (underscore)
+            // Reverted to azure_subscription_id (underscore)
             string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
           ]) {
-            # K15: Continuous Delivery/Deployment (Automated deployment)
-            # K8: Immutable infrastructure (Deploying container image)
-            # S5: Deploy immutable infrastructure
-            # S12: Automate tasks (Azure CLI deployment)
-            # Note: This deploys the console app in a container. For an API-based app,
-            # the application code itself would need refactoring to expose an API.
+            // K15: Continuous Delivery/Deployment (Automated deployment)
+            // K8: Immutable infrastructure (Deploying container image)
+            // S5: Deploy immutable infrastructure
+            // S12: Automate tasks (Azure CLI deployment)
+            // Note: This deploys the console app in a container. For an API-based app,
+            // the application code itself would need refactoring to expose an API.
             sh """
               echo "Logging into Azure..."
               az login --service-principal -u "${AZURE_CLIENT_ID}" -p "${AZURE_CLIENT_SECRET}" --tenant "${AZURE_TENANT_ID}"
@@ -457,8 +457,8 @@ EOF
 
   post {
     always {
-      # K1: Continuous Integration (Ensuring all tests pass)
-      junit 'test-results/*.xml' # Corrected path for JUnit reports
+      // K1: Continuous Integration (Ensuring all tests pass)
+      junit 'test-results/*.xml' // Corrected path for JUnit reports
       cleanWs()
     }
   }
