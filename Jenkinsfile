@@ -101,39 +101,46 @@ pipeline {
         }
 
         stage('Deploy Infrastructure (Terraform)') {
-            steps {
-                script {
-                    dir('infra/terraform') {
-                        withCredentials([
-                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TF', passwordVariable: 'DB_PASSWORD_TF'),
-                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
-                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
-                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-                            string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
-                        ]) {
-                            sh """
-                                export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
-                                export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
-                                export ARM_TENANT_ID="${AZURE_TENANT_ID}"
-                                export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
-
-                                export TF_VAR_db_user="${DB_USER_TF}"
-                                export TF_VAR_db_password="${DB_PASSWORD_TF}"
-
-                                terraform init -backend-config="resource_group_name=MyPatientSurveyRG" -backend-config="storage_account_name=mypatientsurveytfstate" -backend-config="container_name=tfstate" -backend-config="key=patient_survey.tfstate"
-                                terraform plan -out=tfplan.out -var="db_user=\${TF_VAR_db_user}" -var="db_password=\${TF_VAR_db_password}"
-                                terraform apply -auto-approve tfplan.out
-                            """
-                            def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
-                            env.DB_HOST = sqlServerFqdn
-                            env.DB_USER = DB_USER_TF
-                            env.DB_PASSWORD = DB_PASSWORD_TF
-                        }
-                    }
+          steps {
+            script {
+              dir('infra/terraform') {
+                withCredentials([
+                  usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TF', passwordVariable: 'DB_PASSWORD_TF'),
+                  string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
+                  string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
+                  string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
+                  string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
+                ]) {
+                  sh """
+                    export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
+                    export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
+                    export ARM_TENANT_ID="${AZURE_TENANT_ID}"
+                    export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
+                    export TF_VAR_db_user="${DB_USER_TF}"
+                    export TF_VAR_db_password="${DB_PASSWORD_TF}"
+        
+                    # Initialize Terraform
+                    terraform init -backend-config="resource_group_name=MyPatientSurveyRG" \\
+                                  -backend-config="storage_account_name=mypatientsurveytfstate" \\
+                                  -backend-config="container_name=tfstate" \\
+                                  -backend-config="key=patient_survey.tfstate"
+        
+                    # Import existing SQL server
+                    terraform import azurerm_mssql_server.sql_server /subscriptions/${AZURE_SUBSCRIPTION_ID_VAR}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/patientsurveysql5163
+        
+                    # Plan and apply
+                    terraform plan -out=tfplan.out
+                    terraform apply -auto-approve tfplan.out
+                  """
+                  def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
+                  env.DB_HOST = sqlServerFqdn
+                  env.DB_USER = DB_USER_TF
+                  env.DB_PASSWORD = DB_PASSWORD_TF
                 }
+              }
             }
+          }
         }
-
         stage('Create .env File') {
             steps {
                 sh '''
