@@ -367,13 +367,12 @@ EOF
 
     stage('Container Scan') {
       steps {
-        # K5: Modern security tools (Trivy)
-        # S9: Application of cloud security tools into automated pipeline
+        // K5: Modern security tools (Trivy)
+        // S9: Application of cloud security tools into automated pipeline
         sh """
           #!/usr/bin/env bash
-          set -ex
-
-          echo "Installing Trivy..."
+          set -e
+          # install trivy if missing
           if ! command -v trivy &>/dev/null; then
             timeout 5m curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \\
               | bash -s -- -b "\$HOME/.local/bin"
