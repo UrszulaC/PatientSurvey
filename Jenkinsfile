@@ -1,5 +1,5 @@
 // Define all credential IDs at the top for consistency
-def AZURE_CREDENTIALS_ID = 'azure-service-principal'  // Name this whatever matches your Jenkins credentials
+def AZURE_CREDENTIALS_ID = 'AZURE_CLIENT_ID'  // Name this whatever matches your Jenkins credentials
 def DB_CREDENTIALS_ID = 'db-creds'
 def AZURE_TENANT_ID_CREDENTIAL = 'AZURE_TENANT_ID'
 def AZURE_SUBSCRIPTION_ID_CREDENTIAL = 'azure_subscription_id'
