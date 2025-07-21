@@ -133,7 +133,7 @@ pipeline {
           # --- END CRITICAL FIX ---
 
           # Download Prometheus (adjust version as needed)
-          PROMETHEUS_VERSION="2.53.0" # Check for latest stable version
+          PROMETHEUS_VERSION="2.53.0" // Check for latest stable version
           wget https://github.com/prometheus/prometheus/releases/download/v\${PROMETHEUS_VERSION}/prometheus-\${PROMETHEUS_VERSION}.linux-amd64.tar.gz -O /tmp/prometheus.tar.gz
 
           # Extract and move to /usr/local/bin
@@ -226,7 +226,7 @@ EOF
     stage('Deploy Infrastructure (Terraform)') {
       steps {
         script {
-          dir('infra/terraform') { # Correct path for Terraform files
+          dir('infra/terraform') { // Correct path for Terraform files
             withCredentials([
               usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TF', passwordVariable: 'DB_PASSWORD_TF'), // Renamed for clarity
               string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
@@ -242,12 +242,12 @@ EOF
                 export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
 
                 # Export DB credentials for Terraform - these are sensitive variables for Terraform
-                export TF_VAR_db_user="${DB_USER_TF}" # Use TF_VAR_ prefix for Terraform variables
-                export TF_VAR_db_password="${DB_PASSWORD_TF}" # Use TF_VAR_ prefix for Terraform variables
+                export TF_VAR_db_user="${DB_USER_TF}" // Use TF_VAR_ prefix for Terraform variables
+                export TF_VAR_db_password="${DB_PASSWORD_TF}" // Use TF_VAR_ prefix for Terraform variables
 
                 # Terraform commands
                 terraform init -backend-config="resource_group_name=MyPatientSurveyRG" -backend-config="storage_account_name=mypatientsurveytfstate" -backend-config="container_name=tfstate" -backend-config="key=patient_survey.tfstate"
-                terraform plan -out=tfplan.out -var="db_user=\${TF_VAR_db_user}" -var="db_password=\${TF_VAR_db_password}" # Pass as -var
+                terraform plan -out=tfplan.out -var="db_user=\${TF_VAR_db_user}" -var="db_password=\${TF_VAR_db_password}" // Pass as -var
                 terraform apply -auto-approve tfplan.out
               """
               def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
@@ -269,14 +269,14 @@ EOF
         // Now using env.DB_USER and env.DB_PASSWORD directly
         sh '''
           echo "DB_HOST=${DB_HOST}" > app/.env
-          echo "DB_USER=${DB_USER}" >> app/.env # Use env.DB_USER
-          echo "DB_PASSWORD=${DB_PASSWORD}" >> app/.env # Use env.DB_PASSWORD
+          echo "DB_USER=${DB_USER}" >> app/.env // Use env.DB_USER
+          echo "DB_PASSWORD=${DB_PASSWORD}" >> app/.env // Use env.DB_PASSWORD
           echo "DB_NAME=${DB_NAME}" >> app/.env
 
-          # NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
+          // NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
           echo "Creating __init__.py files..."
-          touch app/__init__.py # Makes 'app' a package
-          touch app/utils/__init__.py # Makes 'utils' a subpackage within 'app'
+          touch app/__init__.py // Makes 'app' a package
+          touch app/utils/__init__.py // Makes 'utils' a subpackage within 'app'
           echo "__init__.py files created."
         '''
       }
@@ -293,50 +293,50 @@ EOF
           export DEBIAN_FRONTEND=noninteractive
           export TZ=Etc/UTC
 
-          # --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
+          // --- CRITICAL FIX: Clean up APT locks and configure dpkg before any apt-get operation ---
           sudo rm -f /var/lib/apt/lists/lock
           sudo rm -f /var/cache/apt/archives/lock
           sudo rm -f /var/lib/dpkg/lock-frontend
           sudo dpkg --configure -a # Fix any broken packages
-          # --- END CRITICAL FIX ---
+          // --- END CRITICAL FIX ---
 
-          # 1. Install prerequisites for adding Microsoft repositories
+          // 1. Install prerequisites for adding Microsoft repositories
           sudo apt-get update
-          # CRITICAL FIX: Install python3-pip and python3-venv here
+          // CRITICAL FIX: Install python3-pip and python3-venv here
           sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
 
-          # CRITICAL FIX: Remove existing microsoft-prod.gpg key file to prevent "File exists" error
+          // CRITICAL FIX: Remove existing microsoft-prod.gpg key file to prevent "File exists" error
           sudo rm -f /usr/share/keyrings/microsoft-prod.gpg
-          # 2. Import the Microsoft GPG key
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg # Added --batch
+          // 2. Import the Microsoft GPG key
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg // Added --batch
 
-          # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
+          // 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
           echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \\
           | sudo tee /etc/apt/sources.list.d/mssql-release.list
 
-          # 4. Update apt-get cache and install the ODBC driver
+          // 4. Update apt-get cache and install the ODBC driver
           sudo apt-get update
-          # CRITICAL FIX: Pipe 'yes' directly to the install command to accept EULA
+          // CRITICAL FIX: Pipe 'yes' directly to the install command to accept EULA
           yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
 
           echo "ODBC Driver installation complete."
 
-          # Now, proceed with Python dependencies
+          // Now, proceed with Python dependencies
           python3 --version
           pip3 install --upgrade pip
-          pip install -r requirements.txt # Corrected path to requirements.txt
+          pip install -r requirements.txt // Corrected path to requirements.txt
         """
       }
     }
 
     stage('Security Scan') {
       steps {
-        dir('app') { # Assuming app files are in 'app/' directory for Bandit scan context
-          # K5: Modern security tools (Bandit, Pip-audit)
-          # S9: Application of cloud security tools into automated pipeline
+        dir('app') { // Assuming app files are in 'app/' directory for Bandit scan context
+          // K5: Modern security tools (Bandit, Pip-audit)
+          // S9: Application of cloud security tools into automated pipeline
           sh """
             #!/usr/bin/env bash
-            set -ex # Added -x for debugging output, and -e for exiting on error
+            set -ex // Added -x for debugging output, and -e for exiting on error
 
             echo "Installing security tools (bandit, pip-audit)..."
             timeout 5m python3 -m pip install --user bandit pip-audit
@@ -346,11 +346,11 @@ EOF
             echo "PATH updated: $PATH"
 
             echo "Running static code analysis with Bandit..."
-            bandit -r . -lll # Scan current directory (app/)
+            bandit -r . -lll // Scan current directory (app/)
             echo "Bandit scan complete."
 
             echo "Running dependency audit with pip-audit..."
-            timeout 5m pip-audit -r ../requirements.txt --verbose # Corrected path to requirements.txt
+            timeout 5m pip-audit -r ../requirements.txt --verbose // Corrected path to requirements.txt
             echo "pip-audit complete."
           """
         }
@@ -365,17 +365,17 @@ EOF
         // Using env.DB_USER and env.DB_PASSWORD directly as they are now global
         sh '''
           export PATH=$HOME/.local/bin:$PATH
-          export DB_USER=${env.DB_USER} # Use env.DB_USER
-          export DB_PASSWORD=${env.DB_PASSWORD} # Use env.DB_PASSWORD
-          # Ensure the workspace root is in PYTHONPATH for module discovery
+          export DB_USER=${env.DB_USER} // Use env.DB_USER
+          export DB_PASSWORD=${env.DB_PASSWORD} // Use env.DB_PASSWORD
+          // Ensure the workspace root is in PYTHONPATH for module discovery
           export PYTHONPATH=.:$PYTHONPATH
           echo "PYTHONPATH updated: $PYTHONPATH"
 
-          # Ensure tests/ is a Python package for discovery
-          mkdir -p tests # Ensure tests directory exists at root
-          touch tests/__init__.py # Make 'tests' a package
+          // Ensure tests/ is a Python package for discovery
+          mkdir -p tests // Ensure tests directory exists at root
+          touch tests/__init__.py // Make 'tests' a package
 
-          # Discover tests in the 'tests' directory at the workspace root
+          // Discover tests in the 'tests' directory at the workspace root
           python3 -m xmlrunner discover -s tests -o test-results
         '''
       }
@@ -398,7 +398,7 @@ EOF
         sh """
           #!/usr/bin/env bash
           set -e
-          # install trivy if missing
+          // install trivy if missing
           if ! command -v trivy &>/dev/null; then
             timeout 5m curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \\
               | bash -s -- -b "\$HOME/.local/bin"
@@ -451,9 +451,9 @@ EOF
               az login --service-principal -u "${AZURE_CLIENT_ID}" -p "${AZURE_CLIENT_SECRET}" --tenant "${AZURE_TENANT_ID}"
               az account set --subscription "${AZURE_SUBSCRIPTION_ID_VAR}"
 
-              RESOURCE_GROUP_NAME="MyPatientSurveyRG" # Assuming this RG is managed by Terraform
+              RESOURCE_GROUP_NAME="MyPatientSurveyRG" // Assuming this RG is managed by Terraform
               ACI_NAME="patientsurvey-app-${env.BUILD_NUMBER}"
-              ACI_LOCATION="uksouth" # Adjust as per your Azure region
+              ACI_LOCATION="uksouth" // Adjust as per your Azure region
 
               echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
 
@@ -483,7 +483,7 @@ EOF
   post {
     always {
       # K1: Continuous Integration (Ensuring all tests pass)
-      junit 'test-results/*.xml' # Corrected path for JUnit reports
+      junit 'test-results/*.xml' // Corrected path for JUnit reports
       cleanWs()
     }
   }
