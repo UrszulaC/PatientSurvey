@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 import unittest
-import pyodbc # Changed from mysql.connector
+import pyodbc
 from unittest.mock import patch, MagicMock
 from app.config import Config
 from app.utils.db_utils import get_db_connection # Import get_db_connection
