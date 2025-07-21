@@ -8,7 +8,7 @@ pipeline {
   }
 
   options {
-    timeout(time: 25, unit: 'MINUTES') # Increased timeout for more installations
+    timeout(time: 25, unit: 'MINUTES') // Increased timeout for more installations
   }
 
   stages {
@@ -18,7 +18,7 @@ pipeline {
       }
     }
 
-    # NEW STAGE: Install Terraform
+    // NEW STAGE: Install Terraform
     stage('Install Terraform') {
       steps {
         sh """
@@ -65,7 +65,7 @@ pipeline {
       }
     }
 
-    # NEW STAGE: Install Docker
+    // NEW STAGE: Install Docker
     stage('Install Docker') {
       steps {
         sh """
@@ -117,7 +117,7 @@ pipeline {
       }
     }
 
-    # NEW STAGE: Install Prometheus and Grafana
+    // NEW STAGE: Install Prometheus and Grafana
     stage('Install Monitoring Tools') {
       steps {
         sh """
@@ -220,15 +220,15 @@ EOF
       }
     }
 
-    # Removed: Install Azure CLI stage, as per user's request to manage outside Jenkinsfile.
-    # The resource group 'MyPatientSurveyRG' is now manually created.
+    // Removed: Install Azure CLI stage, as per user's request to manage outside Jenkinsfile.
+    // The resource group 'MyPatientSurveyRG' is now manually created.
 
     stage('Deploy Infrastructure (Terraform)') {
       steps {
         script {
-          dir('infra/terraform') { # Correct path for Terraform files
+          dir('infra/terraform') { // Correct path for Terraform files
             withCredentials([
-              usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TF', passwordVariable: 'DB_PASSWORD_TF'), # Renamed for clarity
+              usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TF', passwordVariable: 'DB_PASSWORD_TF'), // Renamed for clarity
               string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
               string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
               string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
@@ -252,7 +252,7 @@ EOF
               """
               def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
               env.DB_HOST = sqlServerFqdn
-              # Set DB_USER and DB_PASSWORD as global pipeline environment variables
+              // Set DB_USER and DB_PASSWORD as global pipeline environment variables
               env.DB_USER = DB_USER_TF
               env.DB_PASSWORD = DB_PASSWORD_TF
               echo "Database Host FQDN: ${env.DB_HOST}"
@@ -265,18 +265,18 @@ EOF
 
     stage('Create .env File') {
       steps {
-        # Operate from the workspace root to correctly create package __init__.py files
-        # Now using env.DB_USER and env.DB_PASSWORD directly
+        // Operate from the workspace root to correctly create package __init__.py files
+        // Now using env.DB_USER and env.DB_PASSWORD directly
         sh '''
           echo "DB_HOST=${DB_HOST}" > app/.env
           echo "DB_USER=${DB_USER}" >> app/.env # Use env.DB_USER
           echo "DB_PASSWORD=${DB_PASSWORD}" >> app/.env # Use env.DB_PASSWORD
           echo "DB_NAME=${DB_NAME}" >> app/.env
 
-          # NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
+          // NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
           echo "Creating __init__.py files..."
-          touch app/__init__.py # Makes 'app' a package
-          touch app/utils/__init__.py # Makes 'utils' a subpackage within 'app'
+          touch app/__init__.py // Makes 'app' a package
+          touch app/utils/__init__.py // Makes 'utils' a subpackage within 'app'
           echo "__init__.py files created."
         '''
       }
@@ -331,9 +331,9 @@ EOF
 
     stage('Security Scan') {
       steps {
-        dir('app') { # Assuming app files are in 'app/' directory for Bandit scan context
-          # K5: Modern security tools (Bandit, Pip-audit)
-          # S9: Application of cloud security tools into automated pipeline
+        dir('app') { // Assuming app files are in 'app/' directory for Bandit scan context
+          // K5: Modern security tools (Bandit, Pip-audit)
+          // S9: Application of cloud security tools into automated pipeline
           sh """
             #!/usr/bin/env bash
             set -ex # Added -x for debugging output, and -e for exiting on error
@@ -359,10 +359,10 @@ EOF
 
     stage('Run Tests') {
       steps {
-        # K14: Test Driven Development and Test Pyramid (Unit testing)
-        # S14: Write tests and follow TDD discipline
-        # S17: Code in a general-purpose programming language (Python tests)
-        # Using env.DB_USER and env.DB_PASSWORD directly as they are now global
+        // K14: Test Driven Development and Test Pyramid (Unit testing)
+        // S14: Write tests and follow TDD discipline
+        // S17: Code in a general-purpose programming language (Python tests)
+        // Using env.DB_USER and env.DB_PASSWORD directly as they are now global
         sh '''
           export PATH=$HOME/.local/bin:$PATH
           export DB_USER=${env.DB_USER} # Use env.DB_USER
@@ -384,10 +384,10 @@ EOF
     stage('Build Docker Image') {
       steps {
         script {
-          # The Dockerfile is at the repository root, so build from the workspace root.
-          # Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
+          // The Dockerfile is at the repository root, so build from the workspace root.
+          // Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
           echo "Building Docker image ${IMAGE_TAG}..."
-          docker.build(IMAGE_TAG, '.') # Explicitly set build context to current directory (repo root)
+          docker.build(IMAGE_TAG, '.') // Explicitly set build context to current directory (repo root)
           echo "Docker image built successfully."
         }
       }
@@ -418,14 +418,11 @@ EOF
     stage('Push Docker Image') {
       steps {
         script {
-          # K1: Continuous Integration (Build artifacts)
-          # K15: Continuous Integration/Delivery/Deployment principles
-          echo "Pushing Docker image ${IMAGE_TAG} to Docker Hub..."
+          // Push Docker image from the workspace root
           docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
             docker.image(IMAGE_TAG).push()
-            docker.image(IMAGE_TAG).push('latest') # Optional: push as latest for easier pulling
+            docker.image(IMAGE_TAG).push('latest') // Optional: push as latest for easier pulling
           }
-          echo "Docker image pushed successfully."
         }
       }
     }
@@ -438,7 +435,7 @@ EOF
             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
             string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
             string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
-            # Removed: usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_DEPLOY', passwordVariable: 'DB_PASSWORD_DEPLOY')
+            // Removed: usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_DEPLOY', passwordVariable: 'DB_PASSWORD_DEPLOY')
           ]) {
             # K15: Continuous Delivery/Deployment (Automated deployment)
             # K8: Immutable infrastructure (Deploying container image)
@@ -482,8 +479,8 @@ EOF
 
   post {
     always {
-      //# K1: Continuous Integration (Ensuring all tests pass)
-      junit 'test-results/*.xml' # Corrected path for JUnit reports
+      // K1: Continuous Integration (Ensuring all tests pass)
+      junit 'test-results/*.xml' // Corrected path for JUnit reports
       cleanWs()
     }
   }
