@@ -220,7 +220,8 @@ pipeline {
                 string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID_VAR'),
                 string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET_VAR'),
                 string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID_VAR'),
-                string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
+                string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR'),
+                usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD') // Add Docker Hub credentials
             ]) {
               sh '''
                 set -e
@@ -243,6 +244,9 @@ pipeline {
                     --restart-policy Always \\
                     --location $ACI_LOCATION \\
                     --environment-variables DB_HOST=${DB_HOST} DB_USER=${DB_USER} DB_PASSWORD=${DB_PASSWORD} DB_NAME=${DB_NAME} \\
+                    --registry-login-server index.docker.io \\
+                    --registry-username "${DOCKER_USERNAME}" \\
+                    --registry-password "${DOCKER_PASSWORD}" \\
                     --no-wait
     
                 echo "Azure Container Instance deployment initiated."
@@ -252,7 +256,6 @@ pipeline {
           }
         }
       }
-    
 
     post {
         always {
