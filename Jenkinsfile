@@ -416,29 +416,6 @@ EOF
         """
       }
     }
-
-    stage('Push Docker Image') {
-      steps {
-        script {
-          // Push Docker image from the workspace root
-          docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-            docker.image(IMAGE_TAG).push()
-            docker.image(IMAGE_TAG).push('latest') // Optional: push as latest for easier pulling
-          }
-        }
-      }
-    }
-    stage('Install Azure CLI') {
-      steps {
-        sh '''
-          # Install Azure CLI
-          echo "Installing Azure CLI..."
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-          echo "Azure CLI installed successfully."
-          az --version
-        '''
-      }
-    }
     stage('Deploy Application (Azure Container Instances)') {
       steps {
         withCredentials([
@@ -475,6 +452,29 @@ EOF
         }
       }
     }
+    stage('Push Docker Image') {
+      steps {
+        script {
+          // Push Docker image from the workspace root
+          docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
+            docker.image(IMAGE_TAG).push()
+            docker.image(IMAGE_TAG).push('latest') // Optional: push as latest for easier pulling
+          }
+        }
+      }
+    }
+    stage('Install Azure CLI') {
+      steps {
+        sh '''
+          # Install Azure CLI
+          echo "Installing Azure CLI..."
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          echo "Azure CLI installed successfully."
+          az --version
+        '''
+      }
+    }
+    
   post {
     always {
       // K1: Continuous Integration (Ensuring all tests pass)
@@ -483,4 +483,4 @@ EOF
     }
   }
 }
-}
+
