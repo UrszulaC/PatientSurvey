@@ -72,42 +72,57 @@ pipeline {
     }
 
     stage('Install Dependencies') {
-      steps {
-        sh """
-          #!/usr/bin/env bash
-          set -e
-
-          echo "Installing ODBC Driver for SQL Server..."
-
-          export DEBIAN_FRONTEND=noninteractive
-          export TZ=Etc/UTC
-
-          # Pre-seed license acceptance for msodbcsql17
-          echo "msodbcsql17 msodbcsql/accept-eula boolean true" | sudo debconf-set-selections
-
-          # 1. Install prerequisites for adding Microsoft repositories
-          sudo apt-get update
-          sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring
-
-          # 2. Import the Microsoft GPG key
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-
-          # 3. Add the Microsoft SQL Server repository (adjust for your Ubuntu version if not 22.04)
-          echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
-          | sudo tee /etc/apt/sources.list.d/mssql-release.list
-
-          # 4. Update apt-get cache and install the ODBC driver
-          sudo apt-get update
-          sudo apt-get install -y msodbcsql17 unixodbc-dev
-
-          echo "ODBC Driver installation complete."
-
-          # Now, proceed with Python dependencies
-          python3 --version
-          pip3 install --upgrade pip
-          pip install -r requirements.txt
-        """
-      }
+        steps {
+            sh '''
+                #!/usr/bin/env bash
+                set -e
+                
+                echo "Installing ODBC Driver for SQL Server..."
+                export DEBIAN_FRONTEND=noninteractive
+                export TZ=Etc/UTC
+    
+                # Fix for GPG tty error
+                export GPG_TTY=$(tty)
+                
+                # Clean up any locks
+                sudo rm -f /var/lib/apt/lists/lock
+                sudo rm -f /var/cache/apt/archives/lock
+                sudo rm -f /var/lib/dpkg/lock*
+                sudo dpkg --configure -a
+    
+                # Install prerequisites
+                sudo apt-get update
+                sudo apt-get install -y --no-install-recommends \
+                    apt-transport-https \
+                    curl \
+                    gnupg \
+                    debian-archive-keyring
+    
+                # Add Microsoft GPG key (with error handling)
+                echo "Adding Microsoft GPG key..."
+                if ! curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg; then
+                    echo "Failed to add Microsoft GPG key. Trying alternative approach..."
+                    sudo apt-get install -y wget
+                    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor --batch -o /usr/share/keyrings/microsoft-prod.gpg
+                fi
+    
+                # Add MSSQL repository
+                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | \
+                    sudo tee /etc/apt/sources.list.d/mssql-release.list
+    
+                # Install ODBC driver
+                echo "Installing ODBC driver..."
+                sudo apt-get update
+                echo "msodbcsql17 msodbcsql/accept-eula boolean true" | sudo debconf-set-selections
+                sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
+    
+                # Install Python dependencies
+                echo "Installing Python dependencies..."
+                python3 --version
+                pip3 install --upgrade pip
+                pip install -r requirements.txt
+            '''
+        }
     }
 
     stage('Security Scan') {
