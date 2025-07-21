@@ -171,11 +171,12 @@ def create_survey_tables(conn):
 from app.utils.db_utils import with_db_connection # Ensure this import is here
 
 @with_db_connection
-def conduct_survey(conn):
+def conduct_survey(conn): # Removed `conn` from here, as it's passed by decorator
     """Conduct the survey and store responses"""
     try:
-        start_time = time.time()  # Starting timer
         cursor = conn.cursor()
+        start_time = time.time()  # Starting timer
+        
         # Removed: cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
         # SELECT survey_id (index 0)
@@ -258,7 +259,7 @@ def conduct_survey(conn):
         raise
 
 @with_db_connection
-def view_responses(conn):
+def view_responses(conn): # Removed `conn` from here, as it's passed by decorator
     """View all survey responses"""
     try:
         cursor = conn.cursor()
@@ -367,3 +368,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
