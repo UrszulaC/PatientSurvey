@@ -428,57 +428,53 @@ EOF
         }
       }
     }
-
+    stage('Install Azure CLI') {
+      steps {
+        sh '''
+          # Install Azure CLI
+          echo "Installing Azure CLI..."
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          echo "Azure CLI installed successfully."
+          az --version
+        '''
+      }
+    }
     stage('Deploy Application (Azure Container Instances)') {
       steps {
-        script {
-          withCredentials([
-            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
-            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
-            string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-            string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
-            // Removed: usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_DEPLOY', passwordVariable: 'DB_PASSWORD_DEPLOY')
-          ]) {
-            // K15: Continuous Delivery/Deployment (Automated deployment)
-            // K8: Immutable infrastructure (Deploying container image)
-            // S5: Deploy immutable infrastructure
-            // S12: Automate tasks (Azure CLI deployment)
-            // Note: This deploys the console app in a container. For an API-based app,
-            // the application code itself would need refactoring to expose an API.
-            sh """
-              echo "Logging into Azure..."
-              az login --service-principal -u "${AZURE_CLIENT_ID}" -p "${AZURE_CLIENT_SECRET}" --tenant "${AZURE_TENANT_ID}"
-              az account set --subscription "${AZURE_SUBSCRIPTION_ID_VAR}"
-
-              RESOURCE_GROUP_NAME="MyPatientSurveyRG" # Assuming this RG is managed by Terraform
-              ACI_NAME="patientsurvey-app-${env.BUILD_NUMBER}"
-              ACI_LOCATION="uksouth" # Adjust as per your Azure region
-
-              echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
-
-              az container create \\
-                --resource-group \$RESOURCE_GROUP_NAME \\
-                --name \$ACI_NAME \\
-                --image ${IMAGE_TAG} \\
-                --os-type Linux \\
-                --cpu 1 \\
-                --memory 1.5 \\
-                --restart-policy Always \\
-                --location \$ACI_LOCATION \\
-                --environment-variables DB_HOST=${env.DB_HOST} DB_USER=${env.DB_USER} DB_PASSWORD=${env.DB_PASSWORD} DB_NAME=${env.DB_NAME} \\
-                --no-wait # Do not wait for deployment to complete to speed up pipeline
-
-              echo "Azure Container Instance deployment initiated. Check Azure portal for status."
-
-              echo "Logging out of Azure..."
-              az logout
-            """
-          }
+        withCredentials([
+          usernamePassword(credentialsId: 'AZURE_CREDS', usernameVariable: 'AZURE_CLIENT_ID', passwordVariable: 'AZURE_CLIENT_SECRET'),
+          string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
+          string(credentialsId: 'AZURE_SUBSCRIPTION_ID', variable: 'AZURE_SUBSCRIPTION_ID')
+        ]) {
+          sh '''
+            echo "Logging into Azure..."
+            az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
+            az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+    
+            RESOURCE_GROUP_NAME="MyPatientSurveyRG"
+            ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+            ACI_LOCATION="uksouth"
+    
+            echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
+    
+            az container create \
+              --resource-group $RESOURCE_GROUP_NAME \
+              --name $ACI_NAME \
+              --image ${IMAGE_TAG} \
+              --os-type Linux \
+              --cpu 1 \
+              --memory 1.5 \
+              --restart-policy Always \
+              --location $ACI_LOCATION \
+              --environment-variables DB_HOST=${DB_HOST} DB_USER=${DB_USER} DB_PASSWORD=${DB_PASSWORD} DB_NAME=${DB_NAME} \
+              --no-wait
+    
+            echo "Azure Container Instance deployment initiated."
+            az logout
+          '''
         }
       }
     }
-  }
-
   post {
     always {
       // K1: Continuous Integration (Ensuring all tests pass)
