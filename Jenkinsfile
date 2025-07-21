@@ -272,8 +272,8 @@ EOF
           echo "DB_USER=${DB_USER}" >> app/.env # Use env.DB_USER
           echo "DB_PASSWORD=${DB_PASSWORD}" >> app/.env # Use env.DB_PASSWORD
           echo "DB_NAME=${DB_NAME}" >> app/.env
-
-          // NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
+    
+          # NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
           echo "Creating __init__.py files..."
           touch app/__init__.py # Makes 'app' a package
           touch app/utils/__init__.py # Makes 'utils' a subpackage within 'app'
