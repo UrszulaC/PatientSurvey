@@ -356,8 +356,8 @@ EOF
     stage('Build Docker Image') {
       steps {
         script {
-          # The Dockerfile is at the repository root, so build from the workspace root.
-          # Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
+          // The Dockerfile is at the repository root, so build from the workspace root.
+          // Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
           echo "Building Docker image ${IMAGE_TAG}..."
           docker.build(IMAGE_TAG, '.') // Explicitly set build context to current directory (repo root)
           echo "Docker image built successfully."
@@ -393,8 +393,8 @@ EOF
     stage('Push Docker Image') {
       steps {
         script {
-          # K1: Continuous Integration (Build artifacts)
-          # K15: Continuous Integration/Delivery/Deployment principles
+          // K1: Continuous Integration (Build artifacts)
+          // K15: Continuous Integration/Delivery/Deployment principles
           echo "Pushing Docker image ${IMAGE_TAG} to Docker Hub..."
           docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
             docker.image(IMAGE_TAG).push()
