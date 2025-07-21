@@ -267,18 +267,18 @@ EOF
       steps {
         // Operate from the workspace root to correctly create package __init__.py files
         // Now using env.DB_USER and env.DB_PASSWORD directly
-        sh '''
-          echo "DB_HOST=${DB_HOST}" > app/.env
-          echo "DB_USER=${DB_USER}" >> app/.env # Use env.DB_USER
-          echo "DB_PASSWORD=${DB_PASSWORD}" >> app/.env # Use env.DB_PASSWORD
-          echo "DB_NAME=${DB_NAME}" >> app/.env
-    
+        sh """
+          echo "DB_HOST=${env.DB_HOST}" > app/.env
+          echo "DB_USER=${env.DB_USER}" >> app/.env # Use env.DB_USER
+          echo "DB_PASSWORD=${env.DB_PASSWORD}" >> app/.env # Use env.DB_PASSWORD
+          echo "DB_NAME=${env.DB_NAME}" >> app/.env
+
           # NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
           echo "Creating __init__.py files..."
           touch app/__init__.py # Makes 'app' a package
           touch app/utils/__init__.py # Makes 'utils' a subpackage within 'app'
           echo "__init__.py files created."
-        '''
+        """
       }
     }
 
@@ -363,7 +363,7 @@ EOF
         // S14: Write tests and follow TDD discipline
         // S17: Code in a general-purpose programming language (Python tests)
         // Using env.DB_USER and env.DB_PASSWORD directly as they are now global
-        sh '''
+        sh """
           export PATH=$HOME/.local/bin:$PATH
           export DB_USER=${env.DB_USER} # Use env.DB_USER
           export DB_PASSWORD=${env.DB_PASSWORD} # Use env.DB_PASSWORD
@@ -377,7 +377,7 @@ EOF
 
           # Discover tests in the 'tests' directory at the workspace root
           python3 -m xmlrunner discover -s tests -o test-results
-        '''
+        """
       }
     }
 
@@ -485,3 +485,4 @@ EOF
     }
   }
 }
+
