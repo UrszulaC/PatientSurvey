@@ -186,27 +186,31 @@ pipeline {
 
         stage('Run Tests') {
           steps {
-            sh '''
-              export PATH=$HOME/.local/bin:$PATH
-              export DB_USER=${DB_USER}
-              export DB_PASSWORD=${DB_PASSWORD}
-              
-              # Initialize PYTHONPATH if not set
-              if [ -z "$PYTHONPATH" ]; then
-                  export PYTHONPATH=.
-              else
-                  export PYTHONPATH=.:$PYTHONPATH
-              fi
-              
-              echo "PYTHONPATH set to: $PYTHONPATH"
-        
-              # Ensure tests/ is a Python package for discovery
-              mkdir -p tests
-              touch tests/__init__.py
-        
-              # Discover and run tests
-              python3 -m xmlrunner discover -s tests -o test-results
-            '''
+            script {
+              withEnv(["PATH+LOCAL=${env.HOME}/.local/bin:${env.PATH}"]) {
+                sh '''
+                  # Set database credentials
+                  export DB_USER=''' + env.DB_USER + '''
+                  export DB_PASSWORD=''' + env.DB_PASSWORD + '''
+                  
+                  # Set Python path
+                  if [ -z "$PYTHONPATH" ]; then
+                      export PYTHONPATH=.
+                  else
+                      export PYTHONPATH=.:$PYTHONPATH
+                  fi
+                  
+                  echo "PYTHONPATH set to: $PYTHONPATH"
+                  
+                  # Setup tests package
+                  mkdir -p tests
+                  touch tests/__init__.py
+                  
+                  # Run tests
+                  python3 -m xmlrunner discover -s tests -o test-results
+                '''
+              }
+            }
           }
         }
 
