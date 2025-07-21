@@ -212,7 +212,27 @@ pipeline {
                 }
             }
         }
-
+        stage('Verify Credentials') {
+          steps {
+            script {
+              def creds = [
+                'db-creds',
+                'AZURE_CREDS',
+                'AZURE_TENANT_ID', 
+                'azure_subscription_id'
+              ]
+              creds.each { cred ->
+                try {
+                  withCredentials([string(credentialsId: cred, variable: 'TEST')]) {
+                    echo "Found credential: ${cred}"
+                  }
+                } catch(e) {
+                  echo "Missing credential: ${cred}"
+                }
+              }
+            }
+          }
+        }
         stage('Deploy Application (Azure Container Instances)') {
             steps {
                 withCredentials([
