@@ -1,4 +1,3 @@
-
 import logging
 import json
 import time
@@ -80,14 +79,6 @@ def create_survey_tables(conn):
                 FOREIGN KEY (question_id) REFERENCES questions(question_id) ON DELETE NO ACTION
             )
         """)
-
-        # REMOVED CRITICAL FIX: Grant permissions to the DB_USER on the newly created database
-        # This is removed because the DB_USER (adminuser) is the server admin and implicitly
-        # becomes the dbo of the newly created database, making these explicit grants redundant
-        # and causing the "login already has an account with the user name 'dbo'" error.
-        # cursor.execute(f"IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '{Config.DB_USER}') CREATE USER [{Config.DB_USER}] FOR LOGIN [{Config.DB_USER}]")
-        # cursor.execute(f"ALTER ROLE db_owner ADD MEMBER [{Config.DB_USER}]") # Grant db_owner for simplicity during debug
-
 
         survey_id = None # Initialize survey_id
 
@@ -176,8 +167,11 @@ def create_survey_tables(conn):
         logger.error(f"General initialization failed: {e}")
         raise
 
-# Removed @with_db_connection decorator
-def conduct_survey(conn): # Now explicitly accepts conn
+# Use the decorator for conduct_survey and view_responses
+from app.utils.db_utils import with_db_connection # Ensure this import is here
+
+@with_db_connection
+def conduct_survey(conn):
     """Conduct the survey and store responses"""
     try:
         start_time = time.time()  # Starting timer
@@ -234,18 +228,7 @@ def conduct_survey(conn): # Now explicitly accepts conn
 
         cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey[0],)) # Access survey_id by index
         cursor.execute("SELECT SCOPE_IDENTITY()") # Get last inserted ID
-        new_response_id_row = cursor.fetchone()
-        
-        # CRITICAL FIX: Add robust check and fallback for SCOPE_IDENTITY in conduct_survey
-        if new_response_id_row is None or new_response_id_row[0] is None:
-            logger.warning("SCOPE_IDENTITY returned None in conduct_survey. Attempting to use @@IDENTITY as a fallback.")
-            cursor.execute("SELECT @@IDENTITY")
-            new_response_id_row = cursor.fetchone()
-            if new_response_id_row is None or new_response_id_row[0] is None:
-                raise Exception("Failed to retrieve any identity after inserting response in conduct_survey. Insert might have failed or returned no ID.")
-        
-        response_id = int(new_response_id_row[0]) # Convert to int
-
+        response_id = int(cursor.fetchone()[0])
 
         for a in answers:
             cursor.execute("""
@@ -264,8 +247,8 @@ def conduct_survey(conn): # Now explicitly accepts conn
         logger.error(f"Survey submission failed: {e}")
         raise
 
-# Removed @with_db_connection decorator
-def view_responses(conn): # Now explicitly accepts conn
+@with_db_connection
+def view_responses(conn):
     """View all survey responses"""
     try:
         cursor = conn.cursor()
@@ -344,13 +327,9 @@ def main():
         # Now, create tables within the newly created Config.DB_NAME database
         # This connection will be passed to create_survey_tables
         conn_for_tables = get_db_connection(database_name=Config.DB_NAME)
-        conn_for_tables.autocommit = True # Explicitly set autocommit for this connection
+        conn_for_tables.autocommit = True # NEW: Explicitly set autocommit for this connection
         create_survey_tables(conn_for_tables) # Pass connection to decorator
         conn_for_tables.close() # Close after use
-
-        # Main application loop will now manage its own connection
-        app_conn = get_db_connection(database_name=Config.DB_NAME) # NEW: Get a dedicated connection for the app
-        # app_conn.autocommit = False # Default behavior for DML operations
 
         while True:
             print("\nMain Menu:")
@@ -360,9 +339,11 @@ def main():
             choice = input("Your choice (1-3): ")
 
             if choice == '1':
-                conduct_survey(app_conn) # Pass the app_conn
+                # The decorator @with_db_connection will handle the connection for conduct_survey
+                conduct_survey()
             elif choice == '2':
-                view_responses(app_conn) # Pass the app_conn
+                # The decorator @with_db_connection will handle the connection for view_responses
+                view_responses()
             elif choice == '3':
                 print("Goodbye!")
                 break
@@ -372,8 +353,6 @@ def main():
     except Exception as e:
         logger.critical(f"Application error: {e}")
     finally:
-        if 'app_conn' in locals() and app_conn: # Ensure app_conn is defined and not None
-            app_conn.close() # Close app connection on exit
         logger.info("Application shutdown")
 
 if __name__ == "__main__":
