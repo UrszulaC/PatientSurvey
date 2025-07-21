@@ -11,61 +11,19 @@ pipeline {
     }
 
     stages {
-        stage('Checkout Code') {
-            steps {
-                checkout scm
-            }
-        }
-
-        // stage('Install Terraform') {
-        //     steps {
-        //         sh '''
-        //             #!/usr/bin/env bash
-        //             set -e
-
-        //             echo "Installing Terraform..."
-        //             sudo rm -f /var/lib/apt/lists/lock
-        //             sudo rm -f /var/cache/apt/archives/lock
-        //             sudo rm -f /var/lib/dpkg/lock-frontend
-        //             sudo dpkg --configure -a
-
-        //             echo "Cleaning up any existing malformed azure-cli.list file..."
-        //             sudo rm -f /etc/apt/sources.list.d/azure-cli.list
-
-        //             sudo apt-get update
-        //             sudo ACCEPT_EULA=Y apt-get install -y software-properties-common wget
-
-        //             wget -O- https://apt.releases.hashicorp.com/gpg | \\
-        //                 gpg --dearmor | \\
-        //                 sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
-
-        //             echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \\
-        //                 https://apt.releases.hashicorp.com \$(lsb_release -cs) main" | \\
-        //                 sudo tee /etc/apt/sources.list.d/hashicorp.list
-
-        //             sudo apt-get update
-        //             sudo apt-get install -y terraform
-
-        //             echo "Terraform installation complete."
-        //             terraform version
-        //         '''
-        //     }
-        // }
-        stage('Install Terraform') {
+        stage('Clean Environment') {
           steps {
             sh '''
               #!/usr/bin/env bash
               set -e
     
-              echo "Installing Terraform..."
+              echo "Starting environment cleanup..."
     
-              # CRITICAL FIX: Identify and kill processes holding dpkg/apt locks
               echo "Checking for and removing dpkg/apt locks..."
               for lock_file in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/apt/lists/lock; do
                 if [ -f "$lock_file" ]; then
                   echo "Found lock file: $lock_file"
                   # Find process holding the lock and kill it
-                  # Use fuser to find PIDs holding the file, then kill
                   PIDS=$(sudo fuser -k "$lock_file" 2>/dev/null || true) # Use || true to prevent script exit if fuser fails/finds nothing
                   if [ -n "$PIDS" ]; then
                     echo "Killed processes holding $lock_file: $PIDS"
@@ -76,29 +34,51 @@ pipeline {
     
               # Ensure dpkg is configured correctly after potential crashes
               sudo dpkg --configure -a || true # Use || true to prevent script exit if dpkg --configure -a fails due to transient issues
-    
-              echo "Cleaning up any existing malformed azure-cli.list file..."
-              sudo rm -f /etc/apt/sources.list.d/azure-cli.list
-    
-              sudo apt-get update
-              sudo ACCEPT_EULA=Y apt-get install -y software-properties-common wget
-    
-              wget -O- https://apt.releases.hashicorp.com/gpg | \\
-                  gpg --dearmor | \\
-                  sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
-    
-              echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \\
-                  https://apt.releases.hashicorp.com \$(lsb_release -cs) main" | \\
-                  sudo tee /etc/apt/sources.list.d/hashicorp.list
-    
-              sudo apt-get update
-              sudo apt-get install -y terraform
-    
-              echo "Terraform installation complete."
-              terraform version
+              echo "Environment cleanup complete."
             '''
           }
         }
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Terraform') {
+            steps {
+                sh '''
+                    #!/usr/bin/env bash
+                    set -e
+
+                    echo "Installing Terraform..."
+                    sudo rm -f /var/lib/apt/lists/lock
+                    sudo rm -f /var/cache/apt/archives/lock
+                    sudo rm -f /var/lib/dpkg/lock-frontend
+                    sudo dpkg --configure -a
+
+                    echo "Cleaning up any existing malformed azure-cli.list file..."
+                    sudo rm -f /etc/apt/sources.list.d/azure-cli.list
+
+                    sudo apt-get update
+                    sudo ACCEPT_EULA=Y apt-get install -y software-properties-common wget
+
+                    wget -O- https://apt.releases.hashicorp.com/gpg | \\
+                        gpg --dearmor | \\
+                        sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+
+                    echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \\
+                        https://apt.releases.hashicorp.com \$(lsb_release -cs) main" | \\
+                        sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+                    sudo apt-get update
+                    sudo apt-get install -y terraform
+
+                    echo "Terraform installation complete."
+                    terraform version
+                '''
+            }
+        }
+        
         stage('Install Docker') {
             steps {
                 sh '''
