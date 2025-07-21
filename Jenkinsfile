@@ -285,78 +285,78 @@ pipeline {
       //     }
       //   }
       // }
-       stage('Deploy Application (Azure Container Instances)') {
-        steps {
-            script {
-                // Docker login and push with secure credential handling
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-hub-creds',
-                    usernameVariable: 'DOCKER_HUB_USER',
-                    passwordVariable: 'DOCKER_HUB_PASSWORD'
-                )]) {
-                    sh '''
-                        echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USER" --password-stdin
-                        docker push ${IMAGE_TAG}
-                    '''
-                }
-    
-                // Azure deployment with secure credential handling
-                withCredentials([
-                    string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                    string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                    string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                    string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                    usernamePassword(
+           stage('Deploy Application (Azure Container Instances)') {
+            steps {
+                script {
+                    // Docker login and push with secure credential handling
+                    withCredentials([usernamePassword(
                         credentialsId: 'docker-hub-creds',
-                        usernameVariable: 'REGISTRY_USERNAME',
-                        passwordVariable: 'REGISTRY_PASSWORD'
-                    )
-                ]) {
-                    sh '''
-                        #!/bin/bash
-                        set -e
-    
-                        echo "Logging into Azure..."
-                        az login --service-principal \
-                            -u "$ARM_CLIENT_ID" \
-                            -p "$ARM_CLIENT_SECRET" \
-                            --tenant "$ARM_TENANT_ID"
-                        
-                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
-    
-                        RESOURCE_GROUP_NAME="MyPatientSurveyRG"
-                        ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-                        ACI_LOCATION="uksouth"
-    
-                        echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
-                        az container create \
-                            --resource-group $RESOURCE_GROUP_NAME \
-                            --name $ACI_NAME \
-                            --image ${IMAGE_TAG} \
-                            --os-type Linux \
-                            --cpu 1 \
-                            --memory 1.5 \
-                            --restart-policy Always \
-                            --location $ACI_LOCATION \
-                            --environment-variables \
-                                DB_HOST=${DB_HOST} \
-                                DB_USER=${DB_USER} \
-                                DB_PASSWORD=${DB_PASSWORD} \
-                                DB_NAME=${DB_NAME} \
-                            --registry-login-server index.docker.io \
-                            --registry-username "$REGISTRY_USERNAME" \
-                            --registry-password "$REGISTRY_PASSWORD" \
-                            --no-wait
-    
-                        echo "Azure Container Instance deployment initiated."
-                        az logout
-                    '''
+                        usernameVariable: 'DOCKER_HUB_USER',
+                        passwordVariable: 'DOCKER_HUB_PASSWORD'
+                    )]) {
+                        sh '''
+                            echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USER" --password-stdin
+                            docker push ${IMAGE_TAG}
+                        '''
+                    }
+        
+                    // Azure deployment with secure credential handling
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        usernamePassword(
+                            credentialsId: 'docker-hub-creds',
+                            usernameVariable: 'REGISTRY_USERNAME',
+                            passwordVariable: 'REGISTRY_PASSWORD'
+                        )
+                    ]) {
+                        sh '''
+                            #!/bin/bash
+                            set -e
+        
+                            echo "Logging into Azure..."
+                            az login --service-principal \
+                                -u "$ARM_CLIENT_ID" \
+                                -p "$ARM_CLIENT_SECRET" \
+                                --tenant "$ARM_TENANT_ID"
+                            
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                            RESOURCE_GROUP_NAME="MyPatientSurveyRG"
+                            ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                            ACI_LOCATION="uksouth"
+        
+                            echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
+                            az container create \
+                                --resource-group $RESOURCE_GROUP_NAME \
+                                --name $ACI_NAME \
+                                --image ${IMAGE_TAG} \
+                                --os-type Linux \
+                                --cpu 1 \
+                                --memory 1.5 \
+                                --restart-policy Always \
+                                --location $ACI_LOCATION \
+                                --environment-variables \
+                                    DB_HOST=${DB_HOST} \
+                                    DB_USER=${DB_USER} \
+                                    DB_PASSWORD=${DB_PASSWORD} \
+                                    DB_NAME=${DB_NAME} \
+                                --registry-login-server index.docker.io \
+                                --registry-username "$REGISTRY_USERNAME" \
+                                --registry-password "$REGISTRY_PASSWORD" \
+                                --no-wait
+        
+                            echo "Azure Container Instance deployment initiated."
+                            az logout
+                        '''
+                    }
                 }
             }
-        }
-    } 
+        } 
 
-    
+    }
     post {
         always {
             junit 'app/test-results/*.xml'
