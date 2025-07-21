@@ -1,369 +1,369 @@
-import logging
-import json
-import time
+import os
+from dotenv import load_dotenv
+import unittest
 import pyodbc
-from app.utils.db_utils import get_db_connection # Import get_db_connection directly
+from unittest.mock import patch, MagicMock
 from app.config import Config
+from app.utils.db_utils import get_db_connection # Import get_db_connection
+import json
 
-from prometheus_client import start_http_server, Counter
-import threading
+# Load .env before using Config for tests
+load_dotenv()
 
-# Initialize logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+class TestPatientSurveySystem(unittest.TestCase):
 
-# Prometheus metrics
-survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
-survey_duration = Counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
-survey_failures = Counter('patient_survey_failures_total', 'Total failed survey submissions')
-active_surveys = Counter('active_surveys_total', 'Number of active surveys initialized')
-question_count = Counter('survey_questions_total', 'Total number of questions initialized')
+    @classmethod
+    def setUpClass(cls):
+        """Set up test database and tables"""
+        try:
+            # Connect to master to create/drop the test database
+            # IMPORTANT: Set autocommit=True for DDL operations like CREATE/DROP DATABASE
+            cls.connection = get_db_connection(database_name=None)
+            cls.connection.autocommit = True # Explicitly set autocommit to True for DDL
+            cls.cursor = cls.connection.cursor()
 
+            # SQL Server specific syntax for dropping and creating database
+            cls.cursor.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_TEST_NAME}') DROP DATABASE {Config.DB_TEST_NAME}")
+            cls.cursor.execute(f"CREATE DATABASE {Config.DB_TEST_NAME}")
+            # No explicit commit needed here because autocommit is True
 
-# This function needs to handle its own connection for creating/dropping databases
-# We'll modify it to take `conn` as an argument, and `main()` will pass it.
-def create_survey_tables(conn):
-    """Create all necessary tables for surveys"""
-    try:
-        cursor = conn.cursor()
+            # Close and re-open connection to switch database context to the newly created test DB
+            # For subsequent operations on the test database, autocommit can be False (default)
+            cls.connection.close()
+            cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
+            cls.connection.autocommit = True # Explicitly set autocommit for this connection
+            cls.cursor = cls.connection.cursor()
+            # Removed: cls.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
-        # SQL Server specific syntax for dropping tables in correct order
-        # No SET FOREIGN_KEY_CHECKS in SQL Server. Drop tables directly.
-        # Use IF OBJECT_ID to check existence before dropping
-        cursor.execute("IF OBJECT_ID('answers', 'U') IS NOT NULL DROP TABLE answers")
-        cursor.execute("IF OBJECT_ID('responses', 'U') IS NOT NULL DROP TABLE responses")
-        cursor.execute("IF OBJECT_ID('questions', 'U') IS NOT NULL DROP TABLE questions")
-        cursor.execute("IF OBJECT_ID('surveys', 'U') IS NOT NULL DROP TABLE surveys")
+            # Import and call the table creation function from main (needs a connection)
+            # This function will now use the pyodbc connection
+            from app.main import create_survey_tables
+            create_survey_tables(cls.connection) # Pass the connection to it
 
-        # Create tables with SQL Server syntax
-        cursor.execute("""
-            CREATE TABLE surveys (
-                survey_id INT IDENTITY(1,1) PRIMARY KEY, -- SQL Server AUTO_INCREMENT
-                title NVARCHAR(255) NOT NULL,            -- NVARCHAR for VARCHAR
-                description NVARCHAR(MAX),               -- TEXT equivalent
-                created_at DATETIME DEFAULT GETDATE(),   -- SQL Server CURRENT_TIMESTAMP
-                is_active BIT DEFAULT 1                  -- SQL Server BOOLEAN
-            )
-        """)
+            # Verify survey exists and has correct questions
+            # SELECT survey_id (index 0)
+            cls.cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
+            survey = cls.cursor.fetchone() # Will be a tuple
+            if not survey:
+                raise Exception("Default survey not created")
 
-        cursor.execute("""
-            CREATE TABLE questions (
-                question_id INT IDENTITY(1,1) PRIMARY KEY,
-                survey_id INT NOT NULL,
-                question_text NVARCHAR(MAX) NOT NULL,
-                question_type NVARCHAR(50) NOT NULL,     -- ENUM equivalent (VARCHAR with CHECK constraint if needed)
-                is_required BIT DEFAULT 0,
-                options NVARCHAR(MAX),                   -- JSON equivalent
-                FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
-            )
-        """)
+            cls.survey_id = survey[0] # Access by index
 
-        cursor.execute("""
-            CREATE TABLE responses (
-                response_id INT IDENTITY(1,1) PRIMARY KEY,
-                survey_id INT NOT NULL,
-                submitted_at DATETIME DEFAULT GETDATE(),
-                FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
-            )
-        """)
+            # Store question IDs for tests
+            # SELECT question_id (index 0), question_text (index 1)
+            cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ? ORDER BY question_id", (cls.survey_id,)) # Use ?
+            cls.questions = {row[1]: row[0] for row in cls.cursor.fetchall()} # Access by index: {question_text: question_id}
 
-        cursor.execute("""
-            CREATE TABLE answers (
-                answer_id INT IDENTITY(1,1) PRIMARY KEY,
-                response_id INT NOT NULL,
-                question_id INT NOT NULL,
-                answer_value NVARCHAR(MAX),
-                FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE,
-                -- CRITICAL FIX: Explicitly set ON DELETE NO ACTION to resolve cascade path ambiguity
-                FOREIGN KEY (question_id) REFERENCES questions(question_id) ON DELETE NO ACTION
-            )
-        """)
+            if len(cls.questions) < 7:
+                raise Exception(f"Expected 7 questions, found {len(cls.questions)}")
 
-        survey_id = None # Initialize survey_id
+        except pyodbc.Error as err: # Catch pyodbc specific errors
+            cls.tearDownClass() # Attempt cleanup
+            raise Exception(f"Test setup failed (pyodbc error): {err}")
+        except Exception as err: # Catch other general exceptions
+            cls.tearDownClass() # Attempt cleanup
+            raise Exception(f"Test setup failed (general error): {err}")
 
-        # Check if default survey exists
-        cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-        existing_survey_row = cursor.fetchone() # Fetch the row if it exists
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up test database"""
+        try:
+            # Ensure connection exists before trying to close
+            if hasattr(cls, 'connection') and cls.connection:
+                # Reconnect to master to drop the test database with autocommit=True
+                temp_conn = get_db_connection(database_name=None)
+                temp_conn.autocommit = True # Explicitly set autocommit to True for DDL
+                temp_cursor = temp_conn.cursor()
+                temp_cursor.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_TEST_NAME}') DROP DATABASE {Config.DB_TEST_NAME}")
+                # No explicit commit needed here because autocommit is True
+                temp_conn.close()
 
-        if existing_survey_row:
-            survey_id = existing_survey_row[0] # Use existing ID
-            logger.info("Default survey already exists.")
-        else:
-            # Insert default survey
-            logger.info("Attempting to insert default survey...")
-            cursor.execute("""
-                INSERT INTO surveys (title, description, is_active)
-                VALUES (?, ?, ?) -- Use ? for pyodbc parameters
-            """, ('Patient Experience Survey', 'Survey to collect feedback', True))
-            
-            # Check if the insert actually happened
-            if cursor.rowcount == 0:
-                raise Exception("Insert into surveys table failed: No rows were inserted. Check for hidden constraints or transaction issues.")
+                # Close the main connection used by tests if it's still open
+                cls.connection.close()
+        except pyodbc.Error as e:
+            print(f"Warning: Cleanup failed - {e}")
+        except Exception as e:
+            print(f"Warning: General cleanup failed - {e}")
 
-            # Get last inserted ID for pyodbc (SCOPE_IDENTITY() or @@IDENTITY)
-            # Use @@IDENTITY as a fallback if SCOPE_IDENTITY() is still problematic in this environment
-            cursor.execute("SELECT SCOPE_IDENTITY()")
-            new_survey_id_row = cursor.fetchone()
-            
-            print(f"DEBUG: new_survey_id_row from SCOPE_IDENTITY(): {new_survey_id_row}")
-            
-            if new_survey_id_row is None or new_survey_id_row[0] is None: # Check for None row or None value
-                # Fallback to @@IDENTITY if SCOPE_IDENTITY is None
-                logger.warning("SCOPE_IDENTITY returned None. Attempting to use @@IDENTITY as a fallback.")
-                cursor.execute("SELECT @@IDENTITY")
-                new_survey_id_row = cursor.fetchone()
-                print(f"DEBUG: new_survey_id_row from @@IDENTITY(): {new_survey_id_row}")
-                if new_survey_id_row is None or new_survey_id_row[0] is None:
-                    raise Exception("Failed to retrieve any identity after inserting survey. Insert might have failed or returned no ID.")
-            
-            survey_id = int(new_survey_id_row[0]) # Convert to int
-            active_surveys.inc()
-            logger.info(f"Default survey created with ID: {survey_id}")
+    def setUp(self):
+        """Fresh connection for each test"""
+        self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
+        self.cursor = self.conn.cursor()
+        # Removed: self.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
-            # Insert questions only if the survey was just created
-            questions = [
-                {'text': 'Date of visit?', 'type': 'text', 'required': True},
-                {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
-                 'options': ['Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital']},
-                {'text': 'Patient name?', 'type': 'text', 'required': True},
-                {'text': 'How easy was it to get an appointment?', 'type': 'multiple_choice', 'required': True,
-                 'options': ['Very difficult', 'Somewhat difficult', 'Neutral', 'Easy', 'Very easy']},
-                {'text': 'Were you properly informed about your procedure?', 'type': 'multiple_choice', 'required': True,
-                 'options': ['Yes', 'No', 'Partially']},
-                {'text': 'What went well during your visit?', 'type': 'text', 'required': False},
-                {'text': 'Overall satisfaction (1-5)', 'type': 'multiple_choice', 'required': True,
-                 'options': ['1', '2', '3', '4', '5']}
-            ]
+        # --- CRITICAL FIX: Use DELETE FROM instead of TRUNCATE TABLE for tables with FK constraints ---
+        # Delete from child tables first, then parent tables
+        self.cursor.execute("DELETE FROM answers")
+        self.cursor.execute("DELETE FROM responses")
+        # No need to delete from questions or surveys here, as they are part of the initial setup
+        # and are dropped/recreated in setUpClass. setUp only needs to clear transactional data.
+        self.conn.commit() # Commit delete operations
+        # --- END CRITICAL FIX ---
 
-            for q in questions:
-                cursor.execute("""
-                    INSERT INTO questions (survey_id, question_text, question_type, is_required, options)
-                    VALUES (?, ?, ?, ?, ?) -- Use ? for pyodbc parameters
-                """, (
-                    survey_id,
-                    q['text'],
-                    q['type'],
-                    q.get('required', False), # Boolean True/False maps to BIT 1/0
-                    json.dumps(q['options']) if 'options' in q else None
-                ))
-            question_count.inc(len(questions))
+    def tearDown(self):
+        """Cleanup after each test"""
+        try:
+            if hasattr(self, 'cursor') and self.cursor:
+                self.cursor.close()
+            if hasattr(self, 'conn') and self.conn: # Check if connection object exists
+                self.conn.close()
+        except pyodbc.Error as e:
+            print(f"Cleanup warning: {e}")
+        except Exception as e:
+            print(f"Cleanup warning: {e}")
 
-        # Ensure survey_id is set before proceeding
-        if survey_id is None:
-            raise Exception("Failed to determine survey_id for Patient Experience Survey.")
+    # --- Database Structure Tests ---
 
-        conn.commit() # Explicit commit for DDL and DML
-        logger.info("Database tables initialized successfully")
+    def test_tables_created_correctly(self):
+        """Verify all tables exist with correct structure"""
+        # SELECT TABLE_NAME (index 0)
+        self.cursor.execute(f"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG='{Config.DB_TEST_NAME}'")
+        tables = {row[0] for row in self.cursor.fetchall()} # Access by index
+        self.assertEqual(tables, {'surveys', 'questions', 'responses', 'answers'})
 
-    except pyodbc.Error as e: # Catch pyodbc specific errors
-        survey_failures.inc()
-        conn.rollback()
-        logger.error(f"Database initialization failed: {e}")
-        raise
-    except Exception as e: # Catch other general errors
-        survey_failures.inc()
-        conn.rollback()
-        logger.error(f"General initialization failed: {e}")
-        raise
+        # Verify surveys table columns
+        # SELECT COLUMN_NAME (index 0)
+        self.cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'surveys' AND TABLE_CATALOG='{Config.DB_TEST_NAME}'")
+        survey_columns = {row[0] for row in self.cursor.fetchall()} # Access by index
+        self.assertEqual(survey_columns, {'survey_id', 'title', 'description', 'created_at', 'is_active'})
 
-# Removed @with_db_connection decorator
-def conduct_survey(conn): # Now explicitly accepts conn
-    """Conduct the survey and store responses"""
-    try:
-        start_time = time.time()  # Starting timer
-        cursor = conn.cursor()
-        # Removed: cursor.row_factory = pyodbc.Row # Not supported directly on cursor
+    def test_default_survey_exists(self):
+        """Verify default survey was created"""
+        # SELECT * FROM surveys (columns: survey_id, title, description, created_at, is_active)
+        # Indices: 0         , 1    , 2          , 3         , 4
+        self.cursor.execute("SELECT * FROM surveys WHERE title = ?", ('Patient Experience Survey',)) # Use ?
+        survey = self.cursor.fetchone()
+        self.assertIsNotNone(survey)
+        self.assertTrue(survey[4]) # is_active is at index 4
+        self.assertEqual(survey[2], 'Survey to collect feedback') # description is at index 2
 
-        # SELECT survey_id (index 0)
-        cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-        survey = cursor.fetchone()
-        if not survey:
-            logger.error("Survey not found in database")
-            return
+    def test_questions_created(self):
+        """Verify all questions exist"""
+        self.cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = ?", (self.survey_id,)) # Use ?
+        self.assertEqual(self.cursor.fetchone()[0], 7) # COUNT(*) returns a single value, access by index 0
 
-        # SELECT question_id (0), question_text (1), question_type (2), is_required (3), options (4)
-        cursor.execute("""
-            SELECT question_id, question_text, question_type, is_required, options
-            FROM questions WHERE survey_id = ? ORDER BY question_id -- Use ? for parameters
-        """, (survey[0],)) # Access survey_id by index
+        # Verify one sample question
+        # SELECT question_type (index 0), is_required (index 1), options (index 2)
+        self.cursor.execute("""
+            SELECT question_type, is_required, options
+            FROM questions
+            WHERE question_text = ?
+        """, ('Which site did you visit?',)) # Use ?
+        question = self.cursor.fetchone()
+        self.assertEqual(question[0], 'multiple_choice') # question_type is at index 0
+        self.assertTrue(question[1]) # is_required is at index 1
+        self.assertEqual(json.loads(question[2]), # options is at index 2
+                             ['Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital'])
 
-        questions = cursor.fetchall()
+    # --- Survey Conducting Tests ---
 
-        print("\n=== Patient Experience Survey ===")
-        answers = []
+    @patch('builtins.input')
+    def test_complete_survey_flow(self, mock_input):
+        """Test full survey submission with all answers"""
+        mock_input.side_effect = [
+            '2023-01-01',  # Date of visit
+            '1',           # Site (Princess Alexandra)
+            'John Doe',    # Patient name
+            '3',           # Ease (Neutral)
+            '1',           # Informed (Yes)
+            'Friendly staff',  # What went well
+            '5'            # Rating (5)
+        ]
 
-        for q in questions:
-            print(f"\n{q[1]}{' (required)' if q[3] else ''}") # Access question_text by index (1), is_required by index (3)
+        from app.main import conduct_survey
+        conduct_survey(self.conn) # Pass the test connection
 
-            if q[2] == 'multiple_choice': # question_type is at index 2
-                options = json.loads(q[4]) if q[4] is not None else [] # options is at index 4
-                for i, opt in enumerate(options, 1):
-                    print(f"{i}. {opt}")
-                while True:
-                    try:
-                        choice = int(input("Your choice (number): "))
-                        if 1 <= choice <= len(options):
-                            answers.append({
-                                'question_id': q[0], # question_id is at index 0
-                                'answer_value': options[choice-1]
-                            })
-                            break
-                        print(f"Please enter a number between 1 and {len(options)}")
-                    except ValueError:
-                        print("Please enter a valid number")
-            else:
-                while True:
-                    answer = input("Your response: ").strip()
-                    if answer or not q[3]: # is_required is at index 3
-                        answers.append({
-                            'question_id': q[0], # question_id is at index 0
-                            'answer_value': answer if answer else "[No response]"
-                        })
-                        break
-                    print("This field is required")
+        # Verify response was created
+        # SELECT * FROM responses (response_id is at index 0)
+        self.cursor.execute("SELECT * FROM responses")
+        response = self.cursor.fetchone()
+        self.assertIsNotNone(response)
 
-        cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey[0],)) # Access survey_id by index
-        cursor.execute("SELECT SCOPE_IDENTITY()") # Get last inserted ID
-        new_response_id_row = cursor.fetchone()
-        
-        # CRITICAL FIX: Add robust check and fallback for SCOPE_IDENTITY in conduct_survey
+        # Verify all answers were saved
+        self.cursor.execute("SELECT COUNT(*) FROM answers WHERE response_id = ?", (response[0],)) # Access response_id by index
+        self.assertEqual(self.cursor.fetchone()[0], 7)
+
+        # Verify specific answers
+        # SELECT answer_value (index 0)
+        self.cursor.execute("""
+            SELECT answer_value FROM answers
+            WHERE question_id = ? AND response_id = ?
+        """, (self.questions['What went well during your visit?'], response[0])) # Access response_id by index
+        self.assertEqual(self.cursor.fetchone()[0], 'Friendly staff') # Access answer_value by index
+
+    @patch('builtins.input')
+    def test_required_field_validation(self, mock_input):
+        """Test that required fields must be provided"""
+        mock_input.side_effect = [
+            '',            # Empty date (should reject)
+            '2023-01-01', # Valid date
+            '1', 'John', '3', '1', 'Good', '5'  # Rest of answers
+        ]
+
+        from app.main import conduct_survey
+        conduct_survey(self.conn) # Pass the test connection
+
+        # Verify response was created
+        self.cursor.execute("SELECT * FROM responses")
+        self.assertIsNotNone(self.cursor.fetchone())
+
+    @patch('builtins.input')
+    def test_optional_field_handling(self, mock_input):
+        """Test optional fields can be skipped"""
+        mock_input.side_effect = [
+            '2023-01-01', '1', 'John', '3', '1',
+            '',  # Skip optional "what went well"
+            '5'
+        ]
+
+        from app.main import conduct_survey
+        conduct_survey(self.conn) # Pass the test connection
+
+        # Verify response was created
+        self.cursor.execute("SELECT * FROM responses")
+        response = self.cursor.fetchone()
+        self.assertIsNotNone(response)
+
+        # Verify optional answer was recorded as empty
+        # SELECT answer_value (index 0)
+        self.cursor.execute("""
+            SELECT answer_value FROM answers
+            WHERE question_id = ? AND response_id = ?
+        """, (self.questions['What went well during your visit?'], response[0])) # Access response_id by index
+        self.assertEqual(self.cursor.fetchone()[0], '[No response]') # Access answer_value by index
+
+    # --- View Responses Tests ---
+
+    def test_view_empty_responses(self):
+        """Test viewing when no responses exist"""
+        from app.main import view_responses
+        with patch('builtins.print') as mock_print:
+            view_responses(self.conn) # Pass the test connection
+            mock_print.assert_called_with("\nNo responses found in the database.")
+
+    def test_view_multiple_responses(self):
+        """Test viewing multiple responses"""
+        # Create test responses
+        self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
+        self.cursor.execute("SELECT SCOPE_IDENTITY()")
+        new_response_id_row = self.cursor.fetchone()
         if new_response_id_row is None or new_response_id_row[0] is None:
-            logger.warning("SCOPE_IDENTITY returned None in conduct_survey. Attempting to use @@IDENTITY as a fallback.")
-            cursor.execute("SELECT @@IDENTITY")
-            new_response_id_row = cursor.fetchone()
+            # Fallback to @@IDENTITY if SCOPE_IDENTITY is None
+            self.cursor.execute("SELECT @@IDENTITY")
+            new_response_id_row = self.cursor.fetchone()
             if new_response_id_row is None or new_response_id_row[0] is None:
-                raise Exception("Failed to retrieve any identity after inserting response in conduct_survey. Insert might have failed or returned no ID.")
-        
-        response_id = int(new_response_id_row[0]) # Convert to int
+                raise Exception("Failed to retrieve any identity after inserting response.")
+        response1 = int(new_response_id_row[0])
 
-        for a in answers:
-            cursor.execute("""
+        self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
+        self.cursor.execute("SELECT SCOPE_IDENTITY()")
+        new_response_id_row = self.cursor.fetchone()
+        if new_response_id_row is None or new_response_id_row[0] is None:
+            # Fallback to @@IDENTITY if SCOPE_IDENTITY is None
+            self.cursor.execute("SELECT @@IDENTITY")
+            new_response_id_row = self.cursor.fetchone()
+            if new_response_id_row is None or new_response_id_row[0] is None:
+                raise Exception("Failed to retrieve any identity after inserting response.")
+        response2 = int(new_response_id_row[0])
+
+        # Add answers
+        sample_answers = [
+            (response1, self.questions['Date of visit?'], '2023-01-01'),
+            (response1, self.questions['Which site did you visit?'], 'Princess Alexandra Hospital'),
+            (response2, self.questions['Date of visit?'], '2023-01-02'),
+            (response2, self.questions['Which site did you visit?'], 'Herts & Essex Hospital')
+        ]
+
+        for answer in sample_answers:
+            self.cursor.execute("""
                 INSERT INTO answers (response_id, question_id, answer_value)
                 VALUES (?, ?, ?) -- Use ?
-            """, (response_id, a['question_id'], a['answer_value']))
+            """, answer)
 
-        conn.commit() # Explicit commit
-        survey_counter.inc()  # increment metric
-        survey_duration.inc(time.time() - start_time)  # record time spent
-        print("\nThank you for your feedback!")
-        logger.info(f"New survey response recorded (ID: {response_id})")
+        self.conn.commit()
 
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Survey submission failed: {e}")
-        raise
+        # Test view function
+        from app.main import view_responses
+        with patch('builtins.print') as mock_print:
+            view_responses(self.conn) # Pass the test connection
 
-# Removed @with_db_connection decorator
-def view_responses(conn): # Now explicitly accepts conn
-    """View all survey responses"""
-    try:
-        cursor = conn.cursor()
-        # Removed: cursor.row_factory = pyodbc.Row # Not supported directly on cursor
+            # Verify responses were displayed
+            # The view_responses function itself prints, so we check the printed output
+            output = "\n".join(str(call) for call in mock_print.call_args_list)
+            self.assertIn(f"Response ID: {response1}", output) # Use f-string
+            self.assertIn(f"Response ID: {response2}", output) # Use f-string
+            self.assertIn("Princess Alexandra Hospital", output)
+            self.assertIn("Herts & Essex Hospital", output)
 
-        # SELECT COUNT(DISTINCT response_id) as count (index 0)
-        cursor.execute("SELECT COUNT(DISTINCT response_id) as count FROM answers")
-        total_responses = cursor.fetchone()[0] # Access count by index
+    # --- Edge Cases ---
 
-        if total_responses == 0:
-            print("\nNo responses found in the database.")
-            return
+    @patch('builtins.input')
+    def test_invalid_multiple_choice_input(self, mock_input):
+        """Test handling of invalid multiple choice selections"""
+        mock_input.side_effect = [
+            '2023-01-01',
+            '5',  # Invalid choice (only 3 options)
+            '1',  # Then valid choice
+            'John', '3', '1', 'Good', '5'
+        ]
 
-        # SELECT r.response_id (0), date (1), q.question_text (2), a.answer_value (3)
-        cursor.execute("""
-            SELECT
-                r.response_id,
-                FORMAT(r.submitted_at, 'yyyy-MM-dd HH:mm') as date, -- SQL Server FORMAT function
-                q.question_text,
-                a.answer_value
-            FROM responses r
-            JOIN answers a ON r.response_id = a.response_id
-            JOIN questions q ON a.question_id = q.question_id
-            ORDER BY r.response_id, q.question_id
-        """)
+        from app.main import conduct_survey
+        with patch('builtins.print') as mock_print:
+            conduct_survey(self.conn) # Pass the test connection
 
-        responses = {}
-        current_id = None
+            # Verify error message was shown
+            output = "\n".join(str(call) for call in mock_print.call_args_list)
+            self.assertIn("Please enter a number between 1 and 3", output)
 
-        for row in cursor.fetchall():
-            if row[0] != current_id: # Access response_id by index
-                current_id = row[0]
-                responses[current_id] = {
-                    'date': row[1], # Access date by index
-                    'answers': []
-                }
-            responses[current_id]['answers'].append(
-                (row[2], row[3]) # Access question_text by index (2), answer_value by index (3)
-            )
+        # Verify response was still recorded
+        self.cursor.execute("SELECT * FROM responses")
+        self.assertIsNotNone(self.cursor.fetchone())
 
-        print(f"\n=== SURVEY RESPONSES ({len(responses)} total) ===")
-        for response_id, data in responses.items():
-            print(f"\nResponse ID: {response_id} | Date: {data['date']}")
-            print("-" * 50)
-            for question, answer in data['answers']:
-                print(f"Q: {question}")
-                print(f"A: {answer}\n")
-            print("-" * 50)
+    def test_database_constraints(self):
+        """Verify foreign key constraints work"""
+        # Try to insert answer with invalid question ID
+        with self.assertRaises(pyodbc.Error): # Catch pyodbc.Error
+            self.cursor.execute("""
+                INSERT INTO answers (response_id, question_id, answer_value)
+                VALUES (?, ?, ?) -- Use ?
+            """, (1, 999, 'test'))
+            self.conn.commit()
 
-        logger.info(f"Viewed {len(responses)} survey responses")
+    # --- Performance Tests ---
 
-    except Exception as e:
-        logger.error(f"Failed to retrieve responses: {e}")
-        raise
-
-def main():
-    try:
-        logger.info("Starting Patient Survey Application")
-        # Start metrics server
-        threading.Thread(target=start_http_server, args=(8000,), daemon=True).start()
-
-        # Get a connection for DDL operations in create_survey_tables
-        # This connection should not specify a database initially
-        conn_for_ddl = get_db_connection(database_name=None)
-        conn_for_ddl.autocommit = True # Explicitly set autocommit to True for DDL
+    def test_multiple_response_performance(self):
+        """Test performance with many responses"""
+        from app.main import view_responses
         
-        # Drop and create the main application database first
-        # This requires connecting to master database
-        cursor_ddl = conn_for_ddl.cursor()
-        cursor_ddl.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_NAME}') DROP DATABASE {Config.DB_NAME}")
-        cursor_ddl.execute(f"CREATE DATABASE {Config.DB_NAME}")
-        # No explicit commit needed here because autocommit is True
-        cursor_ddl.close()
-        conn_for_ddl.close() # Close the DDL connection
+        # Create 100 test responses
+        for i in range(100):
+            self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,)) # Use ?
+            self.cursor.execute("SELECT SCOPE_IDENTITY()")
+            new_response_id_row = self.cursor.fetchone()
+            if new_response_id_row is None or new_response_id_row[0] is None:
+                self.cursor.execute("SELECT @@IDENTITY")
+                new_response_id_row = self.cursor.fetchone()
+                if new_response_id_row is None or new_response_id_row[0] is None:
+                    raise Exception("Failed to retrieve any identity after inserting response.")
+            response_id = int(new_response_id_row[0])
 
-        # Now, create tables within the newly created Config.DB_NAME database
-        # This connection will be passed to create_survey_tables
-        conn_for_tables = get_db_connection(database_name=Config.DB_NAME)
-        conn_for_tables.autocommit = True # Explicitly set autocommit for this connection
-        create_survey_tables(conn_for_tables) # Pass connection to decorator
-        conn_for_tables.close() # Close after use
+            self.cursor.execute("""
+                INSERT INTO answers (response_id, question_id, answer_value)
+                VALUES (?, ?, ?) -- Use ?
+            """, (response_id, self.questions['Date of visit?'], f'2023-01-{i+1:02d}'))
 
-        # Main application loop will now manage its own connection
-        app_conn = get_db_connection(database_name=Config.DB_NAME) # NEW: Get a dedicated connection for the app
-        # app_conn.autocommit = False # Default behavior for DML operations
+        self.conn.commit()
 
-        while True:
-            print("\nMain Menu:")
-            print("1. Conduct Survey")
-            print("2. View Responses")
-            print("3. Exit")
-            choice = input("Your choice (1-3): ")
+        # Time the view operation
+        import time
+        start = time.time()
+        view_responses(self.conn) # Pass the test connection
+        duration = time.time() - start
 
-            if choice == '1':
-                conduct_survey(app_conn) # Pass the app_conn
-            elif choice == '2':
-                view_responses(app_conn) # Pass the app_conn
-            elif choice == '3':
-                print("Goodbye!")
-                break
-            else:
-                print("Please enter a number between 1 and 3")
+        self.assertLess(duration, 1.0, "Viewing responses took too long")
 
-    except Exception as e:
-        logger.critical(f"Application error: {e}")
-    finally:
-        if 'app_conn' in locals() and app_conn: # Ensure app_conn is defined and not None
-            app_conn.close() # Close app connection on exit
-        logger.info("Application shutdown")
 
 if __name__ == "__main__":
-    main()
+    import xmlrunner
+    unittest.main(testRunner=xmlrunner.XMLTestRunner(output='test-results'))
+
