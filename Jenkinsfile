@@ -264,7 +264,6 @@
 //         }
 //     }
 // }
-
 pipeline {
   agent any
 
@@ -448,7 +447,8 @@ pipeline {
 
           # 4. Update apt-get cache and install the ODBC driver
           sudo apt-get update
-          sudo apt-get install -y msodbcsql17 unixodbc-dev
+          # CRITICAL FIX: Use 'yes |' to automatically accept prompts for msodbcsql17
+          yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
 
           echo "ODBC Driver installation complete."
 
@@ -593,4 +593,6 @@ pipeline {
     }
   }
 }
+
+
 
