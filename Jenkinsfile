@@ -359,25 +359,27 @@ EOF
 
     stage('Run Tests') {
       steps {
-        // K14: Test Driven Development and Test Pyramid (Unit testing)
-        // S14: Write tests and follow TDD discipline
-        // S17: Code in a general-purpose programming language (Python tests)
-        // Using env.DB_USER and env.DB_PASSWORD directly as they are now global
-        sh """
+        sh '''
           export PATH=$HOME/.local/bin:$PATH
-          export DB_USER=${env.DB_USER} # Use env.DB_USER
-          export DB_PASSWORD=${env.DB_PASSWORD} # Use env.DB_PASSWORD
-          # Ensure the workspace root is in PYTHONPATH for module discovery
-          export PYTHONPATH=.:$PYTHONPATH
-          echo "PYTHONPATH updated: $PYTHONPATH"
-
+          export DB_USER=${DB_USER}
+          export DB_PASSWORD=${DB_PASSWORD}
+          
+          # Initialize PYTHONPATH if not set
+          if [ -z "$PYTHONPATH" ]; then
+              export PYTHONPATH=.
+          else
+              export PYTHONPATH=.:$PYTHONPATH
+          fi
+          
+          echo "PYTHONPATH set to: $PYTHONPATH"
+    
           # Ensure tests/ is a Python package for discovery
-          mkdir -p tests # Ensure tests directory exists at root
-          touch tests/__init__.py # Make 'tests' a package
-
-          # Discover tests in the 'tests' directory at the workspace root
+          mkdir -p tests
+          touch tests/__init__.py
+    
+          # Discover and run tests
           python3 -m xmlrunner discover -s tests -o test-results
-        """
+        '''
       }
     }
 
