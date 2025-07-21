@@ -3,19 +3,17 @@ pipeline {
 
   environment {
     DB_NAME = 'patient_survey_db'
-    IMAGE_TAG   = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
+    IMAGE_TAG  = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
     // DB_HOST will be set dynamically by the Terraform stage
   }
 
   options {
-    // K4: Business value of DevOps (Time, Cost, Quality) - Timeout helps manage pipeline duration
-    timeout(time: 25, unit: java.util.concurrent.TimeUnit.MINUTES) // Increased timeout for more installations
+    timeout(time: 25, unit: 'MINUTES') // Increased timeout for more installations
   }
 
   stages {
     stage('Checkout Code') {
       steps {
-        // K2: Principles of distributed Source Control (VCS polling is implicit in Jenkins setup)
         checkout scm
       }
     }
@@ -204,7 +202,6 @@ EOF
           # --- END CRITICAL FIX ---
           
           # Install Grafana (using official APT repository)
-          sudo apt-get update
           sudo apt-get install -y apt-transport-https software-properties-common wget
           sudo mkdir -p /etc/apt/keyrings/
           # CRITICAL FIX: Remove existing grafana.gpg key file to prevent "File exists" error
@@ -229,16 +226,14 @@ EOF
     stage('Deploy Infrastructure (Terraform)') {
       steps {
         script {
-          dir('infra/terraform') { // Correct path for Terraform files
+          dir('infra/terraform') { # Correct path for Terraform files
             withCredentials([
-              usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_VAR', passwordVariable: 'DB_PASSWORD_VAR'),
+              usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TF', passwordVariable: 'DB_PASSWORD_TF'), // Renamed for clarity
               string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
               string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
               string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-              // Reverted to azure_subscription_id (underscore)
               string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
             ])  {
-              // <<< THIS IS THE CRUCIAL SH BLOCK THAT MUST BE HERE >>>
               sh """
                 # Export Azure credentials for Terraform
                 export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
@@ -247,16 +242,17 @@ EOF
                 export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
 
                 # Export DB credentials for Terraform - these are sensitive variables for Terraform
-                export DB_USER="${DB_USER_VAR}"
-                export DB_PASSWORD="${DB_PASSWORD_VAR}"
+                export TF_VAR_db_user="${DB_USER_TF}" # Use TF_VAR_ prefix for Terraform variables
+                export TF_VAR_db_password="${DB_PASSWORD_TF}" # Use TF_VAR_ prefix for Terraform variables
 
                 # Terraform commands
                 terraform init -backend-config="resource_group_name=MyPatientSurveyRG" -backend-config="storage_account_name=mypatientsurveytfstate" -backend-config="container_name=tfstate" -backend-config="key=patient_survey.tfstate"
-                terraform plan -out=tfplan.out -var="db_user=\${DB_USER}" -var="db_password=\${DB_PASSWORD}"
+                terraform plan -out=tfplan.out -var="db_user=\${TF_VAR_db_user}" -var="db_password=\${TF_VAR_db_password}" # Pass as -var
                 terraform apply -auto-approve tfplan.out
               """
               def sqlServerFqdn = sh(script: "terraform output -raw sql_server_fqdn", returnStdout: true).trim()
               env.DB_HOST = sqlServerFqdn
+              // Do NOT set DB_USER/DB_PASSWORD in env here. They will be pulled directly in later stages.
               echo "Database Host FQDN: ${env.DB_HOST}"
             }
           }
@@ -268,12 +264,12 @@ EOF
       steps {
         // Operate from the workspace root to correctly create package __init__.py files
         withCredentials([
-          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
+          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_ENV', passwordVariable: 'DB_PASSWORD_ENV') // Renamed for clarity
         ]) {
           sh '''
             echo "DB_HOST=${DB_HOST}" > app/.env
-            echo "DB_USER=$DB_USER" >> app/.env
-            echo "DB_PASSWORD=$DB_PASSWORD" >> app/.env
+            echo "DB_USER=${DB_USER_ENV}" >> app/.env # Use the credential variable
+            echo "DB_PASSWORD=${DB_PASSWORD_ENV}" >> app/.env # Use the credential variable
             echo "DB_NAME=${DB_NAME}" >> app/.env
 
             # NEW: Create __init__.py files to make 'app' and 'utils' discoverable Python packages
@@ -291,10 +287,6 @@ EOF
         sh """
           #!/usr/bin/env bash
           set -e
-
-          echo "Listing contents of workspace for debugging:"
-          ls -R .
-          echo "Finished listing contents."
 
           echo "Installing ODBC Driver for SQL Server..."
 
@@ -339,9 +331,9 @@ EOF
 
     stage('Security Scan') {
       steps {
-        dir('app') { // Assuming app files are in 'app/' directory for Bandit scan context
-          // K5: Modern security tools (Bandit, Pip-audit)
-          // S9: Application of cloud security tools into automated pipeline
+        dir('app') { # Assuming app files are in 'app/' directory for Bandit scan context
+          # K5: Modern security tools (Bandit, Pip-audit)
+          # S9: Application of cloud security tools into automated pipeline
           sh """
             #!/usr/bin/env bash
             set -ex # Added -x for debugging output, and -e for exiting on error
@@ -367,16 +359,16 @@ EOF
 
     stage('Run Tests') {
       steps {
-        // K14: Test Driven Development and Test Pyramid (Unit testing)
-        // S14: Write tests and follow TDD discipline
-        // S17: Code in a general-purpose programming language (Python tests)
+        # K14: Test Driven Development and Test Pyramid (Unit testing)
+        # S14: Write tests and follow TDD discipline
+        # S17: Code in a general-purpose programming language (Python tests)
         withCredentials([
-          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASSWORD')
+          usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_TEST', passwordVariable: 'DB_PASSWORD_TEST') # Renamed for clarity
         ]) {
           sh '''
             export PATH=$HOME/.local/bin:$PATH
-            export DB_USER=$DB_USER
-            export DB_PASSWORD=$DB_PASSWORD
+            export DB_USER=$DB_USER_TEST # Use the credential variable
+            export DB_PASSWORD=$DB_PASSWORD_TEST # Use the credential variable
             # Ensure the workspace root is in PYTHONPATH for module discovery
             export PYTHONPATH=.:$PYTHONPATH
             echo "PYTHONPATH updated: $PYTHONPATH"
@@ -396,10 +388,10 @@ EOF
     stage('Build Docker Image') {
       steps {
         script {
-          // The Dockerfile is at the repository root, so build from the workspace root.
-          // Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
+          # The Dockerfile is at the repository root, so build from the workspace root.
+          # Ensure your Dockerfile is named 'Dockerfile' (with a capital D) at the root.
           echo "Building Docker image ${IMAGE_TAG}..."
-          docker.build(IMAGE_TAG, '.') // Explicitly set build context to current directory (repo root)
+          docker.build(IMAGE_TAG, '.') # Explicitly set build context to current directory (repo root)
           echo "Docker image built successfully."
         }
       }
@@ -407,8 +399,6 @@ EOF
 
     stage('Container Scan') {
       steps {
-        // K5: Modern security tools (Trivy)
-        // S9: Application of cloud security tools into automated pipeline
         sh """
           #!/usr/bin/env bash
           set -e
@@ -432,12 +422,12 @@ EOF
     stage('Push Docker Image') {
       steps {
         script {
-          // K1: Continuous Integration (Build artifacts)
-          // K15: Continuous Integration/Delivery/Deployment principles
+          # K1: Continuous Integration (Build artifacts)
+          # K15: Continuous Integration/Delivery/Deployment principles
           echo "Pushing Docker image ${IMAGE_TAG} to Docker Hub..."
           docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
             docker.image(IMAGE_TAG).push()
-            docker.image(IMAGE_TAG).push('latest') // Optional: push as latest for easier pulling
+            docker.image(IMAGE_TAG).push('latest') # Optional: push as latest for easier pulling
           }
           echo "Docker image pushed successfully."
         }
@@ -451,8 +441,8 @@ EOF
             string(credentialsId: 'AZURE_CLIENT_ID', variable: 'AZURE_CLIENT_ID'),
             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'AZURE_CLIENT_SECRET'),
             string(credentialsId: 'AZURE_TENANT_ID', variable: 'AZURE_TENANT_ID'),
-            // Reverted to azure_subscription_id (underscore)
-            string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR')
+            string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR'),
+            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'DB_USER_DEPLOY', passwordVariable: 'DB_PASSWORD_DEPLOY') // Renamed for clarity
           ]) {
             // K15: Continuous Delivery/Deployment (Automated deployment)
             // K8: Immutable infrastructure (Deploying container image)
@@ -480,7 +470,7 @@ EOF
                 --memory 1.5 \\
                 --restart-policy Always \\
                 --location \$ACI_LOCATION \\
-                --environment-variables DB_HOST=${DB_HOST} DB_USER=${DB_USER} DB_PASSWORD=${DB_PASSWORD} DB_NAME=${DB_NAME} \\
+                --environment-variables DB_HOST=${env.DB_HOST} DB_USER=${DB_USER_DEPLOY} DB_PASSWORD=${DB_PASSWORD_DEPLOY} DB_NAME=${env.DB_NAME} \\
                 --no-wait # Do not wait for deployment to complete to speed up pipeline
 
               echo "Azure Container Instance deployment initiated. Check Azure portal for status."
@@ -496,8 +486,8 @@ EOF
 
   post {
     always {
-      // K1: Continuous Integration (Ensuring all tests pass)
-      junit 'test-results/*.xml' // Corrected path for JUnit reports
+      # K1: Continuous Integration (Ensuring all tests pass)
+      junit 'test-results/*.xml' # Corrected path for JUnit reports
       cleanWs()
     }
   }
