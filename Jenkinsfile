@@ -482,7 +482,7 @@ EOF
 
   post {
     always {
-      # K1: Continuous Integration (Ensuring all tests pass)
+      //# K1: Continuous Integration (Ensuring all tests pass)
       junit 'test-results/*.xml' // Corrected path for JUnit reports
       cleanWs()
     }
