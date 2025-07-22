@@ -212,30 +212,22 @@ pipeline {
                 '''
             }
         }
-        stage('Install kubectl') {
+        stage('Install kubectl via Azure CLI') {
             steps {
-                sh '''
-                    #!/bin/bash
+                sh '''#!/bin/bash
                     set -e
                     
-                    echo "Installing kubectl without sudo..."
+                    echo "Installing kubectl via Azure CLI..."
                     
-                    # Download latest stable kubectl
-                    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                    
-                    # Install to user's local bin directory (no sudo needed)
-                    mkdir -p $HOME/.local/bin
-                    install -o $(whoami) -g $(whoami) -m 0755 kubectl $HOME/.local/bin/kubectl
-                    
-                    # Add to PATH if not already there
-                    echo "export PATH=\$HOME/.local/bin:\$PATH" >> $HOME/.bashrc
-                    source $HOME/.bashrc
+                    # Install to user directory without sudo
+                    az aks install-cli --install-location $HOME/.local/bin/kubectl
                     
                     # Verify installation
-                    kubectl version --client --output=yaml
+                    kubectl version --client
                 '''
             }
         }
+            
         stage('Deploy Infrastructure (Terraform)') {
             steps {
                 script {
