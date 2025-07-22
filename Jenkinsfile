@@ -212,18 +212,23 @@ pipeline {
                 '''
             }
         }
-        stage('Install kubectl via Azure CLI') {
+        stage('Install kubectl') {
             steps {
                 sh '''#!/bin/bash
                     set -e
                     
-                    echo "Installing kubectl via Azure CLI..."
+                    echo "Installing kubectl directly..."
                     
-                    # Install to user directory without sudo
-                    az aks install-cli --install-location $HOME/.local/bin/kubectl
+                    # Create local bin directory if it doesn't exist
+                    mkdir -p $HOME/.local/bin
+                    
+                    # Download and install kubectl
+                    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                    chmod +x kubectl
+                    mv kubectl $HOME/.local/bin/
                     
                     # Verify installation
-                    kubectl version --client
+                    $HOME/.local/bin/kubectl version --client
                 '''
             }
         }
