@@ -235,37 +235,35 @@ pipeline {
                         PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                         GRAFANA_NAME="grafana-${BUILD_NUMBER}"
         
-                        # Deploy Prometheus (ephemeral storage)
+                        # Deploy Prometheus (single-line command)
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name ${PROMETHEUS_NAME} \
                             --image prom/prometheus \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2   
+                            --memory 2 \
                             --ports 9090 \
                             --ip-address Public \
                             --location uksouth \
                             --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.templates=/usr/share/prometheus/consoles --web.console.libraries=/usr/share/prometheus/console_libraries" \
                             --no-wait
         
-                        // Deploy Grafana (ephemeral storage)
+                        # Deploy Grafana (single-line command)
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name ${GRAFANA_NAME} \
                             --image grafana/grafana \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2   
+                            --memory 2 \
                             --ports 3000 \
                             --ip-address Public \
                             --location uksouth \
-                            --environment-variables \
-                                GF_SECURITY_ADMIN_USER=admin \
-                                GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} \
+                            --environment-variables GF_SECURITY_ADMIN_USER=admin GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} \
                             --no-wait
         
-                        // Get public IPs
+                        # Get public IPs
                         echo "Waiting for IP assignment..."
                         sleep 30  # Wait for IP assignment
                         PROMETHEUS_IP=$(az container show -g MyPatientSurveyRG -n ${PROMETHEUS_NAME} --query "ipAddress.ip" -o tsv)
@@ -276,7 +274,7 @@ pipeline {
                         echo "Grafana URL: http://${GRAFANA_IP}:3000"
                         echo "Grafana credentials: admin / ${GRAFANA_PASSWORD}"
         
-                        // Store URLs for later use
+                        # Store URLs for later use
                         echo "PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090" > monitoring.env
                         echo "GRAFANA_URL=http://${GRAFANA_IP}:3000" >> monitoring.env
         
