@@ -114,93 +114,6 @@ pipeline {
                 '''
             }
         }
-        stage('Install Monitoring Tools') {
-          steps {
-            sh """
-              #!/usr/bin/env bash
-              set -e
-    
-              echo "Installing Prometheus..."
-              # Download Prometheus (adjust version as needed)
-              PROMETHEUS_VERSION="2.53.0" # Check for latest stable version
-              wget https://github.com/prometheus/prometheus/releases/download/v\${PROMETHEUS_VERSION}/prometheus-\${PROMETHEUS_VERSION}.linux-amd64.tar.gz -O /tmp/prometheus.tar.gz
-    
-              # Extract and move to /usr/local/bin
-              tar -xvf /tmp/prometheus.tar.gz -C /tmp/
-              sudo mv /tmp/prometheus-\${PROMETHEUS_VERSION}.linux-amd64/prometheus /usr/local/bin/
-              sudo mv /tmp/prometheus-\${PROMETHEUS_VERSION}.linux-amd64/promtool /usr/local/bin/
-    
-              # Create Prometheus user and directories
-              sudo useradd --no-create-home --shell /bin/false prometheus || true # || true to ignore if user exists
-              sudo mkdir -p /etc/prometheus /var/lib/prometheus
-    
-              # Set ownership
-              sudo chown prometheus:prometheus /usr/local/bin/prometheus
-              sudo chown prometheus:prometheus /usr/local/bin/promtool
-              sudo chown prometheus:prometheus /etc/prometheus
-              sudo chown prometheus:prometheus /var/lib/prometheus
-    
-              # Basic Prometheus configuration (prometheus.yml)
-              sudo tee /etc/prometheus/prometheus.yml > /dev/null <<EOF
-    global:
-      scrape_interval: 15s
-    
-    scrape_configs:
-      - job_name: 'prometheus'
-        static_configs:
-          - targets: ['localhost:9090']
-      - job_name: 'jenkins'
-        static_configs:
-          - targets: ['localhost:8080'] # Assuming Jenkins Exporter is running on 8080/metrics
-    EOF
-    
-              # Create systemd service file for Prometheus
-              sudo tee /etc/systemd/system/prometheus.service > /dev/null <<EOF
-    [Unit]
-    Description=Prometheus
-    Wants=network-online.target
-    After=network-online.target
-    
-    [Service]
-    User=prometheus
-    Group=prometheus
-    Type=simple
-    ExecStart=/usr/local/bin/prometheus \\
-        --config.file /etc/prometheus/prometheus.yml \\
-        --storage.tsdb.path /var/lib/prometheus/ \\
-        --web.console.templates=/etc/prometheus/consoles \\
-        --web.console.libraries=/etc/prometheus/console_libraries
-    
-    [Install]
-    WantedBy=multi-user.target
-    EOF
-    
-              # Reload systemd, enable and start Prometheus
-              sudo systemctl daemon-reload
-              sudo systemctl enable prometheus
-              sudo systemctl start prometheus
-              echo "Prometheus installation complete."
-    
-    
-              echo "Installing Grafana..."
-              # Install Grafana (using official APT repository)
-              sudo apt-get install -y apt-transport-https software-properties-common wget
-              sudo mkdir -p /etc/apt/keyrings/
-              # CRITICAL FIX: Remove existing grafana.gpg key file to prevent "File exists" error
-              sudo rm -f /etc/apt/keyrings/grafana.gpg
-              wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor --batch -o /etc/apt/keyrings/grafana.gpg # Added --batch
-              echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
-              sudo apt-get update
-              sudo apt-get install -y grafana
-    
-              # Enable and start Grafana
-              sudo systemctl daemon-reload
-              sudo systemctl enable grafana-server
-              sudo systemctl start grafana-server
-              echo "Grafana installation complete."
-            """
-          }
-        }
         stage('Install Azure CLI') {
             steps {
                 sh '''
@@ -212,30 +125,164 @@ pipeline {
                 '''
             }
         }
-        // stage('Install kubectl') {
-        //     steps {
-        //         sh '''
-        //             #!/bin/bash
-        //             set -e
-                    
-        //             echo "Installing kubectl without sudo..."
-                    
-        //             # Download latest stable kubectl
-        //             curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                    
-        //             # Install to user's local bin directory (no sudo needed)
-        //             mkdir -p $HOME/.local/bin
-        //             install -o $(whoami) -g $(whoami) -m 0755 kubectl $HOME/.local/bin/kubectl
-                    
-        //             # Add to PATH if not already there
-        //             echo "export PATH=\$HOME/.local/bin:\$PATH" >> $HOME/.bashrc
-        //             source $HOME/.bashrc
-                    
-        //             # Verify installation
-        //             kubectl version --client --output=yaml
-        //         '''
-        //     }
-        // }
+    //     stage('Install Monitoring Tools') {
+    //       steps {
+    //         sh """
+    //           #!/usr/bin/env bash
+    //           set -e
+    
+    //           echo "Installing Prometheus..."
+    //           # Download Prometheus (adjust version as needed)
+    //           PROMETHEUS_VERSION="2.53.0" # Check for latest stable version
+    //           wget https://github.com/prometheus/prometheus/releases/download/v\${PROMETHEUS_VERSION}/prometheus-\${PROMETHEUS_VERSION}.linux-amd64.tar.gz -O /tmp/prometheus.tar.gz
+    
+    //           # Extract and move to /usr/local/bin
+    //           tar -xvf /tmp/prometheus.tar.gz -C /tmp/
+    //           sudo mv /tmp/prometheus-\${PROMETHEUS_VERSION}.linux-amd64/prometheus /usr/local/bin/
+    //           sudo mv /tmp/prometheus-\${PROMETHEUS_VERSION}.linux-amd64/promtool /usr/local/bin/
+    
+    //           # Create Prometheus user and directories
+    //           sudo useradd --no-create-home --shell /bin/false prometheus || true # || true to ignore if user exists
+    //           sudo mkdir -p /etc/prometheus /var/lib/prometheus
+    
+    //           # Set ownership
+    //           sudo chown prometheus:prometheus /usr/local/bin/prometheus
+    //           sudo chown prometheus:prometheus /usr/local/bin/promtool
+    //           sudo chown prometheus:prometheus /etc/prometheus
+    //           sudo chown prometheus:prometheus /var/lib/prometheus
+    
+    //           # Basic Prometheus configuration (prometheus.yml)
+    //           sudo tee /etc/prometheus/prometheus.yml > /dev/null <<EOF
+    // global:
+    //   scrape_interval: 15s
+    
+    // scrape_configs:
+    //   - job_name: 'prometheus'
+    //     static_configs:
+    //       - targets: ['localhost:9090']
+    //   - job_name: 'jenkins'
+    //     static_configs:
+    //       - targets: ['localhost:8080'] # Assuming Jenkins Exporter is running on 8080/metrics
+    // EOF
+    
+    //           # Create systemd service file for Prometheus
+    //           sudo tee /etc/systemd/system/prometheus.service > /dev/null <<EOF
+    // [Unit]
+    // Description=Prometheus
+    // Wants=network-online.target
+    // After=network-online.target
+    
+    // [Service]
+    // User=prometheus
+    // Group=prometheus
+    // Type=simple
+    // ExecStart=/usr/local/bin/prometheus \\
+    //     --config.file /etc/prometheus/prometheus.yml \\
+    //     --storage.tsdb.path /var/lib/prometheus/ \\
+    //     --web.console.templates=/etc/prometheus/consoles \\
+    //     --web.console.libraries=/etc/prometheus/console_libraries
+    
+    // [Install]
+    // WantedBy=multi-user.target
+    // EOF
+    
+    //           # Reload systemd, enable and start Prometheus
+    //           sudo systemctl daemon-reload
+    //           sudo systemctl enable prometheus
+    //           sudo systemctl start prometheus
+    //           echo "Prometheus installation complete."
+    
+    
+    //           echo "Installing Grafana..."
+    //           # Install Grafana (using official APT repository)
+    //           sudo apt-get install -y apt-transport-https software-properties-common wget
+    //           sudo mkdir -p /etc/apt/keyrings/
+    //           # CRITICAL FIX: Remove existing grafana.gpg key file to prevent "File exists" error
+    //           sudo rm -f /etc/apt/keyrings/grafana.gpg
+    //           wget -q -O - https://apt.grafana.com/gpg.key | sudo gpg --dearmor --batch -o /etc/apt/keyrings/grafana.gpg # Added --batch
+    //           echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+    //           sudo apt-get update
+    //           sudo apt-get install -y grafana
+    
+    //           # Enable and start Grafana
+    //           sudo systemctl daemon-reload
+    //           sudo systemctl enable grafana-server
+    //           sudo systemctl start grafana-server
+    //           echo "Grafana installation complete."
+    //         """
+    //       }
+    //     }
+        
+        stage('Deploy Monitoring Stack') {
+            steps {
+                script {
+                    withCredentials([azureServicePrincipal('AZURE_CREDS')]) {
+                        sh '''
+                        #!/bin/bash
+                        set -e
+        
+                        echo "Logging into Azure..."
+                        az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
+                        az account set --subscription $ARM_SUBSCRIPTION_ID
+        
+                        # Generate unique names
+                        PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                        GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+        
+                        # Deploy Prometheus with persistent storage
+                        az container create \
+                            --resource-group MyPatientSurveyRG \
+                            --name ${PROMETHEUS_NAME} \
+                            --image prom/prometheus \
+                            --os-type Linux \
+                            --cpu 1 \
+                            --memory 2Gi \
+                            --ports 9090 \
+                            --ip-address Public \
+                            --location uksouth \
+                            --environment-variables \
+                                PROMETHEUS_EXTRA_ARGS="--storage.tsdb.retention.time=30d" \
+                            --azure-file-volume-share-name prometheus-data \
+                            --azure-file-volume-account-name ${STORAGE_ACCOUNT_NAME} \
+                            --azure-file-volume-account-key ${STORAGE_ACCOUNT_KEY} \
+                            --azure-file-volume-mount-path /prometheus \
+                            --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.templates=/usr/share/prometheus/consoles --web.console.libraries=/usr/share/prometheus/console_libraries" \
+                            --no-wait
+        
+                        # Deploy Grafana with persistent storage
+                        az container create \
+                            --resource-group MyPatientSurveyRG \
+                            --name ${GRAFANA_NAME} \
+                            --image grafana/grafana \
+                            --os-type Linux \
+                            --cpu 1 \
+                            --memory 2Gi \
+                            --ports 3000 \
+                            --ip-address Public \
+                            --location uksouth \
+                            --environment-variables \
+                                GF_SECURITY_ADMIN_USER=admin \
+                                GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} \
+                            --azure-file-volume-share-name grafana-data \
+                            --azure-file-volume-account-name ${STORAGE_ACCOUNT_NAME} \
+                            --azure-file-volume-account-key ${STORAGE_ACCOUNT_KEY} \
+                            --azure-file-volume-mount-path /var/lib/grafana \
+                            --no-wait
+        
+                        # Get public IPs
+                        PROMETHEUS_IP=$(az container show --resource-group MyPatientSurveyRG --name ${PROMETHEUS_NAME} --query "ipAddress.ip" -o tsv)
+                        GRAFANA_IP=$(az container show --resource-group MyPatientSurveyRG --name ${GRAFANA_NAME} --query "ipAddress.ip" -o tsv)
+        
+                        echo "Prometheus URL: http://${PROMETHEUS_IP}:9090"
+                        echo "Grafana URL: http://${GRAFANA_IP}:3000"
+                        echo "Grafana credentials: admin / ${GRAFANA_PASSWORD}"
+        
+                        az logout
+                        '''
+                    }
+                }
+            }
+        }
         stage('Install kubectl') {
           steps {
             sh '''#!/bin/bash
