@@ -337,24 +337,33 @@ pipeline {
                 '''
             }
         }
-        stage('Security Scan') {
+       stage('Security Scan') {
           steps {
             dir('app') {
               sh '''#!/usr/bin/env bash
                 set -ex
                 
-                # Install tools to isolated location
-                TOOLS_DIR="$WORKSPACE/security_tools"
-                mkdir -p "$TOOLS_DIR"
-                export PATH="$TOOLS_DIR/bin:$PATH"
+                # Install tools to user space
+                python3 -m pip install --user bandit pip-audit
                 
-                python3 -m pip install --prefix="$TOOLS_DIR" bandit pip-audit
+                # Add user's Python bin directory to PATH
+                export PATH="$HOME/.local/bin:$PATH"
+                echo "PATH is now: $PATH"
+                
+                # Verify tools are accessible
+                which bandit || true
+                which pip-audit || true
+                
+                # Run scans
+                echo "Running Bandit scan..."
                 bandit -r . -ll
+                
+                echo "Running pip-audit..."
                 pip-audit -r ../requirements.txt --verbose
               '''
             }
           }
-        }
+        } 
         stage('Run Tests') {
             steps {
                 sh '''
