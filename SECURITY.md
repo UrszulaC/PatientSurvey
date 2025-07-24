@@ -12,5 +12,5 @@
 | **E**levation of Privilege | Malicious container escapes to host VM          |         High | Run Docker containers as unprivileged users; enable Docker seccomp and AppArmor profiles.         |
 
 Risk Assessment:
-We’ve identified three “High” risks—spoofing, info disclosure, and privilege escalation.
+There were 3 “High” risks identified — spoofing, info disclosure, and privilege escalation.
 Our mitigations (mTLS, localhost binding, container hardening) reduce their likelihood/impact to acceptable levels.
