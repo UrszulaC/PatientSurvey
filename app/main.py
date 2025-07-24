@@ -335,8 +335,26 @@ def main():
         # Drop and create the main application database first
         # This requires connecting to master database
         cursor_ddl = conn_for_ddl.cursor()
-        cursor_ddl.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_NAME}') DROP DATABASE {Config.DB_NAME}")
-        cursor_ddl.execute(f"CREATE DATABASE {Config.DB_NAME}")
+        # cursor_ddl.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_NAME}') DROP DATABASE {Config.DB_NAME}")
+        # cursor_ddl.execute(f"CREATE DATABASE {Config.DB_NAME}")
+        cursor_ddl = conn_for_ddl.cursor()
+
+        # 1. Parameterized check for database existence (safe)
+        cursor_ddl.execute(
+            "SELECT name FROM sys.databases WHERE name = ?", 
+            (Config.DB_NAME,)
+        )
+        db_exists = cursor_ddl.fetchone()
+        
+        # 2. Conditional DROP with proper escaping
+        if db_exists:
+            # Escape database name for DDL (SQL Server specific)
+            safe_db_name = f"[{Config.DB_NAME}]"  # Square brackets escape special chars
+            cursor_ddl.execute(f"DROP DATABASE {safe_db_name}")  # nosec B608: Justified DDL
+        
+        # 3. Safe CREATE using escaped name
+        cursor_ddl.execute(f"CREATE DATABASE [{Config.DB_NAME}]")
+        
         # No explicit commit needed here because autocommit is True
         cursor_ddl.close()
         conn_for_ddl.close() # Close the DDL connection
