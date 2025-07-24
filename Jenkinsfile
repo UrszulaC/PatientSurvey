@@ -242,7 +242,7 @@ pipeline {
                             --image prom/prometheus \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2Gi \
+                            --memory 2 \  # Changed from 2Gi to just 2
                             --ports 9090 \
                             --ip-address Public \
                             --location uksouth \
@@ -256,7 +256,7 @@ pipeline {
                             --image grafana/grafana \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2Gi \
+                            --memory 2 \  # Changed from 2Gi to just 2
                             --ports 3000 \
                             --ip-address Public \
                             --location uksouth \
