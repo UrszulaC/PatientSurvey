@@ -17,7 +17,7 @@ class Config:
 
     # Connection string for pyodbc
     # Note: DB_NAME is for the main application.
-    # For tests, we'll build a string that connects without a specific DB first.
+    # For tests, building a string that connects without a specific DB first.
     DB_CONNECTION_STRING = (
         f"DRIVER={ODBC_DRIVER};"
         f"SERVER={DB_HOST},1433;" # Azure SQL default port is 1433, specify it here
@@ -45,5 +45,5 @@ class Config:
         if missing:
             raise ValueError(f"Missing required config values: {missing}")
 
-# Validate configuration on import
+# Validates configuration on import
 Config.validate()
