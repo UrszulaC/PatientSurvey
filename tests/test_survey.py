@@ -17,7 +17,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         """Set up test database and tables"""
         try:
             # Connect to master to create/drop the test database
-            # IMPORTANT: Set autocommit=True for DDL operations like CREATE/DROP DATABASE
+            # IMPORTANT: Setting autocommit=True for DDL operations like CREATE/DROP DATABASE
             cls.connection = get_db_connection(database_name=None)
             cls.connection.autocommit = True # Explicitly set autocommit to True for DDL
             cls.cursor = cls.connection.cursor()
@@ -27,7 +27,6 @@ class TestPatientSurveySystem(unittest.TestCase):
             cls.cursor.execute(f"CREATE DATABASE {Config.DB_TEST_NAME}")
             # No explicit commit needed here because autocommit is True
 
-            # Close and re-open connection to switch database context to the newly created test DB
             # For subsequent operations on the test database, autocommit can be False (default)
             cls.connection.close()
             cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
@@ -40,7 +39,7 @@ class TestPatientSurveySystem(unittest.TestCase):
             from app.main import create_survey_tables
             create_survey_tables(cls.connection) # Pass the connection to it
 
-            # Verify survey exists and has correct questions
+          
             # SELECT survey_id (index 0)
             cls.cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
             survey = cls.cursor.fetchone() # Will be a tuple
@@ -49,7 +48,7 @@ class TestPatientSurveySystem(unittest.TestCase):
 
             cls.survey_id = survey[0] # Access by index
 
-            # Store question IDs for tests
+            # Storing question IDs for tests
             # SELECT question_id (index 0), question_text (index 1)
             cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ? ORDER BY question_id", (cls.survey_id,)) # Use ?
             cls.questions = {row[1]: row[0] for row in cls.cursor.fetchall()} # Access by index: {question_text: question_id}
@@ -78,7 +77,7 @@ class TestPatientSurveySystem(unittest.TestCase):
                 # No explicit commit needed here because autocommit is True
                 temp_conn.close()
 
-                # Close the main connection used by tests if it's still open
+                # Closes the main connection used by tests if it's still open
                 cls.connection.close()
         except pyodbc.Error as e:
             print(f"Warning: Cleanup failed - {e}")
@@ -92,11 +91,11 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Removed: self.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
 
         # --- CRITICAL FIX: Use DELETE FROM instead of TRUNCATE TABLE for tables with FK constraints ---
-        # Delete from child tables first, then parent tables
+        # Deletes from child tables first, then parent tables
         self.cursor.execute("DELETE FROM answers")
         self.cursor.execute("DELETE FROM responses")
-        # No need to delete from questions or surveys here, as they are part of the initial setup
-        # and are dropped/recreated in setUpClass. setUp only needs to clear transactional data.
+        
+       
         self.conn.commit() # Commit delete operations
         # --- END CRITICAL FIX ---
 
