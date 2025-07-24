@@ -68,4 +68,4 @@ output "survey_app_public_ip" {
   value = azurerm_container_group.survey_app.ip_address
 }
 
-# Removed: Duplicate output "sql_server_fqdn" as it's defined in database.tf
+
