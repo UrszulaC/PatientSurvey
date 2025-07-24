@@ -212,29 +212,47 @@ pipeline {
                 '''
             }
         }
+        // stage('Install kubectl') {
+        //     steps {
+        //         sh '''
+        //             #!/bin/bash
+        //             set -e
+                    
+        //             echo "Installing kubectl without sudo..."
+                    
+        //             # Download latest stable kubectl
+        //             curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                    
+        //             # Install to user's local bin directory (no sudo needed)
+        //             mkdir -p $HOME/.local/bin
+        //             install -o $(whoami) -g $(whoami) -m 0755 kubectl $HOME/.local/bin/kubectl
+                    
+        //             # Add to PATH if not already there
+        //             echo "export PATH=\$HOME/.local/bin:\$PATH" >> $HOME/.bashrc
+        //             source $HOME/.bashrc
+                    
+        //             # Verify installation
+        //             kubectl version --client --output=yaml
+        //         '''
+        //     }
+        // }
         stage('Install kubectl') {
-            steps {
-                sh '''
-                    #!/bin/bash
-                    set -e
-                    
-                    echo "Installing kubectl without sudo..."
-                    
-                    # Download latest stable kubectl
-                    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                    
-                    # Install to user's local bin directory (no sudo needed)
-                    mkdir -p $HOME/.local/bin
-                    install -o $(whoami) -g $(whoami) -m 0755 kubectl $HOME/.local/bin/kubectl
-                    
-                    # Add to PATH if not already there
-                    echo "export PATH=\$HOME/.local/bin:\$PATH" >> $HOME/.bashrc
-                    source $HOME/.bashrc
-                    
-                    # Verify installation
-                    kubectl version --client --output=yaml
-                '''
-            }
+          steps {
+            sh '''#!/bin/bash
+              set -e
+              echo "Installing kubectl..."
+              
+              KUBE_DIR="$WORKSPACE/kubectl_install"
+              mkdir -p "$KUBE_DIR/bin"
+              
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl "$KUBE_DIR/bin/"
+              
+              export PATH="$KUBE_DIR/bin:$PATH"
+              kubectl version --client --output=yaml
+            '''
+          }
         }
         stage('Deploy Infrastructure (Terraform)') {
             steps {
