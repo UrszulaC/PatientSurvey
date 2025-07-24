@@ -216,7 +216,13 @@ pipeline {
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
-                    withCredentials([azureServicePrincipal('AZURE_CREDS')]) {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
+                    ]) {
                         sh '''
                         #!/bin/bash
                         set -e
@@ -229,7 +235,7 @@ pipeline {
                         PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                         GRAFANA_NAME="grafana-${BUILD_NUMBER}"
         
-                        # Deploy Prometheus with persistent storage
+                        # Deploy Prometheus (ephemeral storage)
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name ${PROMETHEUS_NAME} \
@@ -240,16 +246,10 @@ pipeline {
                             --ports 9090 \
                             --ip-address Public \
                             --location uksouth \
-                            --environment-variables \
-                                PROMETHEUS_EXTRA_ARGS="--storage.tsdb.retention.time=30d" \
-                            --azure-file-volume-share-name prometheus-data \
-                            --azure-file-volume-account-name ${STORAGE_ACCOUNT_NAME} \
-                            --azure-file-volume-account-key ${STORAGE_ACCOUNT_KEY} \
-                            --azure-file-volume-mount-path /prometheus \
                             --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.templates=/usr/share/prometheus/consoles --web.console.libraries=/usr/share/prometheus/console_libraries" \
                             --no-wait
         
-                        # Deploy Grafana with persistent storage
+                        # Deploy Grafana (ephemeral storage)
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name ${GRAFANA_NAME} \
@@ -263,21 +263,60 @@ pipeline {
                             --environment-variables \
                                 GF_SECURITY_ADMIN_USER=admin \
                                 GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} \
-                            --azure-file-volume-share-name grafana-data \
-                            --azure-file-volume-account-name ${STORAGE_ACCOUNT_NAME} \
-                            --azure-file-volume-account-key ${STORAGE_ACCOUNT_KEY} \
-                            --azure-file-volume-mount-path /var/lib/grafana \
                             --no-wait
         
                         # Get public IPs
-                        PROMETHEUS_IP=$(az container show --resource-group MyPatientSurveyRG --name ${PROMETHEUS_NAME} --query "ipAddress.ip" -o tsv)
-                        GRAFANA_IP=$(az container show --resource-group MyPatientSurveyRG --name ${GRAFANA_NAME} --query "ipAddress.ip" -o tsv)
+                        echo "Waiting for IP assignment..."
+                        sleep 30  # Wait for IP assignment
+                        PROMETHEUS_IP=$(az container show -g MyPatientSurveyRG -n ${PROMETHEUS_NAME} --query "ipAddress.ip" -o tsv)
+                        GRAFANA_IP=$(az container show -g MyPatientSurveyRG -n ${GRAFANA_NAME} --query "ipAddress.ip" -o tsv)
         
+                        echo "##[section] Monitoring Deployment Complete"
                         echo "Prometheus URL: http://${PROMETHEUS_IP}:9090"
                         echo "Grafana URL: http://${GRAFANA_IP}:3000"
                         echo "Grafana credentials: admin / ${GRAFANA_PASSWORD}"
         
+                        # Store URLs for later use
+                        echo "PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090" > monitoring.env
+                        echo "GRAFANA_URL=http://${GRAFANA_IP}:3000" >> monitoring.env
+        
                         az logout
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Configure Monitoring Firewall') {
+            steps {
+                script {
+                    withCredentials([azureServicePrincipal('AZURE_CREDS')]) {
+                        sh '''
+                        az network nsg rule create \
+                            --resource-group MyPatientSurveyRG \
+                            --nsg-name default \
+                            --name allow-grafana \
+                            --priority 300 \
+                            --access Allow \
+                            --protocol Tcp \
+                            --direction Inbound \
+                            --source-address-prefixes '*' \
+                            --source-port-ranges '*' \
+                            --destination-address-prefixes '*' \
+                            --destination-port-ranges 3000
+        
+                        az network nsg rule create \
+                            --resource-group MyPatientSurveyRG \
+                            --nsg-name default \
+                            --name allow-prometheus \
+                            --priority 310 \
+                            --access Allow \
+                            --protocol Tcp \
+                            --direction Inbound \
+                            --source-address-prefixes '*' \
+                            --source-port-ranges '*' \
+                            --destination-address-prefixes '*' \
+                            --destination-port-ranges 9090
                         '''
                     }
                 }
