@@ -1,14 +1,9 @@
-# Use an official Python runtime as a parent image
-# CRITICAL FIX: Changed base image from buster (Debian 10) to bullseye (Debian 11)
-# Buster repositories are no longer actively maintained at the default URLs.
 FROM python:3.9-slim-bullseye
 
-# Set the working directory in the container
+# Setting the working directory in the container
 # All subsequent commands will be run relative to this directory.
 WORKDIR /app
 
-# Install ODBC Driver for SQL Server
-# Based on instructions for Debian 11 (Bullseye)
 # This section ensures the ODBC driver is installed inside the Docker image
 RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-transport-https \
@@ -22,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# CRITICAL FIX: Copy the *contents* of the local 'app' directory into the WORKDIR (/app)
+
 # This will place main.py, config.py, utils/, etc., directly under /app
 COPY app/ .
 
@@ -30,7 +25,7 @@ COPY app/ .
 # This assumes requirements.txt is at the top level of your Git repository.
 COPY requirements.txt .
 
-# Install any needed Python packages specified in requirements.txt
+# Installing any needed Python packages specified in requirements.txt
 # Since WORKDIR is /app, it will look for requirements.txt directly in /app.
 RUN pip install --no-cache-dir -r requirements.txt
 
