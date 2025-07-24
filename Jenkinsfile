@@ -332,24 +332,24 @@ pipeline {
                 }
             }
         }
-        stage('Install kubectl') {
-          steps {
-            sh '''#!/bin/bash
-              set -e
-              echo "Installing kubectl..."
+        // stage('Install kubectl') {
+        //   steps {
+        //     sh '''#!/bin/bash
+        //       set -e
+        //       echo "Installing kubectl..."
               
-              KUBE_DIR="$WORKSPACE/kubectl_install"
-              mkdir -p "$KUBE_DIR/bin"
+        //       KUBE_DIR="$WORKSPACE/kubectl_install"
+        //       mkdir -p "$KUBE_DIR/bin"
               
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-              chmod +x kubectl
-              mv kubectl "$KUBE_DIR/bin/"
+        //       curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        //       chmod +x kubectl
+        //       mv kubectl "$KUBE_DIR/bin/"
               
-              export PATH="$KUBE_DIR/bin:$PATH"
-              kubectl version --client --output=yaml
-            '''
-          }
-        }
+        //       export PATH="$KUBE_DIR/bin:$PATH"
+        //       kubectl version --client --output=yaml
+        //     '''
+        //   }
+        // }
         stage('Deploy Infrastructure (Terraform)') {
             steps {
                 script {
