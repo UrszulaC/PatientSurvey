@@ -256,7 +256,7 @@ pipeline {
                             --image grafana/grafana \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2 \  
+                            --memory 2   
                             --ports 3000 \
                             --ip-address Public \
                             --location uksouth \
