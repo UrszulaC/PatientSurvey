@@ -297,59 +297,25 @@ pipeline {
             }
         }
         
-        stage('Configure Monitoring Firewall') {
-            steps {
-                script {
-                    withCredentials([azureServicePrincipal('AZURE_CREDS')]) {
-                        sh '''
-                        az network nsg rule create \
-                            --resource-group MyPatientSurveyRG \
-                            --nsg-name default \
-                            --name allow-grafana \
-                            --priority 300 \
-                            --access Allow \
-                            --protocol Tcp \
-                            --direction Inbound \
-                            --source-address-prefixes '*' \
-                            --source-port-ranges '*' \
-                            --destination-address-prefixes '*' \
-                            --destination-port-ranges 3000
         
-                        az network nsg rule create \
-                            --resource-group MyPatientSurveyRG \
-                            --nsg-name default \
-                            --name allow-prometheus \
-                            --priority 310 \
-                            --access Allow \
-                            --protocol Tcp \
-                            --direction Inbound \
-                            --source-address-prefixes '*' \
-                            --source-port-ranges '*' \
-                            --destination-address-prefixes '*' \
-                            --destination-port-ranges 9090
-                        '''
-                    }
-                }
-            }
+        stage('Install kubectl') {
+          steps {
+            sh '''#!/bin/bash
+              set -e
+              echo "Installing kubectl..."
+              
+              KUBE_DIR="$WORKSPACE/kubectl_install"
+              mkdir -p "$KUBE_DIR/bin"
+              
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl "$KUBE_DIR/bin/"
+              
+              export PATH="$KUBE_DIR/bin:$PATH"
+              kubectl version --client --output=yaml
+            '''
+          }
         }
-        // stage('Install kubectl') {
-        //   steps {
-        //     sh '''#!/bin/bash
-        //       set -e
-        //       echo "Installing kubectl..."
-              
-        //       KUBE_DIR="$WORKSPACE/kubectl_install"
-        //       mkdir -p "$KUBE_DIR/bin"
-              
-        //       curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        //       chmod +x kubectl
-        //       mv kubectl "$KUBE_DIR/bin/"
-              
-        //       export PATH="$KUBE_DIR/bin:$PATH"
-        //       kubectl version --client --output=yaml
-        //     '''
-        //   }
-        // }
         stage('Deploy Infrastructure (Terraform)') {
             steps {
                 script {
