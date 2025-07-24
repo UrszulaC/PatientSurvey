@@ -33,7 +33,35 @@ resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
   start_ip_address    = "0.0.0.0"
   end_ip_address      = "0.0.0.0"
 }
+resource "azurerm_network_security_group" "monitoring_nsg" {
+  name                = "monitoring-nsg"
+  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = data.azurerm_resource_group.existing.name
 
+  security_rule {
+    name                       = "allow-grafana"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "3000"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "allow-prometheus"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "9090"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
 # Output the SQL Server FQDN for your application to use
 output "sql_server_fqdn" {
   value       = azurerm_mssql_server.sql_server.fully_qualified_domain_name # <--- NEW: Use fully_qualified_domain_name
