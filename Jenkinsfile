@@ -242,7 +242,7 @@ pipeline {
                             --image prom/prometheus \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2 \  
+                            --memory 2   
                             --ports 9090 \
                             --ip-address Public \
                             --location uksouth \
