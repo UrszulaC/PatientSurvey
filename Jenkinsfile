@@ -212,7 +212,6 @@ pipeline {
     //         """
     //       }
     //     }
-        
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
@@ -235,7 +234,7 @@ pipeline {
                         PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                         GRAFANA_NAME="grafana-${BUILD_NUMBER}"
         
-                        # Deploy Prometheus (single-line command)
+                        # Deploy Prometheus with explicit DNS name label
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name ${PROMETHEUS_NAME} \
@@ -245,11 +244,12 @@ pipeline {
                             --memory 2 \
                             --ports 9090 \
                             --ip-address Public \
+                            --dns-name-label ${PROMETHEUS_NAME} \
                             --location uksouth \
                             --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.templates=/usr/share/prometheus/consoles --web.console.libraries=/usr/share/prometheus/console_libraries" \
                             --no-wait
         
-                        # Deploy Grafana (single-line command)
+                        # Deploy Grafana with explicit DNS name label
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name ${GRAFANA_NAME} \
@@ -259,24 +259,36 @@ pipeline {
                             --memory 2 \
                             --ports 3000 \
                             --ip-address Public \
+                            --dns-name-label ${GRAFANA_NAME} \
                             --location uksouth \
                             --environment-variables GF_SECURITY_ADMIN_USER=admin GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} \
                             --no-wait
         
-                        # Get public IPs
-                        echo "Waiting for IP assignment..."
-                        sleep 30  # Wait for IP assignment
-                        PROMETHEUS_IP=$(az container show -g MyPatientSurveyRG -n ${PROMETHEUS_NAME} --query "ipAddress.ip" -o tsv)
-                        GRAFANA_IP=$(az container show -g MyPatientSurveyRG -n ${GRAFANA_NAME} --query "ipAddress.ip" -o tsv)
+                        # Wait for deployment completion
+                        echo "Waiting for deployments to complete..."
+                        sleep 60
+        
+                        # Get FQDNs instead of IPs (more reliable)
+                        PROMETHEUS_FQDN=$(az container show -g MyPatientSurveyRG -n ${PROMETHEUS_NAME} --query "ipAddress.fqdn" -o tsv)
+                        GRAFANA_FQDN=$(az container show -g MyPatientSurveyRG -n ${GRAFANA_NAME} --query "ipAddress.fqdn" -o tsv)
+        
+                        if [ -z "$PROMETHEUS_FQDN" ] || [ -z "$GRAFANA_FQDN" ]; then
+                            echo "##[error] Failed to get public endpoints!"
+                            echo "Prometheus logs:"
+                            az container logs -g MyPatientSurveyRG -n ${PROMETHEUS_NAME}
+                            echo "Grafana logs:"
+                            az container logs -g MyPatientSurveyRG -n ${GRAFANA_NAME}
+                            exit 1
+                        fi
         
                         echo "##[section] Monitoring Deployment Complete"
-                        echo "Prometheus URL: http://${PROMETHEUS_IP}:9090"
-                        echo "Grafana URL: http://${GRAFANA_IP}:3000"
+                        echo "Prometheus URL: http://${PROMETHEUS_FQDN}:9090"
+                        echo "Grafana URL: http://${GRAFANA_FQDN}:3000"
                         echo "Grafana credentials: admin / ${GRAFANA_PASSWORD}"
         
                         # Store URLs for later use
-                        echo "PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090" > monitoring.env
-                        echo "GRAFANA_URL=http://${GRAFANA_IP}:3000" >> monitoring.env
+                        echo "PROMETHEUS_URL=http://${PROMETHEUS_FQDN}:9090" > monitoring.env
+                        echo "GRAFANA_URL=http://${GRAFANA_FQDN}:3000" >> monitoring.env
         
                         az logout
                         '''
@@ -284,7 +296,7 @@ pipeline {
                 }
             }
         }
-
+        
         stage('Configure Monitoring Firewall') {
             steps {
                 script {
