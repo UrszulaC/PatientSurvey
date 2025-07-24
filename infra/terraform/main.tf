@@ -54,8 +54,6 @@ resource "azurerm_container_group" "survey_app" {
       DB_USER     = var.db_user
       DB_PASSWORD = var.db_password
     }
-  
-
   }
 }
 
