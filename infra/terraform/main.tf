@@ -54,10 +54,8 @@ resource "azurerm_container_group" "survey_app" {
       DB_USER     = var.db_user
       DB_PASSWORD = var.db_password
     }
+  
 
-    # CRITICAL FIX: Removed 'commands' argument here.
-    # This allows the CMD instruction in the Dockerfile (tail -f /dev/null) to be used.
-    # We will manually run the Python app after exec'ing into the container.
   }
 }
 
