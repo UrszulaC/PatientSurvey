@@ -21,8 +21,8 @@ question_count = Counter('survey_questions_total', 'Total number of questions in
 
 
 # This function needs to handle its own connection for creating/dropping databases
-# because the decorator connects to a specific database.
-# We'll modify it to take `conn` as an argument, and `main()` will pass it.
+# Decorator connects to a specific database.
+# It will take `conn` as an argument, and `main()` will pass it.
 def create_survey_tables(conn):
     """Create all necessary tables for surveys"""
     try:
