@@ -110,7 +110,6 @@ def create_survey_tables(conn):
                 raise Exception("Insert into surveys table failed: No rows were inserted. Check for hidden constraints or transaction issues.")
 
             # Get last inserted ID for pyodbc (SCOPE_IDENTITY() or @@IDENTITY)
-            # Use @@IDENTITY as a fallback if SCOPE_IDENTITY() is still problematic in this environment
             cursor.execute("SELECT SCOPE_IDENTITY()")
             new_survey_id_row = cursor.fetchone()
             
@@ -175,7 +174,7 @@ def create_survey_tables(conn):
         logger.error(f"General initialization failed: {e}")
         raise
 
-# Removed @with_db_connection decorator
+
 def conduct_survey(conn): # Now explicitly accepts conn
     """Conduct the survey and store responses"""
     try:
@@ -236,7 +235,7 @@ def conduct_survey(conn): # Now explicitly accepts conn
         cursor.execute("SELECT SCOPE_IDENTITY()") # Get last inserted ID
         new_response_id_row = cursor.fetchone()
         
-        # CRITICAL FIX: Add robust check and fallback for SCOPE_IDENTITY in conduct_survey
+        # CRITICAL FIX: Added robust check and fallback for SCOPE_IDENTITY in conduct_survey
         if new_response_id_row is None or new_response_id_row[0] is None:
             logger.warning("SCOPE_IDENTITY returned None in conduct_survey. Attempting to use @@IDENTITY as a fallback.")
             cursor.execute("SELECT @@IDENTITY")
@@ -269,7 +268,7 @@ def view_responses(conn): # Now explicitly accepts conn
     """View all survey responses"""
     try:
         cursor = conn.cursor()
-        # Removed: cursor.row_factory = pyodbc.Row # Not supported directly on cursor
+        # Removed: cursor.row_factory = pyodbc.Row 
 
         # SELECT COUNT(DISTINCT response_id) as count (index 0)
         cursor.execute("SELECT COUNT(DISTINCT response_id) as count FROM answers")
@@ -332,7 +331,7 @@ def main():
         conn_for_ddl = get_db_connection(database_name=None)
         conn_for_ddl.autocommit = True # Explicitly set autocommit to True for DDL
         
-        # Drop and create the main application database first
+        # Dropping and creating the main application database first
         # This requires connecting to master database
         cursor_ddl = conn_for_ddl.cursor()
         # cursor_ddl.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_NAME}') DROP DATABASE {Config.DB_NAME}")
@@ -359,7 +358,7 @@ def main():
         cursor_ddl.close()
         conn_for_ddl.close() # Close the DDL connection
 
-        # Now, create tables within the newly created Config.DB_NAME database
+        # Now, creating tables within the newly created Config.DB_NAME database
         # This connection will be passed to create_survey_tables
         conn_for_tables = get_db_connection(database_name=Config.DB_NAME)
         conn_for_tables.autocommit = True # Explicitly set autocommit for this connection
