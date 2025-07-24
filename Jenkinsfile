@@ -319,7 +319,33 @@ pipeline {
                 '''
             }
         }
-
+        stage('Security Scan') {
+          steps {
+            dir('app') { 
+              sh """
+                #!/usr/bin/env bash
+                set -ex # Added -x for debugging output, and -e for exiting on error
+    
+                # K5: Modern security tools (Bandit, Pip-audit)
+                # S9: Application of cloud security tools into automated pipeline
+                echo "Installing security tools (bandit, pip-audit)..."
+                timeout 5m python3 -m pip install --user bandit pip-audit
+                echo "Security tools installed."
+    
+                export PATH=$HOME/.local/bin:$PATH
+                echo "PATH updated: $PATH"
+    
+                echo "Running static code analysis with Bandit..."
+                bandit -r . -lll # Corrected path to scan current directory
+                echo "Bandit scan complete."
+    
+                echo "Running dependency audit with pip-audit..."
+                timeout 5m pip-audit -r ../requirements.txt --verbose # Corrected path to requirements.txt
+                echo "pip-audit complete."
+              """
+            }
+          }
+        }
         stage('Run Tests') {
             steps {
                 sh '''
