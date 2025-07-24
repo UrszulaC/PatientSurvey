@@ -1,5 +1,4 @@
 # Existing providers and resource group data
-# ... (ensure these are present and correct in your main.tf) ...
 
 resource "random_integer" "sql_suffix" {
   min = 1000
