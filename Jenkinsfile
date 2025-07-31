@@ -246,11 +246,15 @@ pipeline {
                                 export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
                                 export ARM_TENANT_ID="${AZURE_TENANT_ID}"
                                 export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
-
+        
                                 export TF_VAR_db_user="${DB_USER_TF}"
                                 export TF_VAR_db_password="${DB_PASSWORD_TF}"
-
+        
                                 terraform init -backend-config="resource_group_name=MyPatientSurveyRG" -backend-config="storage_account_name=mypatientsurveytfstate" -backend-config="container_name=tfstate" -backend-config="key=patient_survey.tfstate"
+                                
+                                # Import the existing NSG
+                                terraform import azurerm_network_security_group.monitoring_nsg /subscriptions/${AZURE_SUBSCRIPTION_ID_VAR}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg || true
+                                
                                 terraform plan -out=tfplan.out -var="db_user=\${TF_VAR_db_user}" -var="db_password=\${TF_VAR_db_password}"
                                 terraform apply -auto-approve tfplan.out
                             """
