@@ -475,8 +475,24 @@ pipeline {
             junit 'test-results/*.xml'
             cleanWs()
         }
+        failure {
+            script {
+                withCredentials([...]) {
+                    sh '''
+                    # Clean up monitoring on failure
+                    az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
+                    az account set --subscription $ARM_SUBSCRIPTION_ID
+                    az container delete --yes --no-wait \
+                        --resource-group MyPatientSurveyRG \
+                        --name prometheus-${BUILD_NUMBER} || true
+                    az container delete --yes --no-wait \
+                        --resource-group MyPatientSurveyRG \
+                        --name grafana-${BUILD_NUMBER} || true
+                    '''
+                }
+            }
+        }
     }
-}
 
         
     
