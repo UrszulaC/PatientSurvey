@@ -129,10 +129,31 @@ pipeline {
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
-                    withCredentials([...]) {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
+                    ]) {
                         sh '''
-                        # ... [previous code remains the same until az container create]
-                        
+                        #!/bin/bash
+                        set -e
+        
+                        echo "Logging into Azure..."
+                        az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
+                        az account set --subscription $ARM_SUBSCRIPTION_ID
+        
+                        # Generate unique names with build number
+                        PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                        GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+        
+                        # Clean up any previous failed deployments
+                        az container delete \
+                            --resource-group MyPatientSurveyRG \
+                            --name $PROMETHEUS_NAME \
+                            --yes || true
+        
                         # Deploy Prometheus with proper configuration
                         az container create \
                             --resource-group MyPatientSurveyRG \
@@ -140,7 +161,7 @@ pipeline {
                             --image prom/prometheus:v2.47.0 \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2 \  # Changed from 2Gi to just 2
+                            --memory 2 \
                             --ports 9090 \
                             --ip-address Public \
                             --dns-name-label $PROMETHEUS_NAME \
@@ -151,14 +172,14 @@ pipeline {
                                 PROMETHEUS_WEB_ENABLE_ADMIN_API=true \
                             --no-wait
         
-                        # Deploy Grafana (also fix memory here)
+                        # Deploy Grafana
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name $GRAFANA_NAME \
                             --image grafana/grafana:9.5.6 \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2 \  # Changed from 2Gi to just 2
+                            --memory 2 \
                             --ports 3000 \
                             --ip-address Public \
                             --dns-name-label $GRAFANA_NAME \
@@ -168,6 +189,7 @@ pipeline {
                                 GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} \
                                 GF_PATHS_CONFIG=/etc/grafana/grafana.ini \
                             --no-wait
+        
                         # Wait for deployments (with timeout)
                         echo "Waiting for deployments to complete..."
                         for i in {1..12}; do
