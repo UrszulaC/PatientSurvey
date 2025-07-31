@@ -144,56 +144,79 @@ pipeline {
                         az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
                         az account set --subscription $ARM_SUBSCRIPTION_ID
         
-                        # Generate unique names
+                        # Generate unique names with build number
                         PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                         GRAFANA_NAME="grafana-${BUILD_NUMBER}"
         
-                        # Deploy Prometheus with explicit DNS name label
+                        # Clean up any previous failed deployments
+                        az container delete \
+                            --resource-group MyPatientSurveyRG \
+                            --name $PROMETHEUS_NAME \
+                            --yes || true
+        
+                        # Deploy Prometheus with proper configuration
                         az container create \
                             --resource-group MyPatientSurveyRG \
-                            --name ${PROMETHEUS_NAME} \
-                            --image prom/prometheus \
+                            --name $PROMETHEUS_NAME \
+                            --image prom/prometheus:v2.47.0 \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2 \
+                            --memory 2Gi \
                             --ports 9090 \
                             --ip-address Public \
-                            --dns-name-label ${PROMETHEUS_NAME} \
+                            --dns-name-label $PROMETHEUS_NAME \
                             --location uksouth \
-                            --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.templates=/usr/share/prometheus/consoles --web.console.libraries=/usr/share/prometheus/console_libraries" \
+                            --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle --web.enable-admin-api" \
+                            --environment-variables \
+                                PROMETHEUS_WEB_ENABLE_LIFE_CYCLE=true \
+                                PROMETHEUS_WEB_ENABLE_ADMIN_API=true \
                             --no-wait
         
-                        # Deploy Grafana with explicit DNS name label
+                        # Deploy Grafana
                         az container create \
                             --resource-group MyPatientSurveyRG \
-                            --name ${GRAFANA_NAME} \
-                            --image grafana/grafana \
+                            --name $GRAFANA_NAME \
+                            --image grafana/grafana:9.5.6 \
                             --os-type Linux \
                             --cpu 1 \
-                            --memory 2 \
+                            --memory 2Gi \
                             --ports 3000 \
                             --ip-address Public \
-                            --dns-name-label ${GRAFANA_NAME} \
+                            --dns-name-label $GRAFANA_NAME \
                             --location uksouth \
-                            --environment-variables GF_SECURITY_ADMIN_USER=admin GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} \
+                            --environment-variables \
+                                GF_SECURITY_ADMIN_USER=admin \
+                                GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} \
+                                GF_PATHS_CONFIG=/etc/grafana/grafana.ini \
                             --no-wait
         
-                        # Wait for deployment completion
+                        # Wait for deployments (with timeout)
                         echo "Waiting for deployments to complete..."
-                        sleep 60
+                        for i in {1..12}; do
+                            PROM_STATUS=$(az container show -g MyPatientSurveyRG -n $PROMETHEUS_NAME --query "provisioningState" -o tsv)
+                            GRAFANA_STATUS=$(az container show -g MyPatientSurveyRG -n $GRAFANA_NAME --query "provisioningState" -o tsv)
+                            
+                            if [[ "$PROM_STATUS" == "Succeeded" && "$GRAFANA_STATUS" == "Succeeded" ]]; then
+                                break
+                            fi
+                            sleep 10
+                        done
         
-                        # Get FQDNs instead of IPs (more reliable)
-                        PROMETHEUS_FQDN=$(az container show -g MyPatientSurveyRG -n ${PROMETHEUS_NAME} --query "ipAddress.fqdn" -o tsv)
-                        GRAFANA_FQDN=$(az container show -g MyPatientSurveyRG -n ${GRAFANA_NAME} --query "ipAddress.fqdn" -o tsv)
+                        # Get endpoints
+                        PROMETHEUS_FQDN=$(az container show -g MyPatientSurveyRG -n $PROMETHEUS_NAME --query "ipAddress.fqdn" -o tsv)
+                        GRAFANA_FQDN=$(az container show -g MyPatientSurveyRG -n $GRAFANA_NAME --query "ipAddress.fqdn" -o tsv)
         
-                        if [ -z "$PROMETHEUS_FQDN" ] || [ -z "$GRAFANA_FQDN" ]; then
-                            echo "##[error] Failed to get public endpoints!"
-                            echo "Prometheus logs:"
-                            az container logs -g MyPatientSurveyRG -n ${PROMETHEUS_NAME}
-                            echo "Grafana logs:"
-                            az container logs -g MyPatientSurveyRG -n ${GRAFANA_NAME}
-                            exit 1
-                        fi
+                        # Configure Grafana data source
+                        curl -X POST \
+                            "http://admin:${GRAFANA_PASSWORD}@${GRAFANA_FQDN}:3000/api/datasources" \
+                            -H "Content-Type: application/json" \
+                            -d '{
+                                "name":"Prometheus",
+                                "type":"prometheus",
+                                "url":"http://'${PROMETHEUS_FQDN}':9090",
+                                "access":"proxy",
+                                "basicAuth":false
+                            }' || echo "Warning: Failed to configure Grafana datasource"
         
                         echo "##[section] Monitoring Deployment Complete"
                         echo "Prometheus URL: http://${PROMETHEUS_FQDN}:9090"
@@ -203,6 +226,7 @@ pipeline {
                         # Store URLs for later use
                         echo "PROMETHEUS_URL=http://${PROMETHEUS_FQDN}:9090" > monitoring.env
                         echo "GRAFANA_URL=http://${GRAFANA_FQDN}:3000" >> monitoring.env
+                        echo "GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}" >> monitoring.env
         
                         az logout
                         '''
