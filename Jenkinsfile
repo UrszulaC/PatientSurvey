@@ -79,53 +79,6 @@ pipeline {
             }
         }
         
-        stage('Install Docker') {
-            steps {
-                sh '''
-                    #!/usr/bin/env bash
-                    set -e
-
-                    echo "Installing Docker..."
-                    sudo rm -f /var/lib/apt/lists/lock
-                    sudo rm -f /var/cache/apt/archives/lock
-                    sudo rm -f /var/lib/dpkg/lock-frontend
-                    sudo dpkg --configure -a
-
-                    sudo apt-get update
-                    sudo apt-get install -y ca-certificates curl gnupg
-                    sudo install -m 0755 -d /etc/apt/keyrings
-
-                    sudo rm -f /etc/apt/keyrings/docker.gpg
-                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --batch -o /etc/apt/keyrings/docker.gpg
-                    sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-                    echo \\
-                        "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \\
-                        \$(. /etc/os-release && echo "\$VERSION_CODENAME") stable" | \\
-                        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-                    sudo apt-get update
-
-                    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-                    sudo usermod -aG docker jenkins
-
-                    echo "Docker installation complete. Starting Docker service."
-                    sudo systemctl enable docker
-                    sudo systemctl start docker
-                '''
-            }
-        }
-        stage('Install Azure CLI') {
-            steps {
-                sh '''
-                    # Install Azure CLI
-                    echo "Installing Azure CLI..."
-                    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-                    echo "Azure CLI installed successfully."
-                    az --version
-                '''
-            }
-        }
-    
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
@@ -175,8 +128,7 @@ pipeline {
                             --no-wait
         
                         # ===== GRAFANA DEPLOYMENT =====
-                        echo "Deploying Grafana..."
-                        GRAFANA_CONFIG_BASE64=\$(base64 -w0 infra/monitoring/grafana.ini)
+                        echo "Deploying Grafana with default config..."
                         az container create \\
                             --resource-group MyPatientSurveyRG \\
                             --name \$GRAFANA_NAME \\
@@ -191,8 +143,6 @@ pipeline {
                             --environment-variables \\
                                 GF_SECURITY_ADMIN_USER=admin \\
                                 GF_SECURITY_ADMIN_PASSWORD=\$GRAFANA_PASSWORD \\
-                                GRAFANA_CONFIG=\$GRAFANA_CONFIG_BASE64 \\
-                            --command-line "echo \\\$GRAFANA_CONFIG | base64 -d > /etc/grafana/grafana.ini && /run.sh" \\
                             --no-wait
         
                         # ===== WAIT FOR DEPLOYMENTS =====
