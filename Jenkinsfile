@@ -108,20 +108,29 @@ pipeline {
         
                         # ===== PROMETHEUS DEPLOYMENT =====
                         echo "Deploying Prometheus..."
-                        PROMETHEUS_CONFIG_BASE64=\$(base64 -w0 infra/monitoring/prometheus.yml)
-                        az container create \\
-                          --resource-group MyPatientSurveyRG \\
-                          --name \$PROMETHEUS_NAME \\
-                          --image prom/prometheus:v2.47.0 \\
-                          --os-type Linux \\
-                          --cpu 1 \\
-                          --memory 2 \\
-                          --ports 9090 \\
-                          --ip-address Public \\
-                          --command-line "/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle --web.enable-admin-api" \\
-                          --environment-variables \\
+                        PROMETHEUS_CONFIG_BASE64=$(base64 -w0 infra/monitoring/prometheus.yml)
+                        az container create \
+                          --resource-group MyPatientSurveyRG \
+                          --name $PROMETHEUS_NAME \
+                          --image prom/prometheus:v2.47.0 \
+                          --os-type Linux \
+                          --cpu 1 \
+                          --memory 2 \
+                          --ports 9090 \
+                          --ip-address Public \
+                          --dns-name-label $PROMETHEUS_NAME \  # ADD THIS LINE
+                          --location uksouth \  # ADD THIS LINE
+                          --command-line "/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle --web.enable-admin-api" \
+                          --environment-variables \
                             PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090
-        
+                        # Wait for Grafana to be fully ready
+                        echo "Waiting for Grafana to become available..."
+                        for i in {1..30}; do
+                            if curl -s -o /dev/null -w "%{http_code}" "http://$GRAFANA_FQDN:3000" | grep -q "200"; then
+                                break
+                            fi
+                            sleep 10
+                        done
                         # Verify running state
                         az container show \\
                           --resource-group MyPatientSurveyRG \\
