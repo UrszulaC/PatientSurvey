@@ -109,23 +109,26 @@ pipeline {
                         # ===== PROMETHEUS DEPLOYMENT =====
                         echo "Deploying Prometheus..."
                         PROMETHEUS_CONFIG_BASE64=\$(base64 -w0 infra/monitoring/prometheus.yml)
-                        az container create \\
-                            --resource-group MyPatientSurveyRG \\
-                            --name \$PROMETHEUS_NAME \\
-                            --image prom/prometheus:v2.47.0 \\
-                            --os-type Linux \\
-                            --cpu 1 \\
-                            --memory 2 \\
-                            --ports 9090 \\
-                            --ip-address Public \\
-                            --dns-name-label \$PROMETHEUS_NAME \\
-                            --location uksouth \\
-                            --environment-variables \\
-                                PROMETHEUS_CONFIG=\$PROMETHEUS_CONFIG_BASE64 \\
-                                PROMETHEUS_WEB_ENABLE_LIFE_CYCLE=true \\
-                                PROMETHEUS_WEB_ENABLE_ADMIN_API=true \\
-                            --command-line "echo \\\$PROMETHEUS_CONFIG | base64 -d > /etc/prometheus/prometheus.yml && /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle --web.enable-admin-api" \\
-                            --no-wait
+                        az container create \
+                          --resource-group MyPatientSurveyRG \
+                          --name prometheus-${BUILD_NUMBER} \
+                          --image prom/prometheus:v2.47.0 \
+                          --os-type Linux \
+                          --cpu 1 \
+                          --memory 2 \
+                          --ports 9090 \
+                          --ip-address Public \
+                          --command-line "/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle --web.enable-admin-api" \
+                          --environment-variables \
+                            PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090
+        
+                        # Verify running state
+                        az container show \
+                          --resource-group MyPatientSurveyRG \
+                          --name prometheus-${BUILD_NUMBER} \
+                          --query "containers[0].instanceView.currentState.state" \
+                          -o tsv | grep -q "Running" || exit 1
+                        '''
         
                         # ===== GRAFANA DEPLOYMENT =====
                         echo "Deploying Grafana with default config..."
