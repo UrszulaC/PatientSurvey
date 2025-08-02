@@ -415,8 +415,8 @@ pipeline {
                                 --name $ACI_NAME \
                                 --image ${IMAGE_TAG} \
                                 --os-type Linux \
-                                --cpu 1 \
-                                --memory 1.5 \
+                                --cpu 0.5 \
+                                --memory 1 \
                                 --restart-policy Always \
                                 --location $ACI_LOCATION \
                                 --environment-variables \
