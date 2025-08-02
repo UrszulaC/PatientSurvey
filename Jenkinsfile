@@ -78,7 +78,6 @@ pipeline {
                 '''
             }
         }
-        
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
@@ -106,9 +105,20 @@ pipeline {
                         az container delete --resource-group MyPatientSurveyRG --name "$GRAFANA_NAME" --yes || true
         
                         # ===== PROMETHEUS DEPLOYMENT =====
-                        # Encode your existing config file
-                        CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
+                        echo "Deploying Prometheus..."
                         
+                        # Get absolute path to config file
+                        CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
+                        
+                        # Verify config exists
+                        if [ ! -f "$CONFIG_FILE" ]; then
+                          echo "Error: prometheus.yml not found at $CONFIG_FILE"
+                          exit 1
+                        fi
+        
+                        # Encode config to base64 to avoid quotation issues
+                        CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
+        
                         az container create \
                           --resource-group MyPatientSurveyRG \
                           --name "$PROMETHEUS_NAME" \
@@ -124,6 +134,24 @@ pipeline {
                             PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090 \
                             CONFIG_BASE64="$CONFIG_BASE64" \
                           --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+        
+                        # ===== GRAFANA DEPLOYMENT =====
+                        echo "Deploying Grafana with default config..."
+                        az container create \
+                            --resource-group MyPatientSurveyRG \
+                            --name "$GRAFANA_NAME" \
+                            --image grafana/grafana:9.5.6 \
+                            --os-type Linux \
+                            --cpu 1 \
+                            --memory 2 \
+                            --ports 3000 \
+                            --ip-address Public \
+                            --dns-name-label "$GRAFANA_NAME" \
+                            --location uksouth \
+                            --environment-variables \
+                                GF_SECURITY_ADMIN_USER=admin \
+                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
+                            --no-wait
         
                         # ===== WAIT FOR DEPLOYMENTS =====
                         echo "Waiting for deployments to complete (max 5 minutes)..."
@@ -171,6 +199,7 @@ pipeline {
                 }
             }
         }
+
         
         
         stage('Install kubectl') {
