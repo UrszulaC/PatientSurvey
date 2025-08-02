@@ -91,32 +91,46 @@ pipeline {
                         sh '''#!/bin/bash
                         set -e
         
-                        # Generate valid container names
-                        PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                        GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-        
-                        echo "=== Deploying Monitoring Stack ==="
+                        echo "=== CLEANUP EXISTING CONTAINERS ==="
                         az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                         az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                        # Cleanup previous deployments
-                        echo "Cleaning up previous containers..."
-                        az container delete --resource-group MyPatientSurveyRG --name "$PROMETHEUS_NAME" --yes || true
-                        az container delete --resource-group MyPatientSurveyRG --name "$GRAFANA_NAME" --yes || true
+                        # Delete ALL containers in the resource group
+                        echo "Listing all containers in resource group..."
+                        CONTAINERS=$(az container list --resource-group MyPatientSurveyRG --query "[].name" -o tsv)
+                        
+                        if [ -n "$CONTAINERS" ]; then
+                            echo "Found containers: $CONTAINERS"
+                            for CONTAINER in $CONTAINERS; do
+                                echo "Deleting container: $CONTAINER"
+                                az container delete \
+                                    --resource-group MyPatientSurveyRG \
+                                    --name "$CONTAINER" \
+                                    --yes \
+                                    --no-wait || echo "Failed to delete $CONTAINER (may already be gone)"
+                            done
+                            
+                            # Wait for deletions to complete
+                            echo "Waiting for deletions to complete..."
+                            sleep 30
+                        else
+                            echo "No containers found to delete"
+                        fi
+        
+                        # ===== DEPLOY NEW MONITORING STACK =====
+                        echo "=== DEPLOYING NEW MONITORING STACK ==="
+                        PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                        GRAFANA_NAME="grafana-${BUILD_NUMBER}"
         
                         # ===== PROMETHEUS DEPLOYMENT =====
                         echo "Deploying Prometheus..."
-                        
-                        # Get absolute path to config file
                         CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
                         
-                        # Verify config exists
                         if [ ! -f "$CONFIG_FILE" ]; then
-                          echo "Error: prometheus.yml not found at $CONFIG_FILE"
-                          exit 1
+                            echo "Error: prometheus.yml not found at $CONFIG_FILE"
+                            exit 1
                         fi
         
-                        # Encode config to base64 to avoid quotation issues
                         CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
         
                         az container create \
@@ -136,7 +150,7 @@ pipeline {
                           --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
         
                         # ===== GRAFANA DEPLOYMENT =====
-                        echo "Deploying Grafana with default config..."
+                        echo "Deploying Grafana..."
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name "$GRAFANA_NAME" \
@@ -153,47 +167,35 @@ pipeline {
                                 GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
                             --no-wait
         
-                        # ===== WAIT FOR DEPLOYMENTS =====
-                        echo "Waiting for deployments to complete (max 5 minutes)..."
+                        # ===== VERIFICATION =====
+                        echo "=== VERIFYING DEPLOYMENT ==="
+                        # Wait for Prometheus
+                        echo "Waiting for Prometheus to be ready..."
                         for i in {1..30}; do
                             PROM_STATUS=$(az container show -g MyPatientSurveyRG -n "$PROMETHEUS_NAME" --query "provisioningState" -o tsv)
-                            GRAFANA_STATUS=$(az container show -g MyPatientSurveyRG -n "$GRAFANA_NAME" --query "provisioningState" -o tsv)
-                            
-                            if [[ "$PROM_STATUS" == "Succeeded" && "$GRAFANA_STATUS" == "Succeeded" ]]; then
-                                break
-                            fi
+                            [ "$PROM_STATUS" = "Succeeded" ] && break
                             sleep 10
                         done
         
-                        # ===== VERIFY DEPLOYMENTS =====
-                        PROMETHEUS_FQDN=$(az container show -g MyPatientSurveyRG -n "$PROMETHEUS_NAME" --query "ipAddress.fqdn" -o tsv)
-                        GRAFANA_FQDN=$(az container show -g MyPatientSurveyRG -n "$GRAFANA_NAME" --query "ipAddress.fqdn" -o tsv)
+                        # Get endpoints
+                        PROMETHEUS_IP=$(az container show -g MyPatientSurveyRG -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
+                        GRAFANA_IP=$(az container show -g MyPatientSurveyRG -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
         
-                        # Wait for Grafana to be fully ready
-                        echo "Waiting for Grafana to become available..."
-                        for i in {1..30}; do
-                            if curl -s -o /dev/null -w "%{http_code}" "http://$GRAFANA_FQDN:3000" | grep -q "200"; then
-                                break
-                            fi
-                            sleep 10
-                        done
+                        echo "Testing Prometheus endpoint..."
+                        curl --retry 3 --retry-delay 5 --max-time 10 -s "http://$PROMETHEUS_IP:9090/-/healthy" || {
+                            echo "Prometheus health check failed"
+                            az container logs -g MyPatientSurveyRG -n "$PROMETHEUS_NAME"
+                            exit 1
+                        }
         
-                        # ===== CONFIGURE GRAFANA =====
-                        echo "Configuring Grafana data source..."
-                        curl --retry 3 --retry-delay 5 --max-time 10 -X POST \\
-                            "http://admin:$GRAFANA_PASSWORD@$GRAFANA_FQDN:3000/api/datasources" \\
-                            -H "Content-Type: application/json" \\
-                            -d '{"name":"Prometheus","type":"prometheus","url":"http://'$PROMETHEUS_FQDN':9090","access":"proxy"}' \\
-                            || echo "Warning: Grafana datasource configuration failed (may already exist)"
+                        echo "=== DEPLOYMENT SUCCESS ==="
+                        echo "Prometheus: http://$PROMETHEUS_IP:9090"
+                        echo "Grafana: http://$GRAFANA_IP:3000 (admin/$GRAFANA_PASSWORD)"
         
-                        # ===== OUTPUT RESULTS =====
-                        echo "PROMETHEUS_URL=http://$PROMETHEUS_FQDN:9090" > monitoring.env
-                        echo "GRAFANA_URL=http://$GRAFANA_FQDN:3000" >> monitoring.env
+                        # Write outputs
+                        echo "PROMETHEUS_URL=http://$PROMETHEUS_IP:9090" > monitoring.env
+                        echo "GRAFANA_URL=http://$GRAFANA_IP:3000" >> monitoring.env
                         echo "GRAFANA_CREDS=admin:$GRAFANA_PASSWORD" >> monitoring.env
-        
-                        echo "=== Monitoring Deployment Complete ==="
-                        echo "Prometheus: http://$PROMETHEUS_FQDN:9090"
-                        echo "Grafana: http://$GRAFANA_FQDN:3000 (admin/$GRAFANA_PASSWORD)"
                         '''
                     }
                 }
