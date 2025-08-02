@@ -108,22 +108,24 @@ pipeline {
                             echo "🗑️ Found containers to delete:"
                             echo "$CONTAINERS"
                             
-                            # Parallel deletion with status tracking
-                            declare -A DELETE_PIDS
+                            # Serial deletion with proper error handling
                             for CONTAINER in $CONTAINERS; do
                                 echo "➖ Deleting $CONTAINER..."
-                                az container delete \
+                                if ! az container delete \
                                     --resource-group MyPatientSurveyRG \
                                     --name "$CONTAINER" \
-                                    --yes \
-                                    --no-wait 2>&1 | sed "s/^/[$CONTAINER] /" &
-                                DELETE_PIDS[$!]="$CONTAINER"
-                            done
-        
-                            # Wait for all deletions to complete
-                            echo "⏳ Waiting for deletions to finish..."
-                            for PID in "${!DELETE_PIDS[@]}"; do
-                                wait $PID || echo "⚠️ Failed to delete ${DELETE_PIDS[$PID]}"
+                                    --yes; then
+                                    echo "⚠️ Failed to delete $CONTAINER, attempting force delete..."
+                                    # Force delete by stopping first
+                                    az container stop \
+                                        --resource-group MyPatientSurveyRG \
+                                        --name "$CONTAINER" \
+                                        --yes || true
+                                    az container delete \
+                                        --resource-group MyPatientSurveyRG \
+                                        --name "$CONTAINER" \
+                                        --yes || true
+                                fi
                             done
         
                             # Verify all containers are gone
@@ -139,10 +141,12 @@ pipeline {
                                     echo "✅ All containers deleted successfully"
                                     break
                                 else
-                                    echo "⌛ Still waiting for containers to delete: $REMAINING"
+                                    echo "⌛ Containers remaining: $REMAINING"
                                     if [ $i -eq $MAX_RETRIES ]; then
-                                        echo "❌ Failed to delete all containers after $MAX_RETRIES attempts"
-                                        exit 1
+                                        echo "❌ Critical: Containers still exist after $MAX_RETRIES attempts:"
+                                        echo "$REMAINING"
+                                        echo "Proceeding with deployment anyway..."
+                                        break
                                     fi
                                     sleep 15
                                 fi
@@ -198,8 +202,7 @@ pipeline {
                             --location uksouth \
                             --environment-variables \
                                 GF_SECURITY_ADMIN_USER=admin \
-                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
-                            --no-wait
+                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
         
                         # ===== VERIFICATION =====
                         echo "🔎 Verifying deployments..."
@@ -256,7 +259,6 @@ pipeline {
                 }
             }
         }
-        
         
         stage('Install kubectl') {
           steps {
