@@ -107,23 +107,7 @@ pipeline {
         
                         # ===== PROMETHEUS DEPLOYMENT =====
                         echo "Deploying Prometheus..."
-                        # Create Prometheus config with your application as a target
-                        cat <<EOF > prometheus-config.yml
-                        global:
-                          scrape_interval: 15s
-                        
-                        scrape_configs:
-                          - job_name: 'prometheus'
-                            static_configs:
-                              - targets: ['localhost:9090']
-                        
-                          - job_name: 'patient-survey-app'
-                            static_configs:
-                              - targets: ['10.0.0.4:8000']  # Your application's IP and metrics port
-                        EOF
-                        
-                        PROMETHEUS_CONFIG_BASE64=$(base64 -w0 prometheus-config.yml)
-                        
+                        # Generate config file inline (no volume mounting issues)
                         az container create \
                           --resource-group MyPatientSurveyRG \
                           --name "$PROMETHEUS_NAME" \
@@ -135,36 +119,21 @@ pipeline {
                           --ip-address Public \
                           --dns-name-label "$PROMETHEUS_NAME" \
                           --location uksouth \
-                          --command-line "/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle --web.enable-admin-api" \
+                          --command-line "/bin/sh -c 'echo \"
+                        global:
+                          scrape_interval: 15s
+                        
+                        scrape_configs:
+                          - job_name: 'prometheus'
+                            static_configs:
+                              - targets: ['localhost:9090']
+                        
+                          - job_name: 'patient-survey-app'
+                            static_configs:
+                              - targets: ['10.0.0.4:8000']  # Your app's IP
+                        \" > /etc/prometheus/prometheus.yml && /bin/prometheus --config.file=/etc/prometheus/prometheus.yml'" \
                           --environment-variables \
-                            PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090 \
-                          --volumes prometheus-config.yml=/etc/prometheus/prometheus.yml \
-                          --volume-mounts /etc/prometheus/
-                        
-                        # Verify running state
-                        az container show \
-                          --resource-group MyPatientSurveyRG \
-                          --name "$PROMETHEUS_NAME" \
-                          --query "containers[0].instanceView.currentState.state" \
-                          -o tsv | grep -q "Running" || exit 1
-                        
-                        # ===== GRAFANA DEPLOYMENT =====
-                        echo "Deploying Grafana with default config..."
-                        az container create \
-                            --resource-group MyPatientSurveyRG \
-                            --name "$GRAFANA_NAME" \
-                            --image grafana/grafana:9.5.6 \
-                            --os-type Linux \
-                            --cpu 1 \
-                            --memory 2 \
-                            --ports 3000 \
-                            --ip-address Public \
-                            --dns-name-label "$GRAFANA_NAME" \
-                            --location uksouth \
-                            --environment-variables \
-                                GF_SECURITY_ADMIN_USER=admin \
-                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
-                            --no-wait
+                            PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090
         
                         # ===== WAIT FOR DEPLOYMENTS =====
                         echo "Waiting for deployments to complete (max 5 minutes)..."
