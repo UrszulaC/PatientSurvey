@@ -107,7 +107,22 @@ pipeline {
         
                         # ===== PROMETHEUS DEPLOYMENT =====
                         echo "Deploying Prometheus..."
-                        # Generate config file inline (no volume mounting issues)
+                        # Create the config file first
+                        CONFIG_FILE=$(mktemp)
+                        cat <<'EOF' > $CONFIG_FILE
+                        global:
+                          scrape_interval: 15s
+                        
+                        scrape_configs:
+                          - job_name: 'prometheus'
+                            static_configs:
+                              - targets: ['localhost:9090']
+                          - job_name: 'patient-survey-app'
+                            static_configs:
+                              - targets: ['10.0.0.4:8000']
+                        EOF
+                        
+                        # Deploy with simplified command
                         az container create \
                           --resource-group MyPatientSurveyRG \
                           --name "$PROMETHEUS_NAME" \
@@ -119,21 +134,13 @@ pipeline {
                           --ip-address Public \
                           --dns-name-label "$PROMETHEUS_NAME" \
                           --location uksouth \
-                          --command-line "/bin/sh -c 'echo \"
-                        global:
-                          scrape_interval: 15s
-                        
-                        scrape_configs:
-                          - job_name: 'prometheus'
-                            static_configs:
-                              - targets: ['localhost:9090']
-                        
-                          - job_name: 'patient-survey-app'
-                            static_configs:
-                              - targets: ['10.0.0.4:8000']  # Your app's IP
-                        \" > /etc/prometheus/prometheus.yml && /bin/prometheus --config.file=/etc/prometheus/prometheus.yml'" \
+                          --command-line "/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle" \
                           --environment-variables \
-                            PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090
+                            PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090 \
+                          --azure-file-volume-share-name prometheus-config \
+                          --azure-file-volume-account-name $STORAGE_ACCOUNT_NAME \
+                          --azure-file-volume-account-key "$STORAGE_ACCOUNT_KEY" \
+                          --azure-file-volume-mount-path /etc/prometheus/
         
                         # ===== WAIT FOR DEPLOYMENTS =====
                         echo "Waiting for deployments to complete (max 5 minutes)..."
