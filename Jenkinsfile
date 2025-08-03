@@ -498,47 +498,21 @@ pipeline {
        stage('Deploy Application (Azure Container Instances)') {
             steps {
                 script {
-                    // Docker login and push
-                    withCredentials([usernamePassword(
-                        credentialsId: 'docker-hub-creds',
-                        usernameVariable: 'DOCKER_HUB_USER',
-                        passwordVariable: 'DOCKER_HUB_PASSWORD'
-                    )]) {
-                        sh '''
-                            echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USER" --password-stdin
-                            docker push ${IMAGE_TAG}
-                        '''
-                    }
-        
-                    // Azure deployment with dynamic Prometheus config
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        usernamePassword(
-                            credentialsId: 'docker-hub-creds',
-                            usernameVariable: 'REGISTRY_USERNAME',
-                            passwordVariable: 'REGISTRY_PASSWORD'
-                        )
-                    ]) {
+                    withCredentials([...]) { // Keep your existing credentials block
                         sh '''
                             #!/bin/bash
                             set -e
         
-                            # Azure login
-                            az login --service-principal \
-                                -u "$ARM_CLIENT_ID" \
-                                -p "$ARM_CLIENT_SECRET" \
-                                --tenant "$ARM_TENANT_ID"
+                            # Azure login (keep existing)
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # Deploy application ACI
+                            # Deploy application ACI with explicit IP request
                             RESOURCE_GROUP_NAME="MyPatientSurveyRG"
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
                             ACI_LOCATION="uksouth"
         
-                            echo "Deploying application container..."
+                            echo "Deploying application container with public IP..."
                             az container create \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $ACI_NAME \
@@ -548,6 +522,7 @@ pipeline {
                                 --memory 1 \
                                 --restart-policy Always \
                                 --location $ACI_LOCATION \
+                                --ip-address Public \  # Explicitly request public IP
                                 --environment-variables \
                                     DB_HOST=${DB_HOST} \
                                     DB_USER=${DB_USER} \
@@ -557,57 +532,53 @@ pipeline {
                                 --registry-username "$REGISTRY_USERNAME" \
                                 --registry-password "$REGISTRY_PASSWORD"
         
-                            # Get application IP
+                            # Wait for IP assignment with timeout
                             echo "Waiting for IP assignment..."
-                            sleep 15
-                            APP_IP=$(az container show \
-                                --resource-group $RESOURCE_GROUP_NAME \
-                                --name $ACI_NAME \
-                                --query "ipAddress.ip" \
-                                --output tsv)
-                            echo "Application IP: $APP_IP"
+                            MAX_RETRIES=10
+                            for ((i=1; i<=$MAX_RETRIES; i++)); do
+                                APP_IP=$(az container show \
+                                    --resource-group $RESOURCE_GROUP_NAME \
+                                    --name $ACI_NAME \
+                                    --query "ipAddress.ip" \
+                                    --output tsv)
+                                
+                                if [ -n "$APP_IP" ]; then
+                                    echo "Application IP: $APP_IP"
+                                    break
+                                else
+                                    echo "Attempt $i/$MAX_RETRIES: IP not yet assigned..."
+                                    sleep 10
+                                fi
+                            done
         
-                            # Prepare Prometheus config with actual IP
+                            if [ -z "$APP_IP" ]; then
+                                echo "ERROR: Failed to get IP address after $MAX_RETRIES attempts"
+                                exit 1
+                            fi
+        
+                            # Handle paths with spaces
                             CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
                             TMP_CONFIG="/tmp/prometheus-${BUILD_NUMBER}.yml"
-                            sed "s/DYNAMIC_APP_IP/$APP_IP/g" $CONFIG_FILE > $TMP_CONFIG
-                            CONFIG_BASE64=$(base64 -w0 $TMP_CONFIG)
+                            
+                            # Quote all file paths
+                            sed "s/DYNAMIC_APP_IP/$APP_IP/g" "$CONFIG_FILE" > "$TMP_CONFIG"
+                            CONFIG_BASE64=$(base64 -w0 "$TMP_CONFIG")
         
-                            # Deploy/Update Prometheus
+                            # Rest of your deployment...
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            echo "Deploying Prometheus with updated config..."
                             az container create \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $PROMETHEUS_NAME \
                                 --image prom/prometheus:v2.47.0 \
-                                --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1.5 \
-                                --ports 9090 \
-                                --ip-address Public \
-                                --dns-name-label "$PROMETHEUS_NAME" \
-                                --location $ACI_LOCATION \
-                                --environment-variables \
-                                    PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090 \
-                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle'"
-        
-                            # Verify deployment
-                            echo "Checking Prometheus targets..."
-                            sleep 10
-                            PROMETHEUS_IP=$(az container show \
-                                --resource-group $RESOURCE_GROUP_NAME \
-                                --name $PROMETHEUS_NAME \
-                                --query "ipAddress.ip" \
-                                --output tsv)
-                            curl -s "http://$PROMETHEUS_IP:9090/api/v1/targets" | jq '.data.activeTargets[] | select(.health=="up") | .discoveredLabels'
+                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle'" \
+                                # ... keep other Prometheus arguments ...
         
                             az logout
-                            echo "Deployment complete. Prometheus available at: http://$PROMETHEUS_IP:9090"
                         '''
                     }
                 }
             }
-        } 
+        }
        
     }
     post {
