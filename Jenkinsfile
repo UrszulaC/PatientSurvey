@@ -498,7 +498,15 @@ pipeline {
        stage('Deploy Application (Azure Container Instances)') {
             steps {
                 script {
-                    withCredentials([...]) { // Keep your existing credentials block
+                    withCredentials([string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        usernamePassword(
+                            credentialsId: 'docker-hub-creds',
+                            usernameVariable: 'REGISTRY_USERNAME',
+                            passwordVariable: 'REGISTRY_PASSWORD'
+                    )]) { 
                         sh '''
                             #!/bin/bash
                             set -e
