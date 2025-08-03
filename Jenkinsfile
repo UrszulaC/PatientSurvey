@@ -498,7 +498,19 @@ pipeline {
        stage('Deploy Application (Azure Container Instances)') {
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-creds',
+                        usernameVariable: 'DOCKER_HUB_USER',
+                        passwordVariable: 'DOCKER_HUB_PASSWORD'
+                    )]) {
+                        sh '''
+                            echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USER" --password-stdin
+                            docker push ${IMAGE_TAG}
+                        '''
+                    }
+        
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
                         string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
@@ -506,21 +518,22 @@ pipeline {
                             credentialsId: 'docker-hub-creds',
                             usernameVariable: 'REGISTRY_USERNAME',
                             passwordVariable: 'REGISTRY_PASSWORD'
-                    )]) { 
+                        )
+                    ]) {
                         sh '''
                             #!/bin/bash
                             set -e
         
-                            # Azure login (keep existing)
+                            # Azure login
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # Deploy application ACI with explicit IP request
+                            # Deploy application ACI with public IP
                             RESOURCE_GROUP_NAME="MyPatientSurveyRG"
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
                             ACI_LOCATION="uksouth"
         
-                            echo "Deploying application container with public IP..."
+                            echo "Deploying application container..."
                             az container create \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $ACI_NAME \
@@ -530,7 +543,7 @@ pipeline {
                                 --memory 1 \
                                 --restart-policy Always \
                                 --location $ACI_LOCATION \
-                                --ip-address Public \  # Explicitly request public IP
+                                --ip-address Public \
                                 --environment-variables \
                                     DB_HOST=${DB_HOST} \
                                     DB_USER=${DB_USER} \
@@ -540,7 +553,7 @@ pipeline {
                                 --registry-username "$REGISTRY_USERNAME" \
                                 --registry-password "$REGISTRY_PASSWORD"
         
-                            # Wait for IP assignment with timeout
+                            # Get application IP with retries
                             echo "Waiting for IP assignment..."
                             MAX_RETRIES=10
                             for ((i=1; i<=$MAX_RETRIES; i++)); do
@@ -564,24 +577,30 @@ pipeline {
                                 exit 1
                             fi
         
-                            # Handle paths with spaces
-                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
+                            # Update Prometheus config
+                            CONFIG_FILE="${WORKSPACE}/infra/monitoring/prometheus.yml"
                             TMP_CONFIG="/tmp/prometheus-${BUILD_NUMBER}.yml"
-                            
-                            # Quote all file paths
-                            sed "s/DYNAMIC_APP_IP/$APP_IP/g" "$CONFIG_FILE" > "$TMP_CONFIG"
-                            CONFIG_BASE64=$(base64 -w0 "$TMP_CONFIG")
+                            sed "s/DYNAMIC_APP_IP/${APP_IP}/g" "${CONFIG_FILE}" > "${TMP_CONFIG}"
+                            CONFIG_BASE64=$(base64 -w0 "${TMP_CONFIG}")
         
-                            # Rest of your deployment...
+                            # Deploy Prometheus
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            echo "Deploying Prometheus..."
                             az container create \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $PROMETHEUS_NAME \
                                 --image prom/prometheus:v2.47.0 \
-                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle'" \
-                                # ... keep other Prometheus arguments ...
+                                --os-type Linux \
+                                --cpu 0.5 \
+                                --memory 1.5 \
+                                --ports 9090 \
+                                --ip-address Public \
+                                --dns-name-label "$PROMETHEUS_NAME" \
+                                --location $ACI_LOCATION \
+                                --command-line "/bin/sh -c 'echo \"${CONFIG_BASE64}\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle'"
         
                             az logout
+                            echo "Deployment complete"
                         '''
                     }
                 }
