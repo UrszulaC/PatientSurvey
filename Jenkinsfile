@@ -495,7 +495,7 @@ pipeline {
                 }
             }
         }
-       stage('Deploy Application (Azure Container Instances)') {
+        stage('Deploy Application (Azure Container Instances)') {
             steps {
                 script {
                     withCredentials([usernamePassword(
@@ -528,7 +528,7 @@ pipeline {
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # Deploy application ACI with public IP
+                            # Deploy application ACI
                             RESOURCE_GROUP_NAME="MyPatientSurveyRG"
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
                             ACI_LOCATION="uksouth"
@@ -556,7 +556,10 @@ pipeline {
                             # Get application IP with retries
                             echo "Waiting for IP assignment..."
                             MAX_RETRIES=10
-                            for ((i=1; i<=$MAX_RETRIES; i++)); do
+                            RETRY_DELAY=10
+                            APP_IP=""
+                            
+                            for i in $(seq 1 $MAX_RETRIES); do
                                 APP_IP=$(az container show \
                                     --resource-group $RESOURCE_GROUP_NAME \
                                     --name $ACI_NAME \
@@ -568,7 +571,7 @@ pipeline {
                                     break
                                 else
                                     echo "Attempt $i/$MAX_RETRIES: IP not yet assigned..."
-                                    sleep 10
+                                    sleep $RETRY_DELAY
                                 fi
                             done
         
@@ -578,10 +581,10 @@ pipeline {
                             fi
         
                             # Update Prometheus config
-                            CONFIG_FILE="${WORKSPACE}/infra/monitoring/prometheus.yml"
+                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
                             TMP_CONFIG="/tmp/prometheus-${BUILD_NUMBER}.yml"
-                            sed "s/DYNAMIC_APP_IP/${APP_IP}/g" "${CONFIG_FILE}" > "${TMP_CONFIG}"
-                            CONFIG_BASE64=$(base64 -w0 "${TMP_CONFIG}")
+                            sed "s/DYNAMIC_APP_IP/$APP_IP/g" "$CONFIG_FILE" > "$TMP_CONFIG"
+                            CONFIG_BASE64=$(base64 -w0 "$TMP_CONFIG")
         
                             # Deploy Prometheus
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
@@ -597,7 +600,7 @@ pipeline {
                                 --ip-address Public \
                                 --dns-name-label "$PROMETHEUS_NAME" \
                                 --location $ACI_LOCATION \
-                                --command-line "/bin/sh -c 'echo \"${CONFIG_BASE64}\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle'"
+                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle'"
         
                             az logout
                             echo "Deployment complete"
