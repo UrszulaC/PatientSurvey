@@ -496,10 +496,10 @@ pipeline {
             }
         }
         
-           stage('Deploy Application (Azure Container Instances)') {
+       stage('Deploy Application (Azure Container Instances)') {
             steps {
                 script {
-                    // Docker login and push with secure credential handling
+                    // Docker login and push
                     withCredentials([usernamePassword(
                         credentialsId: 'docker-hub-creds',
                         usernameVariable: 'DOCKER_HUB_USER',
@@ -511,7 +511,7 @@ pipeline {
                         '''
                     }
         
-                    // Azure deployment with secure credential handling
+                    // Azure deployment
                     withCredentials([
                         string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
@@ -527,19 +527,19 @@ pipeline {
                             #!/bin/bash
                             set -e
         
-                            echo "Logging into Azure..."
+                            # Azure login
                             az login --service-principal \
                                 -u "$ARM_CLIENT_ID" \
                                 -p "$ARM_CLIENT_SECRET" \
                                 --tenant "$ARM_TENANT_ID"
-                            
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
+                            # Deploy application ACI
                             RESOURCE_GROUP_NAME="MyPatientSurveyRG"
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
                             ACI_LOCATION="uksouth"
         
-                            echo "Deploying Docker image ${IMAGE_TAG} to Azure Container Instances..."
+                            echo "Deploying application container..."
                             az container create \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $ACI_NAME \
@@ -556,18 +556,63 @@ pipeline {
                                     DB_NAME=${DB_NAME} \
                                 --registry-login-server index.docker.io \
                                 --registry-username "$REGISTRY_USERNAME" \
-                                --registry-password "$REGISTRY_PASSWORD" \
-                                --no-wait
+                                --registry-password "$REGISTRY_PASSWORD"
         
-                            echo "Azure Container Instance deployment initiated."
+                            # Get new ACI IP
+                            echo "Getting application IP..."
+                            sleep 10  # Wait for IP assignment
+                            APP_IP=$(az container show \
+                                --resource-group $RESOURCE_GROUP_NAME \
+                                --name $ACI_NAME \
+                                --query "ipAddress.ip" \
+                                --output tsv)
+                            echo "Application IP: $APP_IP"
+        
+                            # Update Prometheus configuration
+                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            echo "Updating Prometheus target to $APP_IP..."
+                            
+                            # Method 1: Direct config update (preferred)
+                            if az container exec \
+                                --resource-group $RESOURCE_GROUP_NAME \
+                                --name $PROMETHEUS_NAME \
+                                --exec-command "sed -i 's/10.0.0.4/$APP_IP/g' /etc/prometheus/prometheus.yml && pkill -HUP prometheus"; then
+                                echo "Prometheus config updated successfully"
+                            else
+                                # Fallback: Redeploy Prometheus if exec fails
+                                echo "Using fallback: redeploying Prometheus..."
+                                CONFIG_BASE64=$(sed "s/10.0.0.4/$APP_IP/g" infra/monitoring/prometheus.yml | base64 -w0)
+                                az container delete \
+                                    --resource-group $RESOURCE_GROUP_NAME \
+                                    --name $PROMETHEUS_NAME \
+                                    --yes \
+                                    --no-wait
+                                
+                                az container create \
+                                    --resource-group $RESOURCE_GROUP_NAME \
+                                    --name $PROMETHEUS_NAME \
+                                    --image prom/prometheus:v2.47.0 \
+                                    --os-type Linux \
+                                    --cpu 0.5 \
+                                    --memory 1.5 \
+                                    --ports 9090 \
+                                    --ip-address Public \
+                                    --dns-name-label "$PROMETHEUS_NAME" \
+                                    --location uksouth \
+                                    --environment-variables \
+                                        PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090 \
+                                        CONFIG_BASE64="$CONFIG_BASE64" \
+                                    --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+                            fi
+        
                             az logout
+                            echo "Deployment complete"
                         '''
                     }
                 }
             }
-        } 
-
-    }
+        }
+    
     post {
         always {
             junit 'test-results/*.xml'
