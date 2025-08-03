@@ -495,7 +495,6 @@ pipeline {
                 }
             }
         }
-        
        stage('Deploy Application (Azure Container Instances)') {
             steps {
                 script {
@@ -511,7 +510,7 @@ pipeline {
                         '''
                     }
         
-                    // Azure deployment
+                    // Azure deployment with dynamic Prometheus config
                     withCredentials([
                         string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
@@ -558,9 +557,9 @@ pipeline {
                                 --registry-username "$REGISTRY_USERNAME" \
                                 --registry-password "$REGISTRY_PASSWORD"
         
-                            # Get new ACI IP
-                            echo "Getting application IP..."
-                            sleep 10  # Wait for IP assignment
+                            # Get application IP
+                            echo "Waiting for IP assignment..."
+                            sleep 15
                             APP_IP=$(az container show \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $ACI_NAME \
@@ -568,50 +567,48 @@ pipeline {
                                 --output tsv)
                             echo "Application IP: $APP_IP"
         
-                            # Update Prometheus configuration
+                            # Prepare Prometheus config with actual IP
+                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
+                            TMP_CONFIG="/tmp/prometheus-${BUILD_NUMBER}.yml"
+                            sed "s/DYNAMIC_APP_IP/$APP_IP/g" $CONFIG_FILE > $TMP_CONFIG
+                            CONFIG_BASE64=$(base64 -w0 $TMP_CONFIG)
+        
+                            # Deploy/Update Prometheus
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            echo "Updating Prometheus target to $APP_IP..."
-                            
-                            # Method 1: Direct config update (preferred)
-                            if az container exec \
+                            echo "Deploying Prometheus with updated config..."
+                            az container create \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $PROMETHEUS_NAME \
-                                --exec-command "sed -i 's/10.0.0.4/$APP_IP/g' /etc/prometheus/prometheus.yml && pkill -HUP prometheus"; then
-                                echo "Prometheus config updated successfully"
-                            else
-                                # Fallback: Redeploy Prometheus if exec fails
-                                echo "Using fallback: redeploying Prometheus..."
-                                CONFIG_BASE64=$(sed "s/10.0.0.4/$APP_IP/g" infra/monitoring/prometheus.yml | base64 -w0)
-                                az container delete \
-                                    --resource-group $RESOURCE_GROUP_NAME \
-                                    --name $PROMETHEUS_NAME \
-                                    --yes \
-                                    --no-wait
-                                
-                                az container create \
-                                    --resource-group $RESOURCE_GROUP_NAME \
-                                    --name $PROMETHEUS_NAME \
-                                    --image prom/prometheus:v2.47.0 \
-                                    --os-type Linux \
-                                    --cpu 0.5 \
-                                    --memory 1.5 \
-                                    --ports 9090 \
-                                    --ip-address Public \
-                                    --dns-name-label "$PROMETHEUS_NAME" \
-                                    --location uksouth \
-                                    --environment-variables \
-                                        PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090 \
-                                        CONFIG_BASE64="$CONFIG_BASE64" \
-                                    --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-                            fi
+                                --image prom/prometheus:v2.47.0 \
+                                --os-type Linux \
+                                --cpu 0.5 \
+                                --memory 1.5 \
+                                --ports 9090 \
+                                --ip-address Public \
+                                --dns-name-label "$PROMETHEUS_NAME" \
+                                --location $ACI_LOCATION \
+                                --environment-variables \
+                                    PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090 \
+                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle'"
+        
+                            # Verify deployment
+                            echo "Checking Prometheus targets..."
+                            sleep 10
+                            PROMETHEUS_IP=$(az container show \
+                                --resource-group $RESOURCE_GROUP_NAME \
+                                --name $PROMETHEUS_NAME \
+                                --query "ipAddress.ip" \
+                                --output tsv)
+                            curl -s "http://$PROMETHEUS_IP:9090/api/v1/targets" | jq '.data.activeTargets[] | select(.health=="up") | .discoveredLabels'
         
                             az logout
-                            echo "Deployment complete"
+                            echo "Deployment complete. Prometheus available at: http://$PROMETHEUS_IP:9090"
                         '''
                     }
                 }
             }
-        }
+        } 
+       
     }
     post {
         always {
