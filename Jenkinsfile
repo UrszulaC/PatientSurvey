@@ -78,7 +78,81 @@ pipeline {
                 '''
             }
         }
+        stage('Configure Network Security') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                    ]) {
+                        sh '''#!/bin/bash
+                        set -eo pipefail
         
+                        echo "🔒 Configuring Network Security Rules..."
+                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                        NSG_NAME="monitoring-nsg"
+                        RG_NAME="MyPatientSurveyRG"
+        
+                        # Check if NSG exists
+                        if ! az network nsg show -g "$RG_NAME" -n "$NSG_NAME" &>/dev/null; then
+                            echo "🛠️ Creating NSG $NSG_NAME..."
+                            az network nsg create \
+                                --resource-group "$RG_NAME" \
+                                --name "$NSG_NAME" \
+                                --location uksouth
+                        fi
+        
+                        # Delete existing rules if they exist (idempotent)
+                        echo "♻️ Removing existing rules if present..."
+                        az network nsg rule delete \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowNodeExporter || true
+                        
+                        az network nsg rule delete \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowAppMetrics || true
+        
+                        # Add required rules
+                        echo "➕ Adding Node Exporter rule (port 9100)..."
+                        az network nsg rule create \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowNodeExporter \
+                            --priority 310 \
+                            --direction Inbound \
+                            --access Allow \
+                            --protocol Tcp \
+                            --source-address-prefix AzureContainerInstance \
+                            --source-port-range '*' \
+                            --destination-address-prefix '*' \
+                            --destination-port-range 9100
+        
+                        echo "➕ Adding App Metrics rule (port 8000)..."
+                        az network nsg rule create \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowAppMetrics \
+                            --priority 320 \
+                            --direction Inbound \
+                            --access Allow \
+                            --protocol Tcp \
+                            --source-address-prefix AzureContainerInstance \
+                            --source-port-range '*' \
+                            --destination-address-prefix '*' \
+                            --destination-port-range 8000
+        
+                        echo "✅ Network security configured"
+                        '''
+                    }
+                }
+            }
+        }
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
