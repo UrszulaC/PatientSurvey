@@ -18,16 +18,7 @@ pipeline {
             }
         }
         
-        stage('Install Git') {
-            steps {
-                sh '''#!/bin/bash
-                echo "Installing Git..."
-                sudo apt-get update
-                sudo apt-get install -y git
-                git --version
-                '''
-            }
-        }
+    }
     stages {
         stage('Clean Environment') {
           steps {
