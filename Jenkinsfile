@@ -3,6 +3,7 @@ pipeline {
     environment {
         DB_NAME = 'patient_survey_db'
         IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
+        DOCKER_REGISTRY = "index.docker.io"
     }
 
     options {
@@ -490,62 +491,83 @@ pipeline {
                 '''
             }
         }
-
-    
         stage('Build Docker Image') {
-            steps {
-                script {
-                    docker.build(IMAGE_TAG, '.')
+    steps {
+        script {
+            withCredentials([usernamePassword(
+                credentialsId: 'docker-hub-creds',
+                usernameVariable: 'DOCKER_USER',
+                passwordVariable: 'DOCKER_PASS'
+            )]) {
+                // Build and push in one step to ensure the image is available
+                docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
+                    docker.build(IMAGE_TAG, '.').push()
                 }
+                
+                // Verify the image was pushed successfully
+                sh """
+                    docker pull ${IMAGE_TAG} || exit 1
+                    echo "✅ Verified image ${IMAGE_TAG} exists in Docker Hub"
+                """
             }
         }
-        stage('Deploy Application (Azure Container Instances)') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        usernamePassword(
-                            credentialsId: 'docker-hub-creds',
-                            usernameVariable: 'REGISTRY_USERNAME',
-                            passwordVariable: 'REGISTRY_PASSWORD'
-                        )
-                    ]) {
-                        sh '''
-                            #!/bin/bash
-                            set -e
-        
-                            # ===== AUTHENTICATION =====
-                            echo "🔑 Authenticating to Azure..."
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-                            # ===== DEPLOY APPLICATION =====
-                            echo "🚀 Deploying application container..."
-                            RESOURCE_GROUP_NAME="MyPatientSurveyRG"
-                            ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-                            ACI_LOCATION="uksouth"
-        
-                            az container create \
-                                --resource-group $RESOURCE_GROUP_NAME \
-                                --name $ACI_NAME \
-                                --image ${IMAGE_TAG} \
-                                --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1 \
-                                --restart-policy Always \
-                                --location $ACI_LOCATION \
-                                --ip-address Public \
-                                --environment-variables \
-                                    DB_HOST=${DB_HOST} \
-                                    DB_USER=${DB_USER} \
-                                    DB_PASSWORD=${DB_PASSWORD} \
-                                    DB_NAME=${DB_NAME} \
-                                --registry-login-server index.docker.io \
-                                --registry-username "$REGISTRY_USERNAME" \
-                                --registry-password "$REGISTRY_PASSWORD"
+    }
+}
+
+stage('Deploy Application (Azure Container Instances)') {
+    steps {
+        script {
+            withCredentials([
+                string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                usernamePassword(
+                    credentialsId: 'docker-hub-creds',
+                    usernameVariable: 'REGISTRY_USERNAME',
+                    passwordVariable: 'REGISTRY_PASSWORD'
+                )
+            ]) {
+                sh '''
+                    #!/bin/bash
+                    set -e
+
+                    # ===== AUTHENTICATION =====
+                    echo "🔑 Authenticating to Azure..."
+                    az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                    az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+                    # ===== VERIFY IMAGE EXISTS =====
+                    echo "🔍 Verifying Docker Hub image exists..."
+                    if ! docker pull ${IMAGE_TAG}; then
+                        echo "❌ ERROR: Image ${IMAGE_TAG} not found in Docker Hub!"
+                        exit 1
+                    fi
+
+                    # ===== DEPLOY APPLICATION =====
+                    echo "🚀 Deploying application container..."
+                    RESOURCE_GROUP_NAME="MyPatientSurveyRG"
+                    ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                    ACI_LOCATION="uksouth"
+
+                    az container create \
+                        --resource-group $RESOURCE_GROUP_NAME \
+                        --name $ACI_NAME \
+                        --image ${IMAGE_TAG} \
+                        --os-type Linux \
+                        --cpu 0.5 \
+                        --memory 1 \
+                        --restart-policy Always \
+                        --location $ACI_LOCATION \
+                        --ip-address Public \
+                        --environment-variables \
+                            DB_HOST=${DB_HOST} \
+                            DB_USER=${DB_USER} \
+                            DB_PASSWORD=${DB_PASSWORD} \
+                            DB_NAME=${DB_NAME} \
+                        --registry-login-server index.docker.io \
+                        --registry-username "$REGISTRY_USERNAME" \
+                        --registry-password "$REGISTRY_PASSWORD"
         
                             # ===== GET APPLICATION IP =====
                             echo "🔄 Getting application IP..."
