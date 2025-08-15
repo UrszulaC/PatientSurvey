@@ -1,14 +1,12 @@
 pipeline {
     agent any
-    options {
-        timeout(time: 25, unit: 'MINUTES')
-        // Remove spaces from workspace path
-        ws( "/var/lib/jenkins/workspace/PatientSurvey-${BUILD_NUMBER}")
-    }
-
     environment {
         DB_NAME = 'patient_survey_db'
         IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
+    }
+
+    options {
+        timeout(time: 25, unit: 'MINUTES')
     }
 
     stages {
