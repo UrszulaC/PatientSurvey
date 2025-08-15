@@ -3,7 +3,7 @@ pipeline {
     options {
         timeout(time: 25, unit: 'MINUTES')
         // Remove spaces from workspace path
-        customWorkspace "/var/lib/jenkins/workspace/PatientSurvey-${BUILD_NUMBER}" 
+        ws( "/var/lib/jenkins/workspace/PatientSurvey-${BUILD_NUMBER}")
     }
 
     environment {
@@ -17,9 +17,6 @@ pipeline {
                 cleanWs()
             }
         }
-        
-    }
-    stages {
         stage('Clean Environment') {
           steps {
             sh '''
