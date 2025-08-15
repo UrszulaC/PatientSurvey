@@ -498,17 +498,6 @@ pipeline {
         stage('Deploy Application (Azure Container Instances)') {
             steps {
                 script {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'docker-hub-creds',
-                        usernameVariable: 'DOCKER_HUB_USER',
-                        passwordVariable: 'DOCKER_HUB_PASSWORD'
-                    )]) {
-                        sh '''
-                            echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USER" --password-stdin
-                            docker push ${IMAGE_TAG}
-                        '''
-                    }
-        
                     withCredentials([
                         string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
@@ -524,16 +513,17 @@ pipeline {
                             #!/bin/bash
                             set -e
         
-                            # Azure login
+                            # ===== AUTHENTICATION =====
+                            echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # Deploy application ACI
+                            # ===== DEPLOY APPLICATION =====
+                            echo "🚀 Deploying application container..."
                             RESOURCE_GROUP_NAME="MyPatientSurveyRG"
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
                             ACI_LOCATION="uksouth"
         
-                            echo "Deploying application container..."
                             az container create \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $ACI_NAME \
@@ -553,8 +543,8 @@ pipeline {
                                 --registry-username "$REGISTRY_USERNAME" \
                                 --registry-password "$REGISTRY_PASSWORD"
         
-                            # Get application IP with retries
-                            echo "Waiting for IP assignment..."
+                            # ===== GET APPLICATION IP =====
+                            echo "🔄 Getting application IP..."
                             MAX_RETRIES=10
                             RETRY_DELAY=10
                             APP_IP=""
@@ -567,7 +557,7 @@ pipeline {
                                     --output tsv)
                                 
                                 if [ -n "$APP_IP" ]; then
-                                    echo "Application IP: $APP_IP"
+                                    echo "✅ Application IP: $APP_IP"
                                     break
                                 else
                                     echo "Attempt $i/$MAX_RETRIES: IP not yet assigned..."
@@ -576,19 +566,61 @@ pipeline {
                             done
         
                             if [ -z "$APP_IP" ]; then
-                                echo "ERROR: Failed to get IP address after $MAX_RETRIES attempts"
+                                echo "❌ ERROR: Failed to get IP address after $MAX_RETRIES attempts"
                                 exit 1
                             fi
         
-                            # Update Prometheus config
+                            # ===== VERIFY METRICS ENDPOINTS =====
+                            echo "🔍 Testing metrics endpoints..."
+                            echo "Testing node_exporter on ${APP_IP}:9100..."
+                            if ! curl -s --connect-timeout 5 "http://${APP_IP}:9100/metrics" >/dev/null; then
+                                echo "❌ node_exporter not reachable!"
+                                echo "Checking NSG rules..."
+                                az network nsg rule list --resource-group $RESOURCE_GROUP_NAME --nsg-name monitoring-nsg -o table
+                                exit 1
+                            fi
+        
+                            echo "Testing app metrics on ${APP_IP}:8000..."
+                            if ! curl -s --connect-timeout 5 "http://${APP_IP}:8000/metrics" >/dev/null; then
+                                echo "❌ App metrics not reachable!"
+                                echo "Verify your application is properly exposing metrics on port 8000"
+                                exit 1
+                            fi
+        
+                            # ===== UPDATE PROMETHEUS CONFIG =====
+                            echo "🔄 Updating Prometheus configuration..."
                             CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
                             TMP_CONFIG="/tmp/prometheus-${BUILD_NUMBER}.yml"
-                            sed "s/DYNAMIC_APP_IP/$APP_IP/g" "$CONFIG_FILE" > "$TMP_CONFIG"
+        
+                            # Replace placeholder with actual IP
+                            sed "s/DYNAMIC_APP_IP/${APP_IP}/g" "$CONFIG_FILE" > "$TMP_CONFIG"
+        
+                            # Verify substitution
+                            echo "=== Generated Prometheus Config ==="
+                            cat "$TMP_CONFIG"
+                            echo "=================================="
+        
+                            if grep -q "DYNAMIC_APP_IP" "$TMP_CONFIG"; then
+                                echo "❌ ERROR: Variable substitution failed in Prometheus config!"
+                                exit 1
+                            fi
+        
                             CONFIG_BASE64=$(base64 -w0 "$TMP_CONFIG")
         
-                            # Deploy Prometheus
+                            # ===== DEPLOY PROMETHEUS =====
+                            echo "📊 Redeploying Prometheus with updated config..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            echo "Deploying Prometheus..."
+                            
+                            # Delete existing Prometheus if exists
+                            if az container show --resource-group $RESOURCE_GROUP_NAME --name $PROMETHEUS_NAME &>/dev/null; then
+                                echo "♻️ Removing existing Prometheus..."
+                                az container delete \
+                                    --resource-group $RESOURCE_GROUP_NAME \
+                                    --name $PROMETHEUS_NAME \
+                                    --yes
+                            fi
+        
+                            # Create new Prometheus instance
                             az container create \
                                 --resource-group $RESOURCE_GROUP_NAME \
                                 --name $PROMETHEUS_NAME \
@@ -600,10 +632,27 @@ pipeline {
                                 --ip-address Public \
                                 --dns-name-label "$PROMETHEUS_NAME" \
                                 --location $ACI_LOCATION \
-                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle'"
+                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+        
+                            # ===== VERIFY DEPLOYMENT =====
+                            echo "🔍 Verifying Prometheus deployment..."
+                            PROMETHEUS_IP=$(az container show \
+                                -g $RESOURCE_GROUP_NAME \
+                                -n "$PROMETHEUS_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+        
+                            echo "✅ Deployment successful!"
+                            echo "📊 Prometheus URL: http://${PROMETHEUS_IP}:9090"
+                            echo "📈 Application Metrics: http://${APP_IP}:8000/metrics"
+                            echo "🖥️ Node Metrics: http://${APP_IP}:9100/metrics"
+        
+                            # Write outputs for downstream jobs
+                            echo "PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090" > monitoring.env
+                            echo "APP_METRICS_URL=http://${APP_IP}:8000/metrics" >> monitoring.env
+                            echo "NODE_METRICS_URL=http://${APP_IP}:9100/metrics" >> monitoring.env
         
                             az logout
-                            echo "Deployment complete"
                         '''
                     }
                 }
