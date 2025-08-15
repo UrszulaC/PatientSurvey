@@ -1,15 +1,33 @@
 pipeline {
     agent any
+    options {
+        timeout(time: 25, unit: 'MINUTES')
+        // Remove spaces from workspace path
+        customWorkspace "/var/lib/jenkins/workspace/PatientSurvey-${BUILD_NUMBER}" 
+    }
 
     environment {
         DB_NAME = 'patient_survey_db'
         IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
     }
 
-    options {
-        timeout(time: 25, unit: 'MINUTES')
-    }
-
+    stages {
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+        
+        stage('Install Git') {
+            steps {
+                sh '''#!/bin/bash
+                echo "Installing Git..."
+                sudo apt-get update
+                sudo apt-get install -y git
+                git --version
+                '''
+            }
+        }
     stages {
         stage('Clean Environment') {
           steps {
