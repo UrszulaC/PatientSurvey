@@ -557,6 +557,7 @@ stage('Deploy Application (Azure Container Instances)') {
                         --os-type Linux \
                         --cpu 0.5 \
                         --memory 1 \
+                        --ports 8000 9100 \
                         --restart-policy Always \
                         --location $ACI_LOCATION \
                         --ip-address Public \
@@ -598,20 +599,32 @@ stage('Deploy Application (Azure Container Instances)') {
         
                             # ===== VERIFY METRICS ENDPOINTS =====
                             echo "🔍 Testing metrics endpoints..."
-                            echo "Testing node_exporter on ${APP_IP}:9100..."
-                            if ! curl -s --connect-timeout 5 "http://${APP_IP}:9100/metrics" >/dev/null; then
-                                echo "❌ node_exporter not reachable!"
-                                echo "Checking NSG rules..."
-                                az network nsg rule list --resource-group $RESOURCE_GROUP_NAME --nsg-name monitoring-nsg -o table
-                                exit 1
-                            fi
-        
-                            echo "Testing app metrics on ${APP_IP}:8000..."
-                            if ! curl -s --connect-timeout 5 "http://${APP_IP}:8000/metrics" >/dev/null; then
-                                echo "❌ App metrics not reachable!"
-                                echo "Verify your application is properly exposing metrics on port 8000"
-                                exit 1
-                            fi
+                            MAX_RETRIES=5
+                            RETRY_DELAY=10
+                            
+                            # Test node-exporter
+                            for i in $(seq 1 $MAX_RETRIES); do
+                                if curl -s --connect-timeout 5 "http://${APP_IP}:9100/metrics" >/dev/null; then
+                                    echo "✅ node_exporter is reachable"
+                                    break
+                                else
+                                    echo "Attempt $i/$MAX_RETRIES: node_exporter not ready..."
+                                    [ $i -eq $MAX_RETRIES ] && echo "❌ node_exporter failed after $MAX_RETRIES attempts" && exit 1
+                                    sleep $RETRY_DELAY
+                                fi
+                            done
+                            
+                            # Test app metrics
+                            for i in $(seq 1 $MAX_RETRIES); do
+                                if curl -s --connect-timeout 5 "http://${APP_IP}:8000/metrics" >/dev/null; then
+                                    echo "✅ app metrics are reachable"
+                                    break
+                                else
+                                    echo "Attempt $i/$MAX_RETRIES: app metrics not ready..."
+                                    [ $i -eq $MAX_RETRIES ] && echo "❌ app metrics failed after $MAX_RETRIES attempts" && exit 1
+                                    sleep $RETRY_DELAY
+                                fi
+                            done
         
                             # ===== UPDATE PROMETHEUS CONFIG =====
                             echo "🔄 Updating Prometheus configuration..."
