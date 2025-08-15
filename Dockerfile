@@ -1,40 +1,40 @@
 FROM python:3.9-slim-bullseye
 
-# Setting the working directory in the container
-# All subsequent commands will be run relative to this directory.
+# Setting the working directory
 WORKDIR /app
 
-# This section ensures the ODBC driver is installed inside the Docker image
+# Install system dependencies including node-exporter
 RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-transport-https \
     curl \
     gnupg \
+    wget \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
     && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
     msodbcsql17 \
     unixodbc-dev \
+    && wget https://github.com/prometheus/node_exporter/releases/download/v1.3.1/node_exporter-1.3.1.linux-amd64.tar.gz \
+    && tar xvfz node_exporter-* \
+    && mv node_exporter-*/node_exporter /usr/local/bin/ \
+    && rm -rf node_exporter-* \
     && rm -rf /var/lib/apt/lists/*
 
-
-# This will place main.py, config.py, utils/, etc., directly under /app
+# Copy application files
 COPY app/ .
-
-# CRITICAL FIX: Copy requirements.txt from the root of the build context to /app
-# This assumes requirements.txt is at the top level of your Git repository.
 COPY requirements.txt .
 
-# Installing any needed Python packages specified in requirements.txt
-# Since WORKDIR is /app, it will look for requirements.txt directly in /app.
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port 8000 for Prometheus metrics
-EXPOSE 8000
+# Expose ports
+EXPOSE 8000  # Application metrics
+EXPOSE 9100  # Node exporter metrics
 
-# Keep the container running indefinitely for debugging
-# This allows you to exec into the container even if the Python app crashes
-CMD ["tail", "-f", "/dev/null"]
+# Health check (optional but recommended)
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD curl -f http://localhost:8000/health || exit 1
 
-# Original CMD (commented out for debugging):
-# CMD ["python3", "/app/main.py"]
+# Start both services
+CMD ["sh", "-c", "node_exporter & python3 /app/main.py"]
