@@ -702,32 +702,19 @@ stage('Deploy Application (Azure Container Instances)') {
                             error("Failed to get ACI IP address")
                         }
         
-                        // 2. Verify and update Prometheus config
-                        PROMETHEUS_CONFIG = "${WORKSPACE}/infra/monitoring/prometheus.yml"
+                        // 2. Update Prometheus config
+                        def prometheusConfig = "${WORKSPACE}/infra/monitoring/prometheus.yml"
                         
-                        // Debug: Show file content before modification
-                        sh """
-                            echo "=== Current Prometheus Config ==="
-                            cat "${PROMETHEUS_CONFIG}" || true
-                            echo "================================"
-                        """
-                        
-                        // Update config with proper escaping
                         sh """
                             # Create backup
-                            cp -v "${PROMETHEUS_CONFIG}" "${PROMETHEUS_CONFIG}.bak"
+                            cp -v "${prometheusConfig}" "${prometheusConfig}.bak"
                             
-                            # Escape IP for sed
-                            ESCAPED_IP=$(echo "${ACI_IP}" | sed 's/\\./\\\\./g')
-                            
-                            # Update config
-                            sed -i "s/DYNAMIC_APP_IP/${ESCAPED_IP}/g" "${PROMETHEUS_CONFIG}"
+                            # Update config (using alternative delimiter)
+                            sed -i "s|DYNAMIC_APP_IP|${ACI_IP}|g" "${prometheusConfig}"
                             
                             # Verify change
-                            echo "=== Modified Config ==="
-                            grep "${ACI_IP}" "${PROMETHEUS_CONFIG}" || {
+                            grep "${ACI_IP}" "${prometheusConfig}" || {
                                 echo "ERROR: IP substitution failed"
-                                echo "Tried to replace DYNAMIC_APP_IP with: ${ACI_IP}"
                                 exit 1
                             }
                         """
