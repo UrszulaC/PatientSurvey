@@ -139,21 +139,6 @@ pipeline {
                             --destination-port-range 9100 \
                             --description "Allow Prometheus scraping from anywhere"
         
-                        echo "➕ Adding App Metrics rule (port 8000)..."
-                        az network nsg rule create \
-                            --resource-group "$RG_NAME" \
-                            --nsg-name "$NSG_NAME" \
-                            --name AllowAppMetrics \
-                            --priority 320 \
-                            --direction Inbound \
-                            --access Allow \
-                            --protocol Tcp \
-                            --source-address-prefix Internet \
-                            --source-port-range '*' \
-                            --destination-address-prefix '*' \
-                            --destination-port-range 8000 \
-                            --description "Allow application access from anywhere"
-        
                         echo "✅ Network security configured"
                         '''
                     }
