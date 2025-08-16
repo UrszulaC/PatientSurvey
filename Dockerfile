@@ -32,9 +32,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8000
 EXPOSE 9100  
 
-# Health check (optional but recommended)
+# Combined health check for both services
 HEALTHCHECK --interval=30s --timeout=3s \
-  CMD curl -f http://localhost:8000/health || exit 1
+  CMD sh -c "curl -f http://localhost:8000/health && curl -f http://localhost:9100/metrics" || exit 1
 
-# Start both services
-CMD ["sh", "-c", "node_exporter & python3 /app/main.py"]
+# Start both services with error handling
+CMD ["sh", "-c", "node_exporter --web.listen-address=:9100 & python3 /app/main.py || tail -f /dev/null"]
