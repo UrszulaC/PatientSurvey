@@ -555,8 +555,8 @@ stage('Deploy Application (Azure Container Instances)') {
                         --name $ACI_NAME \
                         --image ${IMAGE_TAG} \
                         --os-type Linux \
-                        --cpu 0.5 \
-                        --memory 1 \
+                        --cpu 1 \
+                        --memory 2 \
                         --ports 8000 9100 \
                         --restart-policy Always \
                         --location $ACI_LOCATION \
