@@ -720,47 +720,36 @@ stage('Deploy Application (Azure Container Instances)') {
                 }
             }
         }
-    stage('Update Grafana Dashboard') {
+        stage('Update Grafana Dashboard') {
             steps {
                 script {
                     withCredentials([
-                        string(credentialsId: 'GRAFANA_API_KEY', variable: 'GRAFANA_API_KEY')
+                        string(credentialsId: 'GRAFANA_SERVICE_ACCOUNT_TOKEN', variable: 'GRAFANA_TOKEN')
                     ]) {
-                        // Get the ACI IP (reuse from previous stage)
-                        ACI_IP = sh(script: """
-                            az container show \
-                            -g MyPatientSurveyRG \
-                            -n patientsurvey-app-${BUILD_NUMBER} \
-                            --query ipAddress.ip -o tsv
-                        """, returnStdout: true).trim()
-        
-                        // Minimal dashboard update (no fancy templating)
                         sh """
                         curl -X POST \
-                          -H "Authorization: Bearer ${GRAFANA_API_KEY}" \
+                          -H "Authorization: Bearer ${GRAFANA_TOKEN}" \
                           -H "Content-Type: application/json" \
                           -d '{
                             "dashboard": {
                               "title": "ACI-${BUILD_NUMBER}",
                               "panels": [{
                                 "title": "CPU Usage",
-                                "type": "graph",
+                                "type": "timeseries",  // Note: "timeseries" replaces "graph" in Grafana 10+
                                 "datasource": "Prometheus",
                                 "targets": [{
-                                  "expr": "node_cpu_seconds_total{instance=~\"${ACI_IP}:.+\"}",
-                                  "legendFormat": "{{mode}}"
+                                  "expr": "node_cpu_seconds_total{instance=~\"${APP_IP}:.+\"}"
                                 }]
                               }]
                             },
                             "overwrite": true
                           }' \
-                          http://${GRAFANA_URL}/api/dashboards/db
+                          "${GRAFANA_URL}/api/dashboards/db
                         """
                     }
                 }
             }
         }
-
     }
     post {
         always {
