@@ -29,8 +29,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose ports
-EXPOSE 8000  # Application metrics
-EXPOSE 9100  # Node exporter metrics
+EXPOSE 8000
+EXPOSE 9100  
 
 # Health check (optional but recommended)
 HEALTHCHECK --interval=30s --timeout=3s \
