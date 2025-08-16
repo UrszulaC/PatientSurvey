@@ -691,33 +691,44 @@ stage('Deploy Application (Azure Container Instances)') {
                         string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
                     ]) {
-                        // Get the ACI IP dynamically (with error suppression)
+                        // 1. Get the ACI IP
                         ACI_IP = sh(script: '''
-                            az login --service-principal \
-                              -u "$ARM_CLIENT_ID" \
-                              -p "$ARM_CLIENT_SECRET" \
-                              --tenant "$ARM_TENANT_ID" > /dev/null 2>&1
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null 2>&1
-                            
-                            az container show \
-                              -g MyPatientSurveyRG \
-                              -n patientsurvey-app-${BUILD_NUMBER} \
-                              --query ipAddress.ip \
-                              -o tsv 2>/dev/null | tail -1
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" > /dev/null
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null
+                            az container show -g MyPatientSurveyRG -n patientsurvey-app-${BUILD_NUMBER} --query ipAddress.ip -o tsv
                         ''', returnStdout: true).trim()
         
                         if (!ACI_IP?.trim()) {
                             error("Failed to get ACI IP address")
                         }
         
-                        // Securely update Prometheus config
-                        sh '''
-                            sed -i "s|DYNAMIC_APP_IP|''' + ACI_IP + '''|g" prometheus/prometheus.yml
-                        '''
+                        // 2. Verify Prometheus config exists
+                        PROMETHEUS_CONFIG = "${WORKSPACE}/infra/monitoring/prometheus.yml"
+                        if (!fileExists(PROMETHEUS_CONFIG)) {
+                            error("Prometheus config not found at ${PROMETHEUS_CONFIG}")
+                        }
         
-                        // Reload Prometheus config
+                        // 3. Update config
                         sh """
-                            curl -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload
+                            # Create backup
+                            cp "${PROMETHEUS_CONFIG}" "${PROMETHEUS_CONFIG}.bak"
+                            
+                            # Update IP (using alternative sed delimiter)
+                            sed -i "s#DYNAMIC_APP_IP#${ACI_IP}#g" "${PROMETHEUS_CONFIG}"
+                            
+                            # Verify change
+                            grep "${ACI_IP}" "${PROMETHEUS_CONFIG}" || {
+                                echo "IP substitution failed"
+                                exit 1
+                            }
+                        """
+        
+                        // 4. Reload Prometheus
+                        sh """
+                            curl -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload || {
+                                echo "Prometheus reload failed"
+                                exit 1
+                            }
                         """
                     }
                 }
