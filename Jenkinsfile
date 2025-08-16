@@ -681,7 +681,86 @@ stage('Deploy Application (Azure Container Instances)') {
                 }
             }
         }
-       
+        stage('Configure Dynamic Monitoring') {
+            steps {
+                script {
+                    // Get the ACI IP dynamically
+                    ACI_IP = sh(script: """
+                        az container show \
+                          -g ${RESOURCE_GROUP} \
+                          -n ${ACI_NAME} \
+                          --query 'ipAddress.ip' -o tsv
+                    """, returnStdout: true).trim()
+
+                    // Update Prometheus config (if using static)
+                    sh """
+                        sed -i "s/DYNAMIC_APP_IP/${ACI_IP}/g" prometheus/prometheus.yml
+                    """
+
+                    // Reload Prometheus config
+                    sh """
+                        curl -X POST http://${PROMETHEUS_SERVER}:9090/-/reload
+                    """
+                }
+            }
+        }
+        stage('Verify Monitoring') {
+            steps {
+                script {
+                    // Wait for metrics to appear
+                    timeout(time: 2, unit: 'MINUTES') {
+                        waitUntil {
+                            def metrics = sh(script: """
+                                curl -s http://${PROMETHEUS_SERVER}:9090/api/v1/targets | \
+                                jq '.data.activeTargets[] | select(.labels.instance=="${ACI_IP}:9100")'
+                            """, returnStdout: true)
+                            return metrics.contains('"health":"up"')
+                        }
+                    }
+                }
+            }
+        }
+    stage('Update Grafana Dashboard') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'GRAFANA_API_KEY', variable: 'GRAFANA_API_KEY')
+                    ]) {
+                        // Get the ACI IP (reuse from previous stage)
+                        ACI_IP = sh(script: """
+                            az container show \
+                            -g MyPatientSurveyRG \
+                            -n patientsurvey-app-${BUILD_NUMBER} \
+                            --query ipAddress.ip -o tsv
+                        """, returnStdout: true).trim()
+        
+                        // Minimal dashboard update (no fancy templating)
+                        sh """
+                        curl -X POST \
+                          -H "Authorization: Bearer ${GRAFANA_API_KEY}" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "dashboard": {
+                              "title": "ACI-${BUILD_NUMBER}",
+                              "panels": [{
+                                "title": "CPU Usage",
+                                "type": "graph",
+                                "datasource": "Prometheus",
+                                "targets": [{
+                                  "expr": "node_cpu_seconds_total{instance=~\"${ACI_IP}:.+\"}",
+                                  "legendFormat": "{{mode}}"
+                                }]
+                              }]
+                            },
+                            "overwrite": true
+                          }' \
+                          http://${GRAFANA_URL}/api/dashboards/db
+                        """
+                    }
+                }
+            }
+        }
+
     }
     post {
         always {
