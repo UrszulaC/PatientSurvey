@@ -29,7 +29,7 @@ autorestart=true\n\
 command=python3 /app/main.py\n\
 autorestart=true\n' > /etc/supervisor/conf.d/supervisord.conf
 
-EXPOSE 8000 9100
+EXPOSE 9100
 
 # Healthcheck only for main app
 HEALTHCHECK --interval=30s --timeout=5s \
