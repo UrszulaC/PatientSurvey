@@ -123,7 +123,7 @@ pipeline {
                             --nsg-name "$NSG_NAME" \
                             --name AllowAppMetrics || true
         
-                        # Add required rules
+                        # Add required rules with broader access
                         echo "➕ Adding Node Exporter rule (port 9100)..."
                         az network nsg rule create \
                             --resource-group "$RG_NAME" \
@@ -133,10 +133,11 @@ pipeline {
                             --direction Inbound \
                             --access Allow \
                             --protocol Tcp \
-                            --source-address-prefix AzureContainerInstance \
+                            --source-address-prefix Internet \  # Changed from AzureContainerInstance
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
-                            --destination-port-range 9100
+                            --destination-port-range 9100 \
+                            --description "Allow Prometheus scraping from anywhere"
         
                         echo "➕ Adding App Metrics rule (port 8000)..."
                         az network nsg rule create \
@@ -147,10 +148,11 @@ pipeline {
                             --direction Inbound \
                             --access Allow \
                             --protocol Tcp \
-                            --source-address-prefix AzureContainerInstance \
+                            --source-address-prefix Internet \  # Changed from AzureContainerInstance
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
-                            --destination-port-range 8000
+                            --destination-port-range 8000 \
+                            --description "Allow application access from anywhere"
         
                         echo "✅ Network security configured"
                         '''
