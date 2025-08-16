@@ -4,6 +4,7 @@ pipeline {
         DB_NAME = 'patient_survey_db'
         IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
         DOCKER_REGISTRY = "index.docker.io"
+        RESOURCE_GROUP = 'MyPatientSurveyRG' 
     }
 
     options {
@@ -687,19 +688,19 @@ stage('Deploy Application (Azure Container Instances)') {
                     // Get the ACI IP dynamically
                     ACI_IP = sh(script: """
                         az container show \
-                          -g ${RESOURCE_GROUP} \
-                          -n ${ACI_NAME} \
+                          -g ${env.RESOURCE_GROUP} \  // Note: Using env.RESOURCE_GROUP
+                          -n patientsurvey-app-${env.BUILD_NUMBER} \
                           --query 'ipAddress.ip' -o tsv
                     """, returnStdout: true).trim()
-
-                    // Update Prometheus config (if using static)
+        
+                    // Update Prometheus config
                     sh """
                         sed -i "s/DYNAMIC_APP_IP/${ACI_IP}/g" prometheus/prometheus.yml
                     """
-
+        
                     // Reload Prometheus config
                     sh """
-                        curl -X POST http://${PROMETHEUS_SERVER}:9090/-/reload
+                        curl -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload
                     """
                 }
             }
