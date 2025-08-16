@@ -36,5 +36,12 @@ EXPOSE 9100
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD sh -c "curl -f http://localhost:8000/health && curl -f http://localhost:9100/metrics" || exit 1
 
-# Start both services with error handling
-CMD ["sh", "-c", "node_exporter --web.listen-address=:9100 & python3 /app/main.py || tail -f /dev/null"]
+# Create startup script
+RUN echo '#!/bin/sh\n\
+/usr/local/bin/node_exporter --web.listen-address=:9100 &\n\
+python3 /app/main.py\n\
+# Keep container running if either service crashes\n\
+tail -f /dev/null' > /start.sh && chmod +x /start.sh
+
+# Start services using the script
+CMD ["/start.sh"]
