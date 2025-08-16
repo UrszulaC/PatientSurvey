@@ -133,7 +133,7 @@ pipeline {
                             --direction Inbound \
                             --access Allow \
                             --protocol Tcp \
-                            --source-address-prefix Internet \ 
+                            --source-address-prefix Internet \
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
                             --destination-port-range 9100 \
@@ -148,7 +148,7 @@ pipeline {
                             --direction Inbound \
                             --access Allow \
                             --protocol Tcp \
-                            --source-address-prefix Internet \  # Changed from AzureContainerInstance
+                            --source-address-prefix Internet \
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
                             --destination-port-range 8000 \
