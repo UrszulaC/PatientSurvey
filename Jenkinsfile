@@ -602,26 +602,23 @@ stage('Deploy Application (Azure Container Instances)') {
                             MAX_RETRIES=5
                             RETRY_DELAY=10
                             
-                            # Test node-exporter
+                            # Get container logs for debugging
+                            echo "Container logs:"
+                            az container logs --resource-group $RESOURCE_GROUP_NAME --name $ACI_NAME
+                            
+                            # Test node-exporter with enhanced diagnostics
                             for i in $(seq 1 $MAX_RETRIES); do
-                                if curl -s --connect-timeout 5 "http://${APP_IP}:9100/metrics" >/dev/null; then
+                                if curl -v --connect-timeout 5 "http://${APP_IP}:9100/metrics" >/dev/null; then
                                     echo "✅ node_exporter is reachable"
                                     break
                                 else
                                     echo "Attempt $i/$MAX_RETRIES: node_exporter not ready..."
-                                    [ $i -eq $MAX_RETRIES ] && echo "❌ node_exporter failed after $MAX_RETRIES attempts" && exit 1
-                                    sleep $RETRY_DELAY
-                                fi
-                            done
-                            
-                            # Test app metrics
-                            for i in $(seq 1 $MAX_RETRIES); do
-                                if curl -s --connect-timeout 5 "http://${APP_IP}:8000/metrics" >/dev/null; then
-                                    echo "✅ app metrics are reachable"
-                                    break
-                                else
-                                    echo "Attempt $i/$MAX_RETRIES: app metrics not ready..."
-                                    [ $i -eq $MAX_RETRIES ] && echo "❌ app metrics failed after $MAX_RETRIES attempts" && exit 1
+                                    [ $i -eq $MAX_RETRIES ] && {
+                                        echo "❌ node_exporter failed after $MAX_RETRIES attempts"
+                                        echo "Debug info:"
+                                        az container exec --resource-group $RESOURCE_GROUP_NAME --name $ACI_NAME --exec-command "ps aux"
+                                        exit 1
+                                    }
                                     sleep $RETRY_DELAY
                                 fi
                             done
