@@ -702,31 +702,40 @@ stage('Deploy Application (Azure Container Instances)') {
                             error("Failed to get ACI IP address")
                         }
         
-                        // 2. Verify Prometheus config exists
+                        // 2. Verify and update Prometheus config
                         PROMETHEUS_CONFIG = "${WORKSPACE}/infra/monitoring/prometheus.yml"
-                        if (!fileExists(PROMETHEUS_CONFIG)) {
-                            error("Prometheus config not found at ${PROMETHEUS_CONFIG}")
-                        }
-        
-                        // 3. Update config
+                        
+                        // Debug: Show file content before modification
+                        sh """
+                            echo "=== Current Prometheus Config ==="
+                            cat "${PROMETHEUS_CONFIG}" || true
+                            echo "================================"
+                        """
+                        
+                        // Update config with proper escaping
                         sh """
                             # Create backup
-                            cp "${PROMETHEUS_CONFIG}" "${PROMETHEUS_CONFIG}.bak"
+                            cp -v "${PROMETHEUS_CONFIG}" "${PROMETHEUS_CONFIG}.bak"
                             
-                            # Update IP (using alternative sed delimiter)
-                            sed -i "s#DYNAMIC_APP_IP#${ACI_IP}#g" "${PROMETHEUS_CONFIG}"
+                            # Escape IP for sed
+                            ESCAPED_IP=$(echo "${ACI_IP}" | sed 's/\\./\\\\./g')
+                            
+                            # Update config
+                            sed -i "s/DYNAMIC_APP_IP/${ESCAPED_IP}/g" "${PROMETHEUS_CONFIG}"
                             
                             # Verify change
+                            echo "=== Modified Config ==="
                             grep "${ACI_IP}" "${PROMETHEUS_CONFIG}" || {
-                                echo "IP substitution failed"
+                                echo "ERROR: IP substitution failed"
+                                echo "Tried to replace DYNAMIC_APP_IP with: ${ACI_IP}"
                                 exit 1
                             }
                         """
         
-                        // 4. Reload Prometheus
+                        // 3. Reload Prometheus
                         sh """
-                            curl -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload || {
-                                echo "Prometheus reload failed"
+                            curl -v -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload || {
+                                echo "ERROR: Prometheus reload failed"
                                 exit 1
                             }
                         """
