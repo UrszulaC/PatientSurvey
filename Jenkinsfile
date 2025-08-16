@@ -685,31 +685,43 @@ stage('Deploy Application (Azure Container Instances)') {
         stage('Configure Dynamic Monitoring') {
             steps {
                 script {
-                    // Get the ACI IP dynamically
-                    ACI_IP = sh(script: """
-                        az container show \
-                          -g ${env.RESOURCE_GROUP} \
-                          -n patientsurvey-app-${env.BUILD_NUMBER} \
-                          --query ipAddress.ip \
-                          -o tsv
-                    """, returnStdout: true).trim()
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                    ]) {
+                        // Get the ACI IP dynamically
+                        ACI_IP = sh(script: """
+                            az login --service-principal \
+                              -u "$ARM_CLIENT_ID" \
+                              -p "$ARM_CLIENT_SECRET" \
+                              --tenant "$ARM_TENANT_ID"
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
+                            
+                            az container show \
+                              -g MyPatientSurveyRG \
+                              -n patientsurvey-app-${env.BUILD_NUMBER} \
+                              --query ipAddress.ip \
+                              -o tsv
+                        """, returnStdout: true).trim()
         
-                    // Verify IP was obtained
-                    if (!ACI_IP?.trim()) {
-                        error("Failed to get ACI IP address")
+                        if (!ACI_IP?.trim()) {
+                            error("Failed to get ACI IP address")
+                        }
+        
+                        echo "Discovered ACI IP: ${ACI_IP}"
+        
+                        // Update Prometheus config
+                        sh """
+                            sed -i "s/DYNAMIC_APP_IP/${ACI_IP}/g" prometheus/prometheus.yml
+                        """
+        
+                        // Reload Prometheus config
+                        sh """
+                            curl -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload
+                        """
                     }
-        
-                    echo "Discovered ACI IP: ${ACI_IP}"
-        
-                    // Update Prometheus config
-                    sh """
-                        sed -i "s/DYNAMIC_APP_IP/${ACI_IP}/g" prometheus/prometheus.yml
-                    """
-        
-                    // Reload Prometheus config
-                    sh """
-                        curl -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload
-                    """
                 }
             }
         }
