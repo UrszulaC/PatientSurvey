@@ -688,10 +688,18 @@ stage('Deploy Application (Azure Container Instances)') {
                     // Get the ACI IP dynamically
                     ACI_IP = sh(script: """
                         az container show \
-                          -g ${env.RESOURCE_GROUP}
+                          -g ${env.RESOURCE_GROUP} \
                           -n patientsurvey-app-${env.BUILD_NUMBER} \
-                          --query 'ipAddress.ip' -o tsv
+                          --query ipAddress.ip \
+                          -o tsv
                     """, returnStdout: true).trim()
+        
+                    // Verify IP was obtained
+                    if (!ACI_IP?.trim()) {
+                        error("Failed to get ACI IP address")
+                    }
+        
+                    echo "Discovered ACI IP: ${ACI_IP}"
         
                     // Update Prometheus config
                     sh """
