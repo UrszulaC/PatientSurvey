@@ -697,28 +697,34 @@ stage('Deploy Application (Azure Container Instances)') {
                             az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null
                             az container show -g MyPatientSurveyRG -n patientsurvey-app-${BUILD_NUMBER} --query ipAddress.ip -o tsv
                         ''', returnStdout: true).trim()
-        
+            
                         if (!ACI_IP?.trim()) {
                             error("Failed to get ACI IP address")
                         }
-        
+            
                         // 2. Update Prometheus config
                         def prometheusConfig = "${WORKSPACE}/infra/monitoring/prometheus.yml"
                         
                         sh """
-                            # Create backup
+                            # Create backup (with proper quoting for paths with spaces)
                             cp -v "${prometheusConfig}" "${prometheusConfig}.bak"
                             
                             # Update config (using alternative delimiter)
-                            sed -i "s|DYNAMIC_APP_IP|${ACI_IP}|g" "${prometheusConfig}"
+                            sed -i 's|DYNAMIC_APP_IP|${ACI_IP}|g' '${prometheusConfig}'
+                            
+                            # Debug: Show the modified config
+                            echo "Modified config content:"
+                            cat '${prometheusConfig}'
                             
                             # Verify change
-                            grep "${ACI_IP}" "${prometheusConfig}" || {
-                                echo "ERROR: IP substitution failed"
+                            grep -q '${ACI_IP}' '${prometheusConfig}' || {
+                                echo "ERROR: IP substitution failed - could not find ${ACI_IP} in config"
+                                echo "Current targets in config:"
+                                grep -A 5 'targets' '${prometheusConfig}' || true
                                 exit 1
                             }
                         """
-        
+            
                         // 3. Reload Prometheus
                         sh """
                             curl -v -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload || {
