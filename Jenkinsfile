@@ -200,7 +200,6 @@
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
-                    // Add retry logic with quota verification
                     retry(3) {
                         withCredentials([
                             string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
@@ -216,11 +215,17 @@
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # Verify quota before deploying
+                            # Verify quota before deploying - using correct JMESPath syntax
                             echo "🔍 Checking available quota before deployment..."
-                            QUOTA=$(az vm list-usage --location uksouth --query "[?localName=='Standard Cores'].{available:limit-currentValue}" -o tsv)
-                            if [ "$QUOTA" -lt 2 ]; then
-                                echo "❌ Insufficient quota available (need 2 cores, have $QUOTA)"
+                            QUOTA_INFO=$(az vm list-usage --location uksouth -o json)
+                            CURRENT_USAGE=$(echo "$QUOTA_INFO" | jq -r '.[] | select(.localName=="Standard Cores") | .currentValue')
+                            LIMIT=$(echo "$QUOTA_INFO" | jq -r '.[] | select(.localName=="Standard Cores") | .limit')
+                            AVAILABLE=$((LIMIT - CURRENT_USAGE))
+                            
+                            echo "Current usage: $CURRENT_USAGE, Limit: $LIMIT, Available: $AVAILABLE"
+                            
+                            if [ "$AVAILABLE" -lt 2 ]; then
+                                echo "❌ Insufficient quota available (need 2 cores, have $AVAILABLE)"
                                 exit 1
                             fi
         
