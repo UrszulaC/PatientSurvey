@@ -293,67 +293,105 @@
                }
            }
        }
-       
        stage('Deploy Application') {
-           steps {
-               script {
-                   withCredentials([
-                       string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                       string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                       string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                       string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                       usernamePassword(
-                           credentialsId: 'docker-hub-creds',
-                           usernameVariable: 'REGISTRY_USERNAME',
-                           passwordVariable: 'REGISTRY_PASSWORD'
-                       )
-                   ]) {
-                       sh '''#!/bin/bash
-                       set -e
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        usernamePassword(
+                            credentialsId: 'docker-hub-creds',
+                            usernameVariable: 'DOCKER_HUB_USER',
+                            passwordVariable: 'DOCKER_HUB_PASSWORD'
+                        )
+                    ]) {
+                        timeout(time: 10, unit: 'MINUTES') {
+                            sh '''#!/bin/bash
+                            set -eo pipefail
+        
+                            # ===== AUTHENTICATION =====
+                            echo "🔑 Authenticating to Azure..."
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                            # ===== VERIFY IMAGE EXISTS =====
+                            echo "🔍 Verifying Docker image exists..."
+                            if ! docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"; then
+                                echo "❌ ERROR: Failed to login to Docker Hub"
+                                exit 1
+                            fi
+                            
+                            if ! docker pull ${IMAGE_TAG}; then
+                                echo "❌ ERROR: Failed to pull image ${IMAGE_TAG}"
+                                echo "Please verify:"
+                                echo "1. The image exists in Docker Hub"
+                                echo "2. The credentials have proper permissions"
+                                echo "3. The image tag is correct"
+                                exit 1
+                            fi
+                            echo "✅ Image verified successfully"
+        
+                            # ===== DEPLOY APPLICATION =====
+                            echo "🚀 Deploying application container..."
+                            ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                            az container create \
+                                --resource-group MyPatientSurveyRG \
+                                --name $ACI_NAME \
+                                --image ${IMAGE_TAG} \
+                                --os-type Linux \
+                                --cpu 1 \
+                                --memory 2 \
+                                --ports 8000 9100 \
+                                --restart-policy Always \
+                                --location uksouth \
+                                --ip-address Public \
+                                --environment-variables \
+                                    DB_HOST=${DB_HOST} \
+                                    DB_USER=${DB_USER} \
+                                    DB_PASSWORD=${DB_PASSWORD} \
+                                    DB_NAME=${DB_NAME} \
+                                --registry-login-server index.docker.io \
+                                --registry-username "$DOCKER_HUB_USER" \
+                                --registry-password "$DOCKER_HUB_PASSWORD"
+        
+                            # ===== GET APPLICATION IP =====
+                            echo "🔄 Getting application IP..."
+                            MAX_RETRIES=10
+                            RETRY_DELAY=10
+                            APP_IP=""
+                            
+                            for ((i=1; i<=$MAX_RETRIES; i++)); do
+                                APP_IP=$(az container show \
+                                    --resource-group MyPatientSurveyRG \
+                                    --name $ACI_NAME \
+                                    --query "ipAddress.ip" \
+                                    -o tsv)
+                                
+                                if [ -n "$APP_IP" ]; then
+                                    echo "✅ Application IP: $APP_IP"
+                                    break
+                                else
+                                    echo "Attempt $i/$MAX_RETRIES: IP not yet assigned..."
+                                    sleep $RETRY_DELAY
+                                fi
+                            done
+        
+                            if [ -z "$APP_IP" ]; then
+                                echo "❌ ERROR: Failed to get IP address after $MAX_RETRIES attempts"
+                                exit 1
+                            fi
+        
+                            # Update monitoring.env with application IP
+                            echo "APP_IP=$APP_IP" >> monitoring.env
+                            '''
+                        }
+                    }
+                }
+            }
+        }
        
-                       # ===== AUTHENTICATION =====
-                       echo "🔑 Authenticating to Azure..."
-                       az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                       az account set --subscription "$ARM_SUBSCRIPTION_ID"
-       
-                       # ===== DEPLOY APPLICATION =====
-                       echo "🚀 Deploying application container..."
-                       ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-                       az container create \
-                           --resource-group MyPatientSurveyRG \
-                           --name $ACI_NAME \
-                           --image ${IMAGE_TAG} \
-                           --os-type Linux \
-                           --cpu 1 \
-                           --memory 2 \
-                           --ports 8000 9100 \
-                           --restart-policy Always \
-                           --location uksouth \
-                           --ip-address Public \
-                           --environment-variables \
-                               DB_HOST=${DB_HOST} \
-                               DB_USER=${DB_USER} \
-                               DB_PASSWORD=${DB_PASSWORD} \
-                               DB_NAME=${DB_NAME} \
-                           --registry-login-server index.docker.io \
-                           --registry-username "$REGISTRY_USERNAME" \
-                           --registry-password "$REGISTRY_PASSWORD"
-       
-                       # ===== GET APPLICATION IP =====
-                       echo "🔄 Getting application IP..."
-                       APP_IP=$(az container show \
-                           --resource-group MyPatientSurveyRG \
-                           --name $ACI_NAME \
-                           --query "ipAddress.ip" \
-                           -o tsv)
-                       
-                       echo "APP_IP=${APP_IP}" >> monitoring.env
-                       '''
-                   }
-               }
-           }
-       }
-
         stage('Configure Monitoring') {
             steps {
                 script {
