@@ -1,0 +1,53 @@
+{
+  "dashboard": {
+    "title": "Patient Survey - Dynamic",
+    "uid": "patient-survey-template",
+    "timezone": "browser",
+    "panels": [
+      {
+        "title": "Container Health - $instance",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "targets": [{
+          "expr": "up{instance=~\"$instance:.*\"}",
+          "legendFormat": "{{instance}}"
+        }],
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 6}
+      },
+      {
+        "title": "CPU Usage - $instance",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{
+          "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode='idle',instance=~\"$instance:.*\"}[1m])) * 100)",
+          "legendFormat": "CPU Usage"
+        }],
+        "gridPos": {"x": 0, "y": 6, "w": 12, "h": 8}
+      },
+      {
+        "title": "Memory Usage - $instance",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "targets": [{
+          "expr": "node_memory_MemTotal_bytes{instance=~\"$instance:.*\"} - node_memory_MemAvailable_bytes{instance=~\"$instance:.*\"}",
+          "legendFormat": "Used Memory"
+        }],
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "instance",
+          "type": "query",
+          "datasource": "Prometheus",
+          "query": "label_values(up{job=~\"aci-node-exporter|aci-app-metrics\"}, instance)",
+          "refresh": 2,
+          "sort": 1
+        }
+      ]
+    }
+  },
+  "folderId": 0,
+  "overwrite": true
+}
