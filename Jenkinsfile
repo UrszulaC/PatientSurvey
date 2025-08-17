@@ -175,54 +175,40 @@
                             echo "🗑️ Found containers to delete:"
                             echo "$CONTAINERS"
                             
-                            # Serial deletion with proper error handling
+                            # Parallel deletion with error handling
                             for CONTAINER in $CONTAINERS; do
-                                echo "➖ Deleting $CONTAINER..."
-                                if ! az container delete \
-                                    --resource-group MyPatientSurveyRG \
-                                    --name "$CONTAINER" \
-                                    --yes; then
-                                    echo "⚠️ Failed to delete $CONTAINER, attempting force delete..."
-                                    # Force delete by stopping first
-                                    az container stop \
+                                (
+                                    echo "➖ Deleting $CONTAINER..."
+                                    if ! az container delete \
                                         --resource-group MyPatientSurveyRG \
                                         --name "$CONTAINER" \
-                                        --yes || true
-                                    az container delete \
-                                        --resource-group MyPatientSurveyRG \
-                                        --name "$CONTAINER" \
-                                        --yes || true
-                                fi
-                            done
-        
-                            # Verify all containers are gone
-                            echo "🔍 Verifying cleanup..."
-                            MAX_RETRIES=10
-                            for ((i=1; i<=$MAX_RETRIES; i++)); do
-                                REMAINING=$(az container list \
-                                    --resource-group MyPatientSurveyRG \
-                                    --query "[].name" \
-                                    -o tsv)
-                                
-                                if [ -z "$REMAINING" ]; then
-                                    echo "✅ All containers deleted successfully"
-                                    break
-                                else
-                                    echo "⌛ Containers remaining: $REMAINING"
-                                    if [ $i -eq $MAX_RETRIES ]; then
-                                        echo "❌ Critical: Containers still exist after $MAX_RETRIES attempts:"
-                                        echo "$REMAINING"
-                                        echo "Proceeding with deployment anyway..."
-                                        break
+                                        --yes; then
+                                        echo "⚠️ Failed to delete $CONTAINER, attempting force delete..."
+                                        az container stop \
+                                            --resource-group MyPatientSurveyRG \
+                                            --name "$CONTAINER" \
+                                            --yes || true
+                                        az container delete \
+                                            --resource-group MyPatientSurveyRG \
+                                            --name "$CONTAINER" \
+                                            --yes || true
                                     fi
-                                    sleep 15
-                                fi
+                                ) &
                             done
+                            wait
+        
+                            # Verify cleanup
+                            echo "🔍 Verifying cleanup..."
+                            REMAINING=$(az container list \
+                                --resource-group MyPatientSurveyRG \
+                                --query "[].name" \
+                                -o tsv)
+                            [ -z "$REMAINING" ] || echo "⚠️ Containers remaining: $REMAINING"
                         else
                             echo "ℹ️ No containers found to delete"
                         fi
         
-                        # ===== DEPLOY NEW MONITORING STACK =====
+                        # ===== DEPLOY MONITORING STACK =====
                         echo "🚀 Deploying new monitoring stack..."
                         PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                         GRAFANA_NAME="grafana-${BUILD_NUMBER}"
@@ -231,65 +217,36 @@
                         # Validate config file exists
                         if [ ! -f "$CONFIG_FILE" ]; then
                             echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
+                            ls -la "$(dirname "$CONFIG_FILE")" || true
                             exit 1
                         fi
-                        
-                       # ===== PROMETHEUS DEPLOYMENT =====
-                       echo "🚀 Deploying new monitoring stack..."
-                       PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                       GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-                       CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-                       
-                       # Get the dynamic application IP (from previous stage or current deployment)
-                       APP_IP=$(az container show \
-                           --resource-group MyPatientSurveyRG \
-                           --name patientsurvey-app-${BUILD_NUMBER} \
-                           --query "ipAddress.ip" \
-                           --output tsv)
-                       
-                       # Verify we got the IP
-                       if [ -z "$APP_IP" ]; then
-                           echo "❌ ERROR: Failed to get application IP"
-                           exit 1
-                       fi
-                       echo "📌 Using Application IP: $APP_IP"
-                       
-                       # Create temporary config with dynamic IP
-                       TEMP_CONFIG="/tmp/prometheus-${BUILD_NUMBER}.yml"
-                       sed "s/DYNAMIC_APP_IP/$APP_IP/g" "$CONFIG_FILE" > "$TEMP_CONFIG"
-                       
-                       # Verify substitution
-                       echo "=== Modified Config ==="
-                       grep -A2 "targets:" "$TEMP_CONFIG" || true
-                       echo "======================"
-                       
-                       # Deploy Prometheus with dynamic config
-                       CONFIG_BASE64=$(base64 -w0 "$TEMP_CONFIG")
-                       
-                       az container create \
-                         --resource-group MyPatientSurveyRG \
-                         --name "$PROMETHEUS_NAME" \
-                         --image prom/prometheus:v2.47.0 \
-                         --os-type Linux \
-                         --cpu 0.5 \
-                         --memory 1.5 \
-                         --ports 9090 \
-                         --ip-address Public \
-                         --dns-name-label "$PROMETHEUS_NAME" \
-                         --location uksouth \
-                         --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && echo \"✅ Config created with targets:\" && grep \"targets:\" /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-                       
-                       
         
-                        # ===== GRAFANA DEPLOYMENT =====
+                        # ===== PHASE 1: INITIAL DEPLOYMENT =====
+                        echo "📊 Deploying Prometheus ($PROMETHEUS_NAME) with initial config..."
+                        INITIAL_CONFIG=$(sed 's/DYNAMIC_APP_IP/PLACEHOLDER_IP/g' "$CONFIG_FILE")
+                        CONFIG_BASE64=$(echo "$INITIAL_CONFIG" | base64 -w0)
+        
+                        az container create \
+                          --resource-group MyPatientSurveyRG \
+                          --name "$PROMETHEUS_NAME" \
+                          --image prom/prometheus:v2.47.0 \
+                          --os-type Linux \
+                          --cpu 1.0 \
+                          --memory 2.0 \
+                          --ports 9090 \
+                          --ip-address Public \
+                          --dns-name-label "$PROMETHEUS_NAME" \
+                          --location uksouth \
+                          --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+        
                         echo "📈 Deploying Grafana ($GRAFANA_NAME)..."
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name "$GRAFANA_NAME" \
                             --image grafana/grafana:9.5.6 \
                             --os-type Linux \
-                            --cpu 0.5 \
-                            --memory 1.5 \
+                            --cpu 1.0 \
+                            --memory 2.0 \
                             --ports 3000 \
                             --ip-address Public \
                             --dns-name-label "$GRAFANA_NAME" \
@@ -339,12 +296,11 @@
                             --query "ipAddress.ip" \
                             -o tsv)
         
-                        echo "✨ Deployment successful!"
+                        echo "✨ Phase 1 complete!"
                         echo "📊 Prometheus URL: http://$PROMETHEUS_IP:9090"
                         echo "📈 Grafana URL: http://$GRAFANA_IP:3000"
-                        echo "🔑 Grafana Credentials: admin/$GRAFANA_PASSWORD"
         
-                        # Write outputs
+                        # Write initial outputs
                         echo "PROMETHEUS_URL=http://$PROMETHEUS_IP:9090" > monitoring.env
                         echo "GRAFANA_URL=http://$GRAFANA_IP:3000" >> monitoring.env
                         echo "GRAFANA_CREDS=admin:$GRAFANA_PASSWORD" >> monitoring.env
