@@ -732,6 +732,40 @@ stage('Deploy Application (Azure Container Instances)') {
                 }
             }
         }
+        stage('Deploy Grafana Dashboard') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD'),
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID')
+                    ]) {
+                        // Get Grafana IP
+                        def GRAFANA_IP = sh(returnStdout: true, script: '''
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                            az container show -g MyPatientSurveyRG -n grafana-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv
+                        ''').trim()
+        
+                        // Deploy template
+                        sh """
+                            curl -X POST \
+                            -H "Authorization: Basic \$(echo -n admin:\${GRAFANA_PASSWORD} | base64)" \
+                            -H "Content-Type: application/json" \
+                            -d @${WORKSPACE}/infra/monitoring/grafana-dashboard-template.json \
+                            "http://${GRAFANA_IP}:3000/api/dashboards/db"
+                        """
+        
+                        // Set as home dashboard
+                        sh """
+                            curl -X PUT \
+                            -H "Authorization: Basic \$(echo -n admin:\${GRAFANA_PASSWORD} | base64)" \
+                            -H "Content-Type: application/json" \
+                            -d '{"homeDashboardUID":"patient-survey-template"}' \
+                            "http://${GRAFANA_IP}:3000/api/org/preferences"
+                        """
+                    }
+                }
+            }
+        }
         stage('Verify Monitoring') {
             steps {
                 script {
