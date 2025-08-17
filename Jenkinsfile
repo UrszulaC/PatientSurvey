@@ -636,40 +636,7 @@ pipeline {
     post {
         always {
             junit 'test-results/*.xml'
-            script {
-                withCredentials([
-                    string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                    string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                    string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                    string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
-                ]) {
-                    sh '''#!/bin/bash
-                    set -e
-                    echo "🧹 Post-build cleanup..."
-                    az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                    az account set --subscription "$ARM_SUBSCRIPTION_ID"
-                    
-                    # Delete current build containers if pipeline failed
-                    if [ "$BUILD_RESULT" != "SUCCESS" ]; then
-                        echo "⚠️ Pipeline failed - cleaning up current build containers"
-                        az container delete \
-                            --resource-group "$RESOURCE_GROUP" \
-                            --name "patientsurvey-app-${BUILD_NUMBER}" \
-                            --yes || true
-                        
-                        az container delete \
-                            --resource-group "$RESOURCE_GROUP" \
-                            --name "prometheus-${BUILD_NUMBER}" \
-                            --yes || true
-                        
-                        az container delete \
-                            --resource-group "$RESOURCE_GROUP" \
-                            --name "grafana-${BUILD_NUMBER}" \
-                            --yes || true
-                    fi
-                    '''
-                }
-            }
+            // Only workspace cleanup remains
             cleanWs()
         }
     }
