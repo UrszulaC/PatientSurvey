@@ -207,77 +207,112 @@
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
                         string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
                     ]) {
-                        timeout(time: 15, unit: 'MINUTES') {  // Add timeout to prevent hanging
+                        timeout(time: 15, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
         
-                            # Function to check container status
-                            check_container_status() {
-                                local resource_group="$1"
-                                local container_name="$2"
-                                local timeout=300  # 5 minutes
-                                local interval=10
-                                local elapsed=0
-        
-                                while [ $elapsed -lt $timeout ]; do
-                                    status=$(az container show \
-                                        -g "$resource_group" \
-                                        -n "$container_name" \
-                                        --query "provisioningState" \
-                                        -o tsv)
-                                    
-                                    if [ "$status" == "Succeeded" ]; then
-                                        echo "✅ Container $container_name deployed successfully"
-                                        return 0
-                                    elif [ "$status" == "Failed" ]; then
-                                        echo "❌ Container $container_name deployment failed"
-                                        return 1
-                                    fi
-                                    
-                                    echo "⌛ Container $container_name status: $status (${elapsed}s elapsed)"
-                                    sleep $interval
-                                    elapsed=$((elapsed + interval))
-                                done
-        
-                                echo "❌ Timeout waiting for container $container_name to deploy"
-                                return 1
-                            }
-        
-                            # Authenticate
-                            echo "🔐 Authenticating to Azure..."
+                            # ===== AUTHENTICATION =====
+                            echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # Deploy with reduced resource requests
-                            echo "🚀 Deploying monitoring stack..."
+                            # ===== CONTAINER CLEANUP =====
+                            echo "🧹 Cleaning up existing containers..."
+                            CONTAINERS=$(az container list \
+                                --resource-group MyPatientSurveyRG \
+                                --query "[?provisioningState!='Deleting'].name" \
+                                -o tsv)
+        
+                            if [ -n "$CONTAINERS" ]; then
+                                echo "🗑️ Found containers to delete:"
+                                echo "$CONTAINERS"
+                                
+                                # Serial deletion with proper error handling
+                                for CONTAINER in $CONTAINERS; do
+                                    echo "➖ Deleting $CONTAINER..."
+                                    if ! az container delete \
+                                        --resource-group MyPatientSurveyRG \
+                                        --name "$CONTAINER" \
+                                        --yes; then
+                                        echo "⚠️ Failed to delete $CONTAINER, attempting force delete..."
+                                        # Force delete by stopping first
+                                        az container stop \
+                                            --resource-group MyPatientSurveyRG \
+                                            --name "$CONTAINER" \
+                                            --yes || true
+                                        az container delete \
+                                            --resource-group MyPatientSurveyRG \
+                                            --name "$CONTAINER" \
+                                            --yes || true
+                                    fi
+                                done
+        
+                                # Verify all containers are gone
+                                echo "🔍 Verifying cleanup..."
+                                MAX_RETRIES=10
+                                for ((i=1; i<=$MAX_RETRIES; i++)); do
+                                    REMAINING=$(az container list \
+                                        --resource-group MyPatientSurveyRG \
+                                        --query "[].name" \
+                                        -o tsv)
+                                    
+                                    if [ -z "$REMAINING" ]; then
+                                        echo "✅ All containers deleted successfully"
+                                        break
+                                    else
+                                        echo "⌛ Containers remaining: $REMAINING"
+                                        if [ $i -eq $MAX_RETRIES ]; then
+                                            echo "❌ Critical: Containers still exist after $MAX_RETRIES attempts:"
+                                            echo "$REMAINING"
+                                            echo "Proceeding with deployment anyway..."
+                                            break
+                                        fi
+                                        sleep 15
+                                    fi
+                                done
+                            else
+                                echo "ℹ️ No containers found to delete"
+                            fi
+        
+                            # ===== DEPLOY NEW MONITORING STACK =====
+                            echo "🚀 Deploying new monitoring stack..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                             GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
         
-                            # Deploy Prometheus (async)
-                            echo "📊 Deploying Prometheus..."
+                            # Validate config file exists
+                            if [ ! -f "$CONFIG_FILE" ]; then
+                                echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
+                                exit 1
+                            fi
+        
+                            # ===== PROMETHEUS DEPLOYMENT =====
+                            echo "📊 Deploying Prometheus ($PROMETHEUS_NAME)..."
+                            CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
+        
                             az container create \
-                              --resource-group "$RESOURCE_GROUP" \
+                              --resource-group MyPatientSurveyRG \
                               --name "$PROMETHEUS_NAME" \
                               --image prom/prometheus:v2.47.0 \
                               --os-type Linux \
                               --cpu 0.5 \
-                              --memory 1.0 \
+                              --memory 1.5 \
                               --ports 9090 \
                               --ip-address Public \
                               --dns-name-label "$PROMETHEUS_NAME" \
                               --location uksouth \
                               --no-wait \
-                              --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
+                              --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
         
-                            # Deploy Grafana (async)
-                            echo "📈 Deploying Grafana..."
+                            # ===== GRAFANA DEPLOYMENT =====
+                            echo "📈 Deploying Grafana ($GRAFANA_NAME)..."
                             az container create \
-                                --resource-group "$RESOURCE_GROUP" \
+                                --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
                                 --image grafana/grafana:9.5.6 \
                                 --os-type Linux \
                                 --cpu 0.5 \
-                                --memory 1.0 \
+                                --memory 1.5 \
                                 --ports 3000 \
                                 --ip-address Public \
                                 --dns-name-label "$GRAFANA_NAME" \
@@ -287,16 +322,65 @@
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
         
-                            # Check deployment status with timeout
-                            echo "🔄 Checking deployment status..."
-                            check_container_status "$RESOURCE_GROUP" "$PROMETHEUS_NAME"
-                            check_container_status "$RESOURCE_GROUP" "$GRAFANA_NAME"
+                            # ===== VERIFICATION =====
+                            echo "🔎 Verifying deployments..."
+                            verify_container_ready() {
+                                local name=$1
+                                local max_retries=30  # Increased from 15
+                                local retry_interval=10
+                                
+                                for ((i=1; i<=max_retries; i++)); do
+                                    state=$(az container show \
+                                        -g MyPatientSurveyRG \
+                                        -n "$name" \
+                                        --query "containers[0].instanceView.currentState.state" \
+                                        -o tsv 2>/dev/null || echo "unknown")
+                                    
+                                    if [ "$state" == "Running" ]; then
+                                        echo "✅ $name is running"
+                                        return 0
+                                    elif [ "$state" == "Failed" ]; then
+                                        echo "❌ Container $name deployment failed"
+                                        # Get logs for failed container
+                                        echo "=== $name logs ==="
+                                        az container logs -g MyPatientSurveyRG -n "$name" || true
+                                        echo "=================="
+                                        return 1
+                                    fi
+                                    
+                                    echo "⌛ $name state: $state (attempt $i/$max_retries)"
+                                    sleep $retry_interval
+                                done
+        
+                                echo "❌ Timeout waiting for container $name to deploy"
+                                # Get logs for timeout
+                                echo "=== $name logs ==="
+                                az container logs -g MyPatientSurveyRG -n "$name" || true
+                                echo "=================="
+                                return 1
+                            }
+        
+                            verify_container_ready "$PROMETHEUS_NAME" || exit 1
+                            verify_container_ready "$GRAFANA_NAME" || exit 1
         
                             # Get endpoints
-                            echo "🔗 Getting service endpoints..."
-                            PROMETHEUS_IP=$(az container show -g "$RESOURCE_GROUP" -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
-                            GRAFANA_IP=$(az container show -g "$RESOURCE_GROUP" -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
+                            PROMETHEUS_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$PROMETHEUS_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+                            GRAFANA_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$GRAFANA_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
         
+                            echo "✨ Deployment successful!"
+                            echo "📊 Prometheus URL: http://$PROMETHEUS_IP:9090"
+                            echo "📈 Grafana URL: http://$GRAFANA_IP:3000"
+                            echo "🔑 Grafana Credentials: admin/$GRAFANA_PASSWORD"
+        
+                            # Write outputs
                             echo "PROMETHEUS_URL=http://$PROMETHEUS_IP:9090" > monitoring.env
                             echo "GRAFANA_URL=http://$GRAFANA_IP:3000" >> monitoring.env
                             echo "GRAFANA_CREDS=admin:$GRAFANA_PASSWORD" >> monitoring.env
