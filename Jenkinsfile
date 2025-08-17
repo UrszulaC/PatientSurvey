@@ -718,7 +718,7 @@ stage('Deploy Application (Azure Container Instances)') {
         stage('Verify Monitoring') {
             steps {
                 script {
-                    // Read the monitoring.env file to get the IPs
+                    // Get IPs from environment
                     def monitoringEnv = readFile('monitoring.env').trim()
                     def envVars = monitoringEnv.split('\n').collectEntries { 
                         def parts = it.split('=', 2)
@@ -728,9 +728,6 @@ stage('Deploy Application (Azure Container Instances)') {
                     def PROMETHEUS_IP = envVars['PROMETHEUS_URL'].replace('http://', '').replace(':9090', '')
                     def APP_IP = envVars['NODE_METRICS_URL'].replace('http://', '').replace(':9100/metrics', '')
                     
-                    echo "Using Prometheus IP: ${PROMETHEUS_IP}"
-                    echo "Using Application IP: ${APP_IP}"
-                    
                     // Install required tools
                     sh '''
                         if ! command -v jq &> /dev/null; then
@@ -738,52 +735,71 @@ stage('Deploy Application (Azure Container Instances)') {
                         fi
                     '''
                     
-                    // First, verify the node exporter is serving metrics directly
-                    sh """
-                        echo \"=== Checking Node Exporter directly ===\"
-                        curl -v http://${APP_IP}:9100/metrics || echo \"Failed to reach node exporter\"
-                    """
-                    
-                    // Then check Prometheus configuration
-                    sh """
-                        echo \"=== Checking Prometheus Configuration ===\"
-                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/status/config | jq .data.yaml
-                    """
-                    
-                    // Enhanced target verification with more debugging
+                    // Enhanced verification with network checks
                     timeout(time: 5, unit: 'MINUTES') {
                         waitUntil {
                             try {
-                                // Get all targets for better debugging
-                                def allTargets = sh(script: """
-                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \\
-                                    jq -r '.data.activeTargets[] | \"\\(.discoveredLabels.__address__): \\(.health)\"'
+                                // 1. First verify Node Exporter is directly accessible
+                                def nodeExporterAccessible = sh(script: """
+                                    curl -s --connect-timeout 5 http://${APP_IP}:9100/metrics | grep -q 'node_' && echo "accessible" || echo "inaccessible"
                                 """, returnStdout: true).trim()
                                 
-                                echo "Current targets:\n${allTargets}"
+                                if (nodeExporterAccessible != "accessible") {
+                                    echo "❌ Node Exporter not directly accessible at ${APP_IP}:9100"
+                                    // Debug network connectivity
+                                    sh """
+                                        echo "=== Network Debug ==="
+                                        az container exec --resource-group MyPatientSurveyRG \
+                                            --name prometheus-${BUILD_NUMBER} \
+                                            --exec-command "curl -v http://${APP_IP}:9100/metrics" || true
+                                        echo "=== NSG Rules ==="
+                                        az network nsg rule list --resource-group MyPatientSurveyRG \
+                                            --nsg-name monitoring-nsg -o table || true
+                                    """
+                                    error("Node Exporter inaccessible")
+                                }
                                 
-                                // Check specifically for our node exporter
-                                def nodeExporterStatus = sh(script: """
-                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \\
-                                    jq -r '.data.activeTargets[] | select(.discoveredLabels.__address__==\"${APP_IP}:9100\") | .health'
+                                // 2. Verify Prometheus config contains correct target
+                                def configTargets = sh(script: """
+                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/status/config | \
+                                    jq -r '.data.yaml' | grep -A2 "${APP_IP}:9100" || true
                                 """, returnStdout: true).trim()
                                 
-                                echo "Node exporter status: ${nodeExporterStatus}"
+                                if (!configTargets) {
+                                    echo "⚠️ Target not in config, updating..."
+                                    def updatedConfig = sh(script: """
+                                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/status/config | \
+                                        jq -r '.data.yaml' | \
+                                        sed 's/PLACEHOLDER_IP/${APP_IP}/g' | \
+                                        base64 -w0
+                                    """, returnStdout: true).trim()
+                                    
+                                    sh """
+                                        curl -X POST --data-binary "${updatedConfig}" \
+                                        http://${PROMETHEUS_IP}:9090/-/reload
+                                        sleep 5
+                                    """
+                                    return false
+                                }
                                 
-                                if (nodeExporterStatus == "up") {
+                                // 3. Check targets endpoint
+                                def targets = sh(script: """
+                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
+                                    jq -r '.data.activeTargets[] | select(.discoveredLabels.__address__=="${APP_IP}:9100") | .health, .lastError'
+                                """, returnStdout: true).trim().split('\n')
+                                
+                                if (targets[0] == "up") {
+                                    echo "✅ Node Exporter is UP"
                                     return true
                                 } else {
-                                    // If not up, try reloading Prometheus
-                                    sh """
-                                        echo \"=== Reloading Prometheus ===\"
-                                        curl -X POST http://${PROMETHEUS_IP}:9090/-/reload || true
-                                    """
+                                    echo "⚠️ Node Exporter status: ${targets[0]:-'unknown'}"
+                                    echo "Last error: ${targets[1]:-'none'}"
                                     sleep 10
                                     return false
                                 }
                             } catch (Exception e) {
                                 echo "Verification error: ${e.getMessage()}"
-                                sleep 10
+                                sleep 15
                                 return false
                             }
                         }
@@ -791,9 +807,9 @@ stage('Deploy Application (Azure Container Instances)') {
                     
                     // Final verification
                     sh """
-                        echo \"=== Final Target Status ===\"
-                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \\
-                        jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health, lastError: .lastError}'
+                        echo "=== Final Targets Status ==="
+                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
+                        jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health, lastScrape: .lastScrape, lastError: .lastError}'
                     """
                 }
             }
