@@ -573,52 +573,52 @@ pipeline {
         }
         
         stage('Configure Monitoring') {
-            steps {
-                script {
-                    // Read monitoring.env
-                    def monitoringEnv = readFile('monitoring.env').trim()
-                    def envVars = [:]
-                    monitoringEnv.eachLine { line ->
-                        def parts = line.split('=', 2)
-                        if (parts.size() == 2) {
-                            envVars[parts[0]] = parts[1].trim()
+                steps {
+                    script {
+                        // Read monitoring.env more reliably
+                        def monitoringEnv = readFile('monitoring.env').trim()
+                        def envVars = [:]
+                        monitoringEnv.split('\n').each { line ->
+                            def parts = line.split('=', 2)
+                            if (parts.size() == 2) {
+                                envVars[parts[0].trim()] = parts[1].trim()
+                            }
                         }
-                    }
-        
-                    // Verify required variables
-                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                    def missingVars = requiredVars.findAll { !envVars[it] }
-                    
-                    if (missingVars) {
-                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
-                    }
-        
-                    // Update Prometheus config
-                    sh """
-                        # Get Prometheus IP
-                        PROMETHEUS_IP=${envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')}
+            
+                        // Verify required variables
+                        def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
+                        def missingVars = requiredVars.findAll { !envVars[it] }
                         
-                        # Create updated config
-                        cat <<EOF > prometheus-config.yml
-                        global:
-                          scrape_interval: 15s
-                          evaluation_interval: 15s
-        
-                        scrape_configs:
-                          - job_name: 'node-exporter'
-                            static_configs:
-                              - targets: ['${envVars.APP_IP}:9100']
-                          - job_name: 'app-metrics'
-                            static_configs:
-                              - targets: ['${envVars.APP_IP}:8000']
-                        EOF
-        
-                        # Reload Prometheus
-                        curl -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
-                    """
+                        if (missingVars) {
+                            error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
+                        }
+            
+                        // Update Prometheus config
+                        sh """
+                            # Get Prometheus IP
+                            PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | sed 's|http://||;s|:9090||')
+                            
+                            # Create updated config
+                            cat <<EOF > prometheus-config.yml
+                            global:
+                              scrape_interval: 15s
+                              evaluation_interval: 15s
+            
+                            scrape_configs:
+                              - job_name: 'node-exporter'
+                                static_configs:
+                                  - targets: ['${envVars['APP_IP']}:9100']
+                              - job_name: 'app-metrics'
+                                static_configs:
+                                  - targets: ['${envVars['APP_IP']}:8000']
+                            EOF
+            
+                            # Reload Prometheus
+                            curl -X POST --data-binary @prometheus-config.yml http://\${PROMETHEUS_IP}:9090/-/reload || echo "⚠️ Prometheus reload failed (might need manual configuration)"
+                        """
+                    }
                 }
             }
-        }
         
         stage('Display Monitoring URLs') {
             steps {
@@ -638,7 +638,6 @@ pipeline {
             }
         }
     }
-
     post {
         always {
             junit 'test-results/*.xml'
@@ -661,17 +660,17 @@ pipeline {
                         az container delete \
                             --resource-group "$RESOURCE_GROUP" \
                             --name "patientsurvey-app-${BUILD_NUMBER}" \
-                            --yes --no-wait || true
+                            --yes || true
                         
                         az container delete \
                             --resource-group "$RESOURCE_GROUP" \
                             --name "prometheus-${BUILD_NUMBER}" \
-                            --yes --no-wait || true
+                            --yes || true
                         
                         az container delete \
                             --resource-group "$RESOURCE_GROUP" \
                             --name "grafana-${BUILD_NUMBER}" \
-                            --yes --no-wait || true
+                            --yes || true
                     fi
                     '''
                 }
@@ -679,4 +678,5 @@ pipeline {
             cleanWs()
         }
     }
+    
 }
