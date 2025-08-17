@@ -887,5 +887,6 @@ stage('Deploy Application (Azure Container Instances)') {
                     }
                 }
             }
+        }
 }
     
