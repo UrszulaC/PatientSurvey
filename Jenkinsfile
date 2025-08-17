@@ -235,8 +235,8 @@
                               --name "$PROMETHEUS_NAME" \
                               --image prom/prometheus:v2.47.0 \
                               --os-type Linux \
-                              --cpu 0.5 \ 
-                              --memory 1.0 \  
+                              --cpu 0.5 \
+                              --memory 1.0 \
                               --ports 9090 \
                               --ip-address Public \
                               --dns-name-label "$PROMETHEUS_NAME" \
@@ -249,8 +249,8 @@
                                 --name "$GRAFANA_NAME" \
                                 --image grafana/grafana:9.5.6 \
                                 --os-type Linux \
-                                --cpu 0.5 \  
-                                --memory 1.0 \  
+                                --cpu 0.5 \
+                                --memory 1.0 \
                                 --ports 3000 \
                                 --ip-address Public \
                                 --dns-name-label "$GRAFANA_NAME" \
