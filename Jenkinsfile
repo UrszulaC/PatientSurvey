@@ -779,11 +779,11 @@ stage('Deploy Application (Azure Container Instances)') {
                                 
                                 echo "Current targets:\n${allTargets}"
                                 
-                                // Check specifically for our node exporter
-                                def nodeExporterStatus = sh(script: """
-                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
-                                    jq -r '.data.activeTargets[] | select(.discoveredLabels.__address__=="${APP_IP}:9100") | .health'
-                                """, returnStdout: true).trim()
+                                // Check specifically for node exporter
+                                def allTargets = sh(script: """
+                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \\
+                                    jq -r '.data.activeTargets[] | \"\\(.discoveredLabels.__address__): \\(.health)\"'
+                                """, returnStdout:true).trim()
                                 
                                 echo "Node exporter status: ${nodeExporterStatus}"
                                 
