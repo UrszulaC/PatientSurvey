@@ -683,29 +683,48 @@ stage('Deploy Application (Azure Container Instances)') {
             }
         }
         stage('Configure Dynamic Monitoring') {
+            environment {
+                PROMETHEUS_SERVER = sh(
+                    script: '''
+                        az container show -g MyPatientSurveyRG -n prometheus-${BUILD_NUMBER} \
+                            --query "ipAddress.ip" -o tsv
+                    ''',
+                    returnStdout: true
+                ).trim()
+            }
             steps {
                 script {
-                    // 1. Load the Prometheus IP from previous stage
-                    def monitoringVars = readProperties file: 'monitoring.env'
-                    env.PROMETHEUS_SERVER = monitoringVars.PROMETHEUS_URL.replaceAll('http://', '').replaceAll(':9090', '')
+                    // Verify we have an IP
+                    if (!env.PROMETHEUS_SERVER) {
+                        error("Failed to get Prometheus server IP")
+                    }
                     
-                    // 2. Verify configuration
-                    echo "Using Prometheus at: ${env.PROMETHEUS_SERVER}"
-                    
-                    // 3. Trigger reload
+                    // Full verification flow
                     sh """
-                        echo "Reloading Prometheus configuration..."
-                        curl -v -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload || {
-                            echo "ERROR: Prometheus reload failed"
+                        # Verify Prometheus is reachable
+                        curl -s http://${env.PROMETHEUS_SERVER}:9090/-/healthy | grep 'Prometheus is Healthy' || {
+                            echo "ERROR: Prometheus not healthy"
                             exit 1
                         }
                         
-                        echo "Waiting 15 seconds for changes to take effect..."
-                        sleep 15
+                        # Trigger reload
+                        echo "Triggering config reload..."
+                        curl -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload
                         
-                        echo "Current active targets:"
+                        # Verify targets
+                        echo "Waiting for targets..."
+                        for i in {1..10}; do
+                            if curl -s http://${env.PROMETHEUS_SERVER}:9090/api/v1/targets | \
+                               grep '"health":"up"'; then
+                                break
+                            fi
+                            sleep 5
+                        done
+                        
+                        # Final status
+                        echo "=== Current Targets ==="
                         curl -s http://${env.PROMETHEUS_SERVER}:9090/api/v1/targets | \
-                            jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health}'
+                            jq '.data.activeTargets[] | {job: .labels.job, instance: .discoveredLabels.__address__, health: .health}'
                     """
                 }
             }
