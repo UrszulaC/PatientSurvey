@@ -216,20 +216,37 @@
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # ===== DEPLOY MONITORING STACK =====
-                            echo "🚀 Deploying monitoring stack..."
+                            # ===== CLEANUP EXISTING CONTAINERS =====
+                            echo "🧹 Cleaning up existing containers..."
+                            CONTAINERS=$(az container list \
+                                --resource-group MyPatientSurveyRG \
+                                --query "[?contains(name, 'prometheus-') || contains(name, 'grafana-')].name" \
+                                -o tsv)
+        
+                            if [ -n "$CONTAINERS" ]; then
+                                echo "🗑️ Found monitoring containers to delete:"
+                                echo "$CONTAINERS"
+                                
+                                for CONTAINER in $CONTAINERS; do
+                                    echo "➖ Deleting $CONTAINER..."
+                                    az container delete \
+                                        --resource-group MyPatientSurveyRG \
+                                        --name "$CONTAINER" \
+                                        --yes --no-wait || true
+                                done
+                                sleep 10  # Wait for deletions to initiate
+                            fi
+        
+                            # ===== DEPLOY PROMETHEUS =====
+                            echo "📊 Deploying Prometheus..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
                             CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
         
-                            # Validate config file exists
                             if [ ! -f "$CONFIG_FILE" ]; then
                                 echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
                                 exit 1
                             fi
         
-                            # ===== PROMETHEUS DEPLOYMENT =====
-                            echo "📊 Deploying Prometheus..."
                             CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
         
                             az container create \
@@ -243,11 +260,12 @@
                               --ip-address Public \
                               --dns-name-label "$PROMETHEUS_NAME" \
                               --location uksouth \
-                              --no-wait \
                               --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
         
-                            # ===== GRAFANA DEPLOYMENT =====
+                            # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
+                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+        
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
@@ -259,12 +277,11 @@
                                 --ip-address Public \
                                 --dns-name-label "$GRAFANA_NAME" \
                                 --location uksouth \
-                                --no-wait \
                                 --environment-variables \
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
         
-                            # ===== VERIFICATION =====
+                            # ===== VERIFY DEPLOYMENTS =====
                             echo "🔎 Verifying deployments..."
                             verify_container_ready() {
                                 local name=$1
@@ -312,74 +329,56 @@
                                 --query "ipAddress.ip" \
                                 -o tsv)
         
-                            # Verify endpoints are not empty
-                            if [ -z "$PROMETHEUS_IP" ] || [ -z "$GRAFANA_IP" ]; then
-                                echo "❌ ERROR: Failed to get IP addresses"
-                                echo "Prometheus IP: $PROMETHEUS_IP"
-                                echo "Grafana IP: $GRAFANA_IP"
-                                exit 1
-                            fi
-                           # Write to monitoring.env PROPERLY
-                           echo "Writing monitoring environment variables..."
-                           cat > monitoring.env <<EOF
-           PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
-           GRAFANA_URL=http://${GRAFANA_IP}:3000
-           GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
-           APP_IP=${APP_IP}
-           EOF
-
-                          # Verify file was written correctly
-                          echo "=== monitoring.env contents ==="
-                          cat monitoring.env
-                          echo "=============================="
-                          '''
-                      }
-                  }
-              }
-          }
-                            
-        }
+                            # ===== WRITE CLEAN ENVIRONMENT FILE =====
+                            echo "📝 Writing monitoring environment variables..."
+                            {
+                                echo "PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090"
+                                echo "GRAFANA_URL=http://${GRAFANA_IP}:3000"
+                                echo "GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}"
+                                echo "APP_IP=${APP_IP}"
+                            } > monitoring.env
         
+                            # Debug output (doesn't affect the file)
+                            echo "=== monitoring.env contents ==="
+                            cat monitoring.env
+                            echo "=============================="
+                            '''
+                        }
+                    }
+                }
+            }
+        }
         stage('Configure Monitoring') {
             steps {
                 script {
-                    // First verify file exists and has content
-                    def fileExists = fileExists('monitoring.env')
-                    if (!fileExists) {
+                    // Verify and read the file
+                    if (!fileExists('monitoring.env')) {
                         error("monitoring.env file not found")
                     }
                     
-                    // Read and parse the file carefully
-                    def monitoringEnv = readFile('monitoring.env').trim()
-                    echo "Raw monitoring.env content:\n${monitoringEnv}"
-                    
-                    // Simple parsing that handles malformed files
+                    // Read and parse carefully
                     def envVars = [:]
-                    monitoringEnv.eachLine { line ->
+                    readFile('monitoring.env').split('\n').each { line ->
                         line = line.trim()
-                        if (line && !line.startsWith("#") && line.contains("=")) {
-                            def parts = line.split("=", 2)
-                            if (parts.size() == 2) {
-                                envVars[parts[0].trim()] = parts[1].trim()
-                            }
+                        if (line && line.contains('=')) {
+                            def parts = line.split('=', 2)
+                            envVars[parts[0]] = parts[1]
                         }
                     }
                     
-                    // Debug output
-                    echo "Parsed environment variables:"
-                    envVars.each { k, v -> echo "${k}=${v}" }
+                    // Validate required variables
+                    def required = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
+                    def missing = required.findAll { !envVars[it]?.trim() }
                     
-                    // Verify required variables exist and are not empty
-                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                    def missingVars = requiredVars.findAll { !envVars[it] || envVars[it].isEmpty() }
-                    
-                    if (missingVars) {
-                        error("Missing or empty required monitoring environment variables: ${missingVars.join(', ')}")
+                    if (missing) {
+                        error("Missing required variables: ${missing.join(', ')}")
                     }
                     
+                    // Now use the variables
                     def PROMETHEUS_IP = envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')
                     def APP_IP = envVars.APP_IP
                     def GRAFANA_URL = envVars.GRAFANA_URL
+        
         
                     // Update Prometheus config
                     sh """
