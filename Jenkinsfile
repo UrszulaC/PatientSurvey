@@ -233,29 +233,53 @@
                             echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
                             exit 1
                         fi
-        
-                        # ===== PROMETHEUS DEPLOYMENT =====
-                        # base64 encoded config with proper escaping
-                        CONFIG_CONTENT=$(cat $CONFIG_FILE | sed "s/DYNAMIC_APP_IP/${APP_IP}/g")
-                        CONFIG_BASE64=$(echo "$CONFIG_CONTENT" | base64 -w0)
                         
-                        # Add debug output
-                        echo "=== Final Prometheus Config ==="
-                        echo "$CONFIG_CONTENT"
-                        echo "=============================="
-                        
-                        az container create \
-                          --resource-group MyPatientSurveyRG \
-                          --name "$PROMETHEUS_NAME" \
-                          --image prom/prometheus:v2.47.0 \
-                          --os-type Linux \
-                          --cpu 0.5 \
-                          --memory 1.5 \
-                          --ports 9090 \
-                          --ip-address Public \
-                          --dns-name-label "$PROMETHEUS_NAME" \
-                          --location uksouth \
-                          --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && cat /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+                       # ===== PROMETHEUS DEPLOYMENT =====
+                       echo "🚀 Deploying new monitoring stack..."
+                       PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                       GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+                       CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
+                       
+                       # Get the dynamic application IP (from previous stage or current deployment)
+                       APP_IP=$(az container show \
+                           --resource-group MyPatientSurveyRG \
+                           --name patientsurvey-app-${BUILD_NUMBER} \
+                           --query "ipAddress.ip" \
+                           --output tsv)
+                       
+                       # Verify we got the IP
+                       if [ -z "$APP_IP" ]; then
+                           echo "❌ ERROR: Failed to get application IP"
+                           exit 1
+                       fi
+                       echo "📌 Using Application IP: $APP_IP"
+                       
+                       # Create temporary config with dynamic IP
+                       TEMP_CONFIG="/tmp/prometheus-${BUILD_NUMBER}.yml"
+                       sed "s/DYNAMIC_APP_IP/$APP_IP/g" "$CONFIG_FILE" > "$TEMP_CONFIG"
+                       
+                       # Verify substitution
+                       echo "=== Modified Config ==="
+                       grep -A2 "targets:" "$TEMP_CONFIG" || true
+                       echo "======================"
+                       
+                       # Deploy Prometheus with dynamic config
+                       CONFIG_BASE64=$(base64 -w0 "$TEMP_CONFIG")
+                       
+                       az container create \
+                         --resource-group MyPatientSurveyRG \
+                         --name "$PROMETHEUS_NAME" \
+                         --image prom/prometheus:v2.47.0 \
+                         --os-type Linux \
+                         --cpu 0.5 \
+                         --memory 1.5 \
+                         --ports 9090 \
+                         --ip-address Public \
+                         --dns-name-label "$PROMETHEUS_NAME" \
+                         --location uksouth \
+                         --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && echo \"✅ Config created with targets:\" && grep \"targets:\" /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+                       
+                       
         
                         # ===== GRAFANA DEPLOYMENT =====
                         echo "📈 Deploying Grafana ($GRAFANA_NAME)..."
