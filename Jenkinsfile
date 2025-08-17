@@ -392,11 +392,11 @@
                     ]) {
                         sh '''#!/bin/bash
                         set -e
-
+        
                         # Authenticate
                         az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                         az account set --subscription "$ARM_SUBSCRIPTION_ID"
-
+        
                         # Deploy app
                         ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
                         az container create \
@@ -415,35 +415,58 @@
                                 DB_USER=${DB_USER} \
                                 DB_PASSWORD=${DB_PASSWORD} \
                                 DB_NAME=${DB_NAME}
-
-                        # Get app IP
+        
+                        # Get app IP and write to file
                         APP_IP=$(az container show --resource-group $RESOURCE_GROUP --name $ACI_NAME --query "ipAddress.ip" -o tsv)
-                        echo "APP_IP=$APP_IP" >> monitoring.env
+                        
+                        # Create monitoring.env with all required variables
+                        echo "Writing monitoring environment variables:"
+                        echo "PROMETHEUS_URL=${PROMETHEUS_URL}" > monitoring.env
+                        echo "GRAFANA_URL=${GRAFANA_URL}" >> monitoring.env
+                        echo "GRAFANA_CREDS=${GRAFANA_CREDS}" >> monitoring.env
+                        echo "APP_IP=${APP_IP}" >> monitoring.env
+                        
+                        echo "=== monitoring.env contents ==="
+                        cat monitoring.env
+                        echo "=============================="
                         '''
                     }
                 }
             }
         }
-
+        
         stage('Configure Monitoring') {
             steps {
                 script {
-                    // Read monitoring endpoints more reliably
+                    // Read and verify monitoring.env
+                    echo "Reading monitoring environment variables..."
                     def monitoringEnv = readFile('monitoring.env').trim()
+                    echo "Raw monitoring.env content:\n${monitoringEnv}"
+                    
+                    // Parse variables
                     def envVars = [:]
                     monitoringEnv.eachLine { line ->
                         def parts = line.split('=', 2)
                         if (parts.size() == 2) {
-                            envVars[parts[0]] = parts[1]
+                            envVars[parts[0]] = parts[1].trim()
                         }
                     }
                     
-                    if (!envVars.PROMETHEUS_URL || !envVars.GRAFANA_URL || !envVars.APP_IP) {
-                        error("Missing required monitoring environment variables")
+                    // Debug output
+                    echo "Parsed environment variables:"
+                    envVars.each { k, v -> echo "${k}=${v}" }
+                    
+                    // Verify required variables
+                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
+                    def missingVars = requiredVars.findAll { !envVars.containsKey(it) }
+                    
+                    if (missingVars) {
+                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
                     }
-        
+                    
                     def PROMETHEUS_IP = envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')
                     def APP_IP = envVars.APP_IP
+                    def GRAFANA_URL = envVars.GRAFANA_URL
         
                     // Update Prometheus config
                     sh """
@@ -461,18 +484,18 @@
                               - targets: ['${APP_IP}:8000']
                         EOF
         
-                        # Send config to Prometheus
-                        curl -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
+                        echo "Updating Prometheus configuration..."
+                        curl -v -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
                     """
         
                     // Setup Grafana dashboard
                     withCredentials([string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')]) {
                         sh """
-                        # Wait for Grafana to be ready
-                        until curl -s ${envVars.GRAFANA_URL}/api/health; do sleep 5; done
+                        echo "Waiting for Grafana to be ready..."
+                        until curl -s ${GRAFANA_URL}/api/health; do sleep 5; done
         
-                        # Add Prometheus datasource
-                        curl -X POST \
+                        echo "Adding Prometheus datasource..."
+                        curl -v -X POST \
                           -H "Content-Type: application/json" \
                           -u admin:${GRAFANA_PASSWORD} \
                           -d '{
@@ -481,9 +504,9 @@
                             "url":"http://${PROMETHEUS_IP}:9090",
                             "access":"proxy"
                           }' \
-                          ${envVars.GRAFANA_URL}/api/datasources
+                          ${GRAFANA_URL}/api/datasources
         
-                        # Import simple dashboard
+                        echo "Importing dashboard..."
                         DASHBOARD_JSON='{
                           "dashboard": {
                             "title": "Application Metrics",
@@ -507,11 +530,11 @@
                           "overwrite": true
                         }'
         
-                        curl -X POST \
+                        curl -v -X POST \
                           -H "Content-Type: application/json" \
                           -u admin:${GRAFANA_PASSWORD} \
                           -d "\$DASHBOARD_JSON" \
-                          ${envVars.GRAFANA_URL}/api/dashboards/db
+                          ${GRAFANA_URL}/api/dashboards/db
                         """
                     }
                 }
