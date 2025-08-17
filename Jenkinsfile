@@ -298,30 +298,7 @@ pipeline {
                                 GF_SECURITY_ADMIN_USER=admin \
                                 GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
                                 GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
-                            --command-line "/bin/sh -c '
-                                # Create provisioning directories
-                                mkdir -p /etc/grafana/provisioning/dashboards
-                                
-                                # Write dashboard JSON
-                                cat <<EOF > /etc/grafana/provisioning/dashboards/default.json
-                                ${DASHBOARD_JSON}
-                                EOF
-                                
-                                # Write provisioning config
-                                cat <<EOF > /etc/grafana/provisioning/dashboards.yml
-                                apiVersion: 1
-                                providers:
-                                - name: default
-                                  orgId: 1
-                                  folder: \"Patient Survey\"
-                                  type: file
-                                  options:
-                                    path: /etc/grafana/provisioning/dashboards
-                                EOF
-                                
-                                # Start Grafana
-                                /run.sh
-                            '"
+                            --command-line "/bin/sh -c 'mkdir -p /etc/grafana/provisioning/dashboards && echo \"${DASHBOARD_JSON}\" > /etc/grafana/provisioning/dashboards/default.json && echo -e \"apiVersion: 1\\nproviders:\\n- name: default\\n  orgId: 1\\n  folder: \\\"Patient Survey\\\"\\n  type: file\\n  options:\\n    path: /etc/grafana/provisioning/dashboards\" > /etc/grafana/provisioning/dashboards.yml && /run.sh'"
         
                         # ===== VERIFICATION =====
                         echo "🔎 Verifying deployments..."
