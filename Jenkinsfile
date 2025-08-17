@@ -1,41 +1,10 @@
-pipeline {
+ pipeline {
     agent any
     environment {
         DB_NAME = 'patient_survey_db'
         IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
         DOCKER_REGISTRY = "index.docker.io"
-        RESOURCE_GROUP = 'MyPatientSurveyRG'
-        DASHBOARD_BASE64 = '''
-        echo '{
-          "dashboard": {
-            "title": "Patient Survey - Dynamic",
-            "uid": "patient-survey",
-            "panels": [{
-              "title": "Container Health",
-              "type": "stat",
-              "datasource": "Prometheus",
-              "targets": [{
-                "expr": "up{job=~\"aci-node-exporter|aci-app-metrics\"}",
-                "legendFormat": "{{instance}}"
-              }]
-            }]
-          },
-          "folderTitle": "Patient Survey",
-          "overwrite": true
-        }' | base64 -w0
-        '''.execute().text.trim()
-    
-        // Base64-encoded provisioning config
-        PROVISIONING_BASE64 = '''
-        echo 'apiVersion: 1
-        providers:
-        - name: default
-          orgId: 1
-          folder: "Patient Survey"
-          type: file
-          options:
-            path: /etc/grafana/provisioning/dashboards' | base64 -w0
-        '''.execute().text.trim()
+        RESOURCE_GROUP = 'MyPatientSurveyRG' 
     }
 
     options {
@@ -286,6 +255,7 @@ pipeline {
                           --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
         
                         # ===== GRAFANA DEPLOYMENT =====
+                        echo "📈 Deploying Grafana ($GRAFANA_NAME)..."
                         az container create \
                             --resource-group MyPatientSurveyRG \
                             --name "$GRAFANA_NAME" \
@@ -299,12 +269,9 @@ pipeline {
                             --location uksouth \
                             --environment-variables \
                                 GF_SECURITY_ADMIN_USER=admin \
-                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
-                                GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
-                            --command-line "/bin/sh -c 'mkdir -p /etc/grafana/provisioning/dashboards && \
-                                echo $DASHBOARD_BASE64 | base64 -d > /etc/grafana/provisioning/dashboards/default.json && \
-                                echo $PROVISIONING_BASE64 | base64 -d > /etc/grafana/provisioning/dashboards.yml && \
-                                /run.sh'"
+                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
+        
+                        # ===== VERIFICATION =====
                         echo "🔎 Verifying deployments..."
                         verify_container_ready() {
                             local name=$1
@@ -765,94 +732,52 @@ stage('Deploy Application (Azure Container Instances)') {
                 }
             }
         }
-        stage('Deploy Grafana Dashboard') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD'),
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID')
-                    ]) {
-                        // Get Grafana IP
-                        def GRAFANA_IP = sh(returnStdout: true, script: '''
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                            az container show -g MyPatientSurveyRG -n grafana-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv
-                        ''').trim()
-        
-                        // Deploy template
-                        sh """
-                            curl -X POST \
-                            -H "Authorization: Basic \$(echo -n admin:\${GRAFANA_PASSWORD} | base64)" \
-                            -H "Content-Type: application/json" \
-                            -d @${WORKSPACE}/infra/monitoring/grafana-dashboard-template.json \
-                            "http://${GRAFANA_IP}:3000/api/dashboards/db"
-                        """
-        
-                        // Set as home dashboard
-                        sh """
-                            curl -X PUT \
-                            -H "Authorization: Basic \$(echo -n admin:\${GRAFANA_PASSWORD} | base64)" \
-                            -H "Content-Type: application/json" \
-                            -d '{"homeDashboardUID":"patient-survey-template"}' \
-                            "http://${GRAFANA_IP}:3000/api/org/preferences"
-                        """
-                    }
-                }
-            }
-        }
         stage('Verify Monitoring') {
             steps {
                 script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
-                    ]) {
-                        // Get fresh IPs (in case of redeployment)
-                        def PROMETHEUS_IP = sh(script: '''
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" > /dev/null
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null
-                            az container show -g MyPatientSurveyRG -n prometheus-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv
-                        ''', returnStdout: true).trim()
-        
-                        def GRAFANA_IP = sh(script: '''
-                            az container show -g MyPatientSurveyRG -n grafana-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv
-                        ''', returnStdout: true).trim()
-        
-                        // Fail if IPs are missing
-                        if (!PROMETHEUS_IP || !GRAFANA_IP) {
-                            error("Prometheus (${PROMETHEUS_IP}) or Grafana (${GRAFANA_IP}) IP not found")
+                    // Wait for metrics to appear
+                    timeout(time: 2, unit: 'MINUTES') {
+                        waitUntil {
+                            def metrics = sh(script: """
+                                curl -s http://${PROMETHEUS_SERVER}:9090/api/v1/targets | \
+                                jq '.data.activeTargets[] | select(.labels.instance=="${ACI_IP}:9100")'
+                            """, returnStdout: true)
+                            return metrics.contains('"health":"up"')
                         }
-        
-                        // 1. Verify Prometheus Targets
-                        timeout(time: 2, unit: 'MINUTES') {
-                            waitUntil {
-                                def targets = sh(script: """
-                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
-                                    grep -A 5 '"health":"up"'
-                                """, returnStdout: true).trim()
-                                return targets.contains('"health":"up"') && !targets.contains('"health":"down"')
-                            }
-                        }
-        
-                        // 2. Verify Grafana Dashboard
-                        sh """
-                            echo "Checking Grafana at ${GRAFANA_IP}..."
-                            curl -s -u admin:${GRAFANA_PASSWORD} \
-                                http://${GRAFANA_IP}:3000/api/dashboards/uid/your-dashboard-uid | \
-                                grep '"title":"ACI-${BUILD_NUMBER}"' || {
-                                    echo "ERROR: Grafana dashboard not found"
-                                    exit 1
-                                }
-                        """
-        
-                        echo "✅ Monitoring verified: Prometheus (${PROMETHEUS_IP}) and Grafana (${GRAFANA_IP}) are healthy"
                     }
                 }
             }
         }
-       
+        stage('Update Grafana Dashboard') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'GRAFANA_SERVICE_ACCOUNT_TOKEN', variable: 'GRAFANA_TOKEN')
+                    ]) {
+                        sh """
+                        curl -X POST \
+                          -H "Authorization: Bearer ${GRAFANA_TOKEN}" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "dashboard": {
+                              "title": "ACI-${BUILD_NUMBER}",
+                              "panels": [{
+                                "title": "CPU Usage",
+                                "type": "timeseries",  // Note: "timeseries" replaces "graph" in Grafana 10+
+                                "datasource": "Prometheus",
+                                "targets": [{
+                                  "expr": "node_cpu_seconds_total{instance=~\"${APP_IP}:.+\"}"
+                                }]
+                              }]
+                            },
+                            "overwrite": true
+                          }' \
+                          "${GRAFANA_URL}/api/dashboards/db
+                        """
+                    }
+                }
+            }
+        }
     }
     post {
         always {
@@ -861,26 +786,25 @@ stage('Deploy Application (Azure Container Instances)') {
         }
         failure {
             script {
-                node {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
-                    ]) {
-                        sh '''
-                            # Clean up monitoring on failure
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
-                            
-                            # Delete containers without --no-wait
-                            az container delete --yes --resource-group MyPatientSurveyRG --name prometheus-${BUILD_NUMBER} || echo "Failed to delete Prometheus"
-                            az container delete --yes --resource-group MyPatientSurveyRG --name grafana-${BUILD_NUMBER} || echo "Failed to delete Grafana"
-                        '''
-                    }
+                withCredentials([
+                    string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                    string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                    string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                    string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                ]) {
+                    sh '''
+                    # Clean up monitoring on failure
+                    az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
+                    az account set --subscription $ARM_SUBSCRIPTION_ID
+                    az container delete --yes --no-wait \
+                        --resource-group MyPatientSurveyRG \
+                        --name prometheus-${BUILD_NUMBER} || true
+                    az container delete --yes --no-wait \
+                        --resource-group MyPatientSurveyRG \
+                        --name grafana-${BUILD_NUMBER} || true
+                    '''
                 }
             }
         }
     }
 }
-    
