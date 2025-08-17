@@ -319,40 +319,49 @@
                                 echo "Grafana IP: $GRAFANA_IP"
                                 exit 1
                             fi
-        
-                            # Write to monitoring.env with proper values
-                            echo "Writing monitoring environment variables..."
-                            cat <<EOF > monitoring.env
-        PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
-        GRAFANA_URL=http://${GRAFANA_IP}:3000
-        GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
-        APP_IP=${APP_IP}
-        EOF
-        
-                            echo "=== monitoring.env contents ==="
-                            cat monitoring.env
-                            echo "=============================="
-                            '''
-                        }
-                    }
-                }
-            }
+                           # Write to monitoring.env PROPERLY
+                           echo "Writing monitoring environment variables..."
+                           cat > monitoring.env <<EOF
+           PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
+           GRAFANA_URL=http://${GRAFANA_IP}:3000
+           GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+           APP_IP=${APP_IP}
+           EOF
+
+                          # Verify file was written correctly
+                          echo "=== monitoring.env contents ==="
+                          cat monitoring.env
+                          echo "=============================="
+                          '''
+                      }
+                  }
+              }
+          }
+                            
         }
         
         stage('Configure Monitoring') {
             steps {
                 script {
-                    // Read and verify monitoring.env
-                    echo "Reading monitoring environment variables..."
+                    // First verify file exists and has content
+                    def fileExists = fileExists('monitoring.env')
+                    if (!fileExists) {
+                        error("monitoring.env file not found")
+                    }
+                    
+                    // Read and parse the file carefully
                     def monitoringEnv = readFile('monitoring.env').trim()
                     echo "Raw monitoring.env content:\n${monitoringEnv}"
                     
-                    // Parse variables
+                    // Simple parsing that handles malformed files
                     def envVars = [:]
                     monitoringEnv.eachLine { line ->
-                        def parts = line.split('=', 2)
-                        if (parts.size() == 2) {
-                            envVars[parts[0]] = parts[1].trim()
+                        line = line.trim()
+                        if (line && !line.startsWith("#") && line.contains("=")) {
+                            def parts = line.split("=", 2)
+                            if (parts.size() == 2) {
+                                envVars[parts[0].trim()] = parts[1].trim()
+                            }
                         }
                     }
                     
@@ -360,12 +369,12 @@
                     echo "Parsed environment variables:"
                     envVars.each { k, v -> echo "${k}=${v}" }
                     
-                    // Verify required variables
+                    // Verify required variables exist and are not empty
                     def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                    def missingVars = requiredVars.findAll { !envVars[it] }
+                    def missingVars = requiredVars.findAll { !envVars[it] || envVars[it].isEmpty() }
                     
                     if (missingVars) {
-                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
+                        error("Missing or empty required monitoring environment variables: ${missingVars.join(', ')}")
                     }
                     
                     def PROMETHEUS_IP = envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')
