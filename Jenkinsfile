@@ -379,16 +379,27 @@ pipeline {
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
-                    withCredentials([...]) {  // Keep your existing credentials block
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
+                    ]) {
                         timeout(time: 15, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
         
+                            # ===== AUTHENTICATION =====
+                            echo "🔑 Authenticating to Azure..."
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
                             # ===== DEPLOY NODE EXPORTER =====
-                            echo "🖥️ Deploying Node Exporter (ACI-compatible configuration)..."
+                            echo "🖥️ Deploying Node Exporter (ACI-Compatible)..."
                             NODE_EXPORTER_NAME="node-exporter-${BUILD_NUMBER}"
                             
-                            # ACI-compatible collector list (without requiring special capabilities)
+                            # Safe collectors for ACI (no special capabilities needed)
                             COLLECTORS="--collector.disable-defaults \
                                         --collector.cpu \
                                         --collector.meminfo \
@@ -396,8 +407,11 @@ pipeline {
                                         --collector.netdev \
                                         --collector.filesystem \
                                         --collector.loadavg \
-                                        --collector.uname"
-                            
+                                        --collector.uname \
+                                        --collector.textfile \
+                                        --collector.time \
+                                        --collector.stat"
+        
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$NODE_EXPORTER_NAME" \
@@ -409,59 +423,56 @@ pipeline {
                                 --ip-address Public \
                                 --dns-name-label "$NODE_EXPORTER_NAME" \
                                 --location uksouth \
-                                --command-line "$COLLECTORS" \
-                                --environment-variables \
-                                    "NODE_EXPORTER_OPTIONS=$COLLECTORS"
+                                --command-line "$COLLECTORS"
         
                             NODE_EXPORTER_IP=$(az container show \
                                 -g MyPatientSurveyRG \
                                 -n "$NODE_EXPORTER_NAME" \
                                 --query "ipAddress.ip" \
                                 -o tsv)
-                        
+                            [ -z "$NODE_EXPORTER_IP" ] && { echo "❌ Failed to get Node Exporter IP"; exit 1; }
+                            echo "✅ Node Exporter: http://$NODE_EXPORTER_IP:9100/metrics"
         
                             # ===== DEPLOY PROMETHEUS =====
-                            echo "📊 Deploying Prometheus with updated config..."
+                            echo "📊 Deploying Prometheus..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                             
                             # Generate dynamic config
-                            cat > prometheus-custom.yml <<EOF
-        global:
-          scrape_interval: 15s
-          evaluation_interval: 15s
+                            cat > prometheus-config.yml <<EOF
+                            global:
+                              scrape_interval: 15s
+                              evaluation_interval: 15s
         
-        scrape_configs:
-          - job_name: 'node'
-            static_configs:
-              - targets: ['${NODE_EXPORTER_IP}:9100']
-            params:
-              collect[]:
-                - cpu
-                - meminfo
-                - diskstats
-                - netdev
-                - filesystem
-                - loadavg
-              
-          - job_name: 'app-metrics'
-            static_configs:
-              - targets: ['${APP_IP}:8000']
-        EOF
+                            scrape_configs:
+                              - job_name: 'node'
+                                static_configs:
+                                  - targets: ['$NODE_EXPORTER_IP:9100']
+                              - job_name: 'app'
+                                static_configs:
+                                  - targets: ['${APP_IP}:8000']
+                            EOF
         
-                            CONFIG_BASE64=$(base64 -w0 prometheus-custom.yml)
+                            CONFIG_BASE64=$(base64 -w0 prometheus-config.yml)
         
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$PROMETHEUS_NAME" \
                                 --image prom/prometheus:v2.47.0 \
                                 --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1.5 \
+                                --cpu 1 \
+                                --memory 2 \
                                 --ports 9090 \
                                 --ip-address Public \
                                 --dns-name-label "$PROMETHEUS_NAME" \
                                 --location uksouth \
                                 --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+        
+                            PROMETHEUS_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$PROMETHEUS_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+                            echo "✅ Prometheus: http://$PROMETHEUS_IP:9090"
         
                             # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
@@ -471,8 +482,8 @@ pipeline {
                                 --name "$GRAFANA_NAME" \
                                 --image grafana/grafana:9.5.6 \
                                 --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1.5 \
+                                --cpu 1 \
+                                --memory 2 \
                                 --ports 3000 \
                                 --ip-address Public \
                                 --dns-name-label "$GRAFANA_NAME" \
@@ -481,31 +492,23 @@ pipeline {
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
         
-                            # ===== GET MONITORING ENDPOINTS =====
-                            echo "🔗 Getting monitoring endpoints..."
-                            PROMETHEUS_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$PROMETHEUS_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
                             GRAFANA_IP=$(az container show \
                                 -g MyPatientSurveyRG \
                                 -n "$GRAFANA_NAME" \
                                 --query "ipAddress.ip" \
                                 -o tsv)
+                            echo "✅ Grafana: http://$GRAFANA_IP:3000 (admin:$GRAFANA_PASSWORD)"
         
-                            # ===== UPDATE MONITORING ENV FILE =====
-                            echo "📝 Writing monitoring environment variables..."
+                            # ===== SAVE ENDPOINTS =====
                             cat > monitoring.env <<EOF
-                            PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
-                            GRAFANA_URL=http://${GRAFANA_IP}:3000
-                            GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
-                            NODE_EXPORTER_IP=${NODE_EXPORTER_IP}
+                            PROMETHEUS_URL=http://$PROMETHEUS_IP:9090
+                            GRAFANA_URL=http://$GRAFANA_IP:3000
+                            GRAFANA_CREDS=admin:$GRAFANA_PASSWORD
+                            NODE_EXPORTER_IP=$NODE_EXPORTER_IP
                             EOF
         
-                            echo "=== Updated monitoring.env ==="
+                            echo "=== Monitoring Endpoints ==="
                             cat monitoring.env
-                            echo "============================="
                             '''
                         }
                     }
