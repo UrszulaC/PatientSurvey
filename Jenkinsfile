@@ -200,28 +200,61 @@
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
-                    retry(3) {
-                        withCredentials([
-                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                            string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
-                        ]) {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
+                    ]) {
+                        timeout(time: 15, unit: 'MINUTES') {  // Add timeout to prevent hanging
                             sh '''#!/bin/bash
                             set -eo pipefail
         
+                            # Function to check container status
+                            check_container_status() {
+                                local resource_group="$1"
+                                local container_name="$2"
+                                local timeout=300  # 5 minutes
+                                local interval=10
+                                local elapsed=0
+        
+                                while [ $elapsed -lt $timeout ]; do
+                                    status=$(az container show \
+                                        -g "$resource_group" \
+                                        -n "$container_name" \
+                                        --query "provisioningState" \
+                                        -o tsv)
+                                    
+                                    if [ "$status" == "Succeeded" ]; then
+                                        echo "✅ Container $container_name deployed successfully"
+                                        return 0
+                                    elif [ "$status" == "Failed" ]; then
+                                        echo "❌ Container $container_name deployment failed"
+                                        return 1
+                                    fi
+                                    
+                                    echo "⌛ Container $container_name status: $status (${elapsed}s elapsed)"
+                                    sleep $interval
+                                    elapsed=$((elapsed + interval))
+                                done
+        
+                                echo "❌ Timeout waiting for container $container_name to deploy"
+                                return 1
+                            }
+        
                             # Authenticate
+                            echo "🔐 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                           
                             # Deploy with reduced resource requests
-                            echo "🚀 Deploying monitoring stack with reduced resources..."
+                            echo "🚀 Deploying monitoring stack..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                             GRAFANA_NAME="grafana-${BUILD_NUMBER}"
         
-                            # Deploy Prometheus with minimal resources
+                            # Deploy Prometheus (async)
+                            echo "📊 Deploying Prometheus..."
                             az container create \
                               --resource-group "$RESOURCE_GROUP" \
                               --name "$PROMETHEUS_NAME" \
@@ -233,9 +266,11 @@
                               --ip-address Public \
                               --dns-name-label "$PROMETHEUS_NAME" \
                               --location uksouth \
+                              --no-wait \
                               --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
         
-                            # Deploy Grafana with minimal resources
+                            # Deploy Grafana (async)
+                            echo "📈 Deploying Grafana..."
                             az container create \
                                 --resource-group "$RESOURCE_GROUP" \
                                 --name "$GRAFANA_NAME" \
@@ -247,11 +282,18 @@
                                 --ip-address Public \
                                 --dns-name-label "$GRAFANA_NAME" \
                                 --location uksouth \
+                                --no-wait \
                                 --environment-variables \
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
         
+                            # Check deployment status with timeout
+                            echo "🔄 Checking deployment status..."
+                            check_container_status "$RESOURCE_GROUP" "$PROMETHEUS_NAME"
+                            check_container_status "$RESOURCE_GROUP" "$GRAFANA_NAME"
+        
                             # Get endpoints
+                            echo "🔗 Getting service endpoints..."
                             PROMETHEUS_IP=$(az container show -g "$RESOURCE_GROUP" -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
                             GRAFANA_IP=$(az container show -g "$RESOURCE_GROUP" -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
         
