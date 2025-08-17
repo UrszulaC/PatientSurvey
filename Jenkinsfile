@@ -735,16 +735,50 @@ stage('Deploy Application (Azure Container Instances)') {
         stage('Verify Monitoring') {
             steps {
                 script {
-                    // Wait for metrics to appear
+                    // Read the monitoring.env file to get the IPs
+                    def monitoringEnv = readFile('monitoring.env').trim()
+                    def envVars = monitoringEnv.split('\n').collectEntries { 
+                        def parts = it.split('=', 2)
+                        [(parts[0]): parts[1]] 
+                    }
+                    
+                    def PROMETHEUS_IP = envVars['PROMETHEUS_URL'].replace('http://', '').replace(':9090', '')
+                    def APP_IP = envVars['APP_METRICS_URL'].replace('http://', '').replace(':8000/metrics', '')
+                    
+                    echo "Using Prometheus IP: ${PROMETHEUS_IP}"
+                    echo "Using Application IP: ${APP_IP}"
+                    
+                    // Install jq if not present
+                    sh '''
+                        if ! command -v jq &> /dev/null; then
+                            sudo apt-get update && sudo apt-get install -y jq
+                        fi
+                    '''
+                    
+                    // Wait for metrics to appear with proper timeout and retries
                     timeout(time: 2, unit: 'MINUTES') {
                         waitUntil {
-                            def metrics = sh(script: """
-                                curl -s http://${PROMETHEUS_SERVER}:9090/api/v1/targets | \
-                                jq '.data.activeTargets[] | select(.labels.instance=="${ACI_IP}:9100")'
-                            """, returnStdout: true)
-                            return metrics.contains('"health":"up"')
+                            try {
+                                def metrics = sh(script: """
+                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
+                                    jq '.data.activeTargets[] | select(.labels.instance=="${APP_IP}:9100")'
+                                """, returnStdout: true).trim()
+                                
+                                echo "Metrics check result: ${metrics}"
+                                return metrics.contains('"health":"up"')
+                            } catch (Exception e) {
+                                echo "Error checking metrics: ${e.getMessage()}"
+                                return false
+                            }
                         }
                     }
+                    
+                    // Additional verification
+                    sh """
+                        echo "=== Final verification of all targets ==="
+                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
+                        jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health}'
+                    """
                 }
             }
         }
