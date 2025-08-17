@@ -377,47 +377,47 @@ pipeline {
             }
         }
         stage('Deploy Monitoring Stack') {
-    steps {
-        script {
-            withCredentials([...]) {  // Keep your existing credentials block
-                timeout(time: 15, unit: 'MINUTES') {
-                    sh '''#!/bin/bash
-                    set -eo pipefail
-
-                    # ===== DEPLOY NODE EXPORTER =====
-                    echo "🖥️ Deploying Node Exporter (ACI-compatible configuration)..."
-                    NODE_EXPORTER_NAME="node-exporter-${BUILD_NUMBER}"
-                    
-                    # ACI-compatible collector list (without requiring special capabilities)
-                    COLLECTORS="--collector.disable-defaults \
-                                --collector.cpu \
-                                --collector.meminfo \
-                                --collector.diskstats \
-                                --collector.netdev \
-                                --collector.filesystem \
-                                --collector.loadavg \
-                                --collector.uname"
-                    
-                    az container create \
-                        --resource-group MyPatientSurveyRG \
-                        --name "$NODE_EXPORTER_NAME" \
-                        --image prom/node-exporter:v1.6.1 \
-                        --os-type Linux \
-                        --cpu 0.5 \
-                        --memory 1.5 \
-                        --ports 9100 \
-                        --ip-address Public \
-                        --dns-name-label "$NODE_EXPORTER_NAME" \
-                        --location uksouth \
-                        --command-line "$COLLECTORS" \
-                        --environment-variables \
-                            "NODE_EXPORTER_OPTIONS=$COLLECTORS"
-
-                    NODE_EXPORTER_IP=$(az container show \
-                        -g MyPatientSurveyRG \
-                        -n "$NODE_EXPORTER_NAME" \
-                        --query "ipAddress.ip" \
-                        -o tsv)
+            steps {
+                script {
+                    withCredentials([...]) {  // Keep your existing credentials block
+                        timeout(time: 15, unit: 'MINUTES') {
+                            sh '''#!/bin/bash
+                            set -eo pipefail
+        
+                            # ===== DEPLOY NODE EXPORTER =====
+                            echo "🖥️ Deploying Node Exporter (ACI-compatible configuration)..."
+                            NODE_EXPORTER_NAME="node-exporter-${BUILD_NUMBER}"
+                            
+                            # ACI-compatible collector list (without requiring special capabilities)
+                            COLLECTORS="--collector.disable-defaults \
+                                        --collector.cpu \
+                                        --collector.meminfo \
+                                        --collector.diskstats \
+                                        --collector.netdev \
+                                        --collector.filesystem \
+                                        --collector.loadavg \
+                                        --collector.uname"
+                            
+                            az container create \
+                                --resource-group MyPatientSurveyRG \
+                                --name "$NODE_EXPORTER_NAME" \
+                                --image prom/node-exporter:v1.6.1 \
+                                --os-type Linux \
+                                --cpu 0.5 \
+                                --memory 1.5 \
+                                --ports 9100 \
+                                --ip-address Public \
+                                --dns-name-label "$NODE_EXPORTER_NAME" \
+                                --location uksouth \
+                                --command-line "$COLLECTORS" \
+                                --environment-variables \
+                                    "NODE_EXPORTER_OPTIONS=$COLLECTORS"
+        
+                            NODE_EXPORTER_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$NODE_EXPORTER_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
                         
         
                             # ===== DEPLOY PROMETHEUS =====
@@ -442,8 +442,7 @@ pipeline {
                 - netdev
                 - filesystem
                 - loadavg
-                - bonding
-                - hwmon
+              
           - job_name: 'app-metrics'
             static_configs:
               - targets: ['${APP_IP}:8000']
