@@ -17,7 +17,7 @@
                 cleanWs()
             }
         }
-        stage('Cleanup Old Containers') {
+       stage('Cleanup Old Containers') {
             steps {
                 script {
                     withCredentials([
@@ -34,54 +34,33 @@
                         az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
                         echo "🧹 Cleaning up old containers..."
-                        # List all containers except those with current BUILD_NUMBER
+                        # List all containers except current build
                         CONTAINERS=$(az container list \
                             --resource-group "$RESOURCE_GROUP" \
-                            --query "[?contains(name, 'patientsurvey') && !contains(name, '${BUILD_NUMBER}')].name" \
+                            --query "[?name!='patientsurvey-app-${BUILD_NUMBER}' && name!='prometheus-${BUILD_NUMBER}' && name!='grafana-${BUILD_NUMBER}'].name" \
                             -o tsv)
                         
                         if [ -n "$CONTAINERS" ]; then
                             echo "🗑️ Found containers to delete:"
                             echo "$CONTAINERS"
                             
-                            # Delete containers in parallel
+                            # Delete containers sequentially and wait for completion
                             for CONTAINER in $CONTAINERS; do
-                                (
-                                    echo "➖ Deleting $CONTAINER..."
-                                    az container delete \
-                                        --resource-group "$RESOURCE_GROUP" \
-                                        --name "$CONTAINER" \
-                                        --yes --no-wait || true
-                                ) &
+                                echo "➖ Deleting $CONTAINER..."
+                                az container delete \
+                                    --resource-group "$RESOURCE_GROUP" \
+                                    --name "$CONTAINER" \
+                                    --yes
+                                echo "✅ $CONTAINER deleted"
                             done
-                            wait
-                            echo "✅ Old containers deletion initiated"
                         else
                             echo "ℹ️ No old containers found to delete"
                         fi
         
-                        # Also clean up monitoring containers from previous runs
-                        echo "🧹 Cleaning up old monitoring containers..."
-                        MONITORING_CONTAINERS=$(az container list \
-                            --resource-group "$RESOURCE_GROUP" \
-                            --query "[?contains(name, 'prometheus-') || contains(name, 'grafana-') && !contains(name, '${BUILD_NUMBER}')].name" \
-                            -o tsv)
-                        
-                        if [ -n "$MONITORING_CONTAINERS" ]; then
-                            echo "🗑️ Found monitoring containers to delete:"
-                            echo "$MONITORING_CONTAINERS"
-                            
-                            for CONTAINER in $MONITORING_CONTAINERS; do
-                                (
-                                    echo "➖ Deleting $CONTAINER..."
-                                    az container delete \
-                                        --resource-group "$RESOURCE_GROUP" \
-                                        --name "$CONTAINER" \
-                                        --yes --no-wait || true
-                                ) &
-                            done
-                            wait
-                        fi
+                        # Verify quota is available
+                        echo "🔄 Checking available quota..."
+                        QUOTA=$(az vm list-usage --location uksouth --query "[?localName=='Standard Cores'].{limit:limit, currentValue:currentValue}" -o json)
+                        echo "Current quota usage: $QUOTA"
                         '''
                     }
                 }
@@ -221,60 +200,74 @@
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
-                    ]) {
-                        sh '''#!/bin/bash
-                        set -eo pipefail
-
-                        # Authenticate to Azure
-                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
-
-                        # Deploy Prometheus with basic config
-                        PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                        az container create \
-                          --resource-group $RESOURCE_GROUP \
-                          --name "$PROMETHEUS_NAME" \
-                          --image prom/prometheus:v2.47.0 \
-                          --os-type Linux \
-                          --cpu 1.0 \
-                          --memory 2.0 \
-                          --ports 9090 \
-                          --ip-address Public \
-                          --dns-name-label "$PROMETHEUS_NAME" \
-                          --location uksouth \
-                          --command-line "/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
-
-                        # Deploy Grafana with pre-configured dashboard
-                        GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-                        az container create \
-                            --resource-group $RESOURCE_GROUP \
-                            --name "$GRAFANA_NAME" \
-                            --image grafana/grafana:9.5.6 \
-                            --os-type Linux \
-                            --cpu 1.0 \
-                            --memory 2.0 \
-                            --ports 3000 \
-                            --ip-address Public \
-                            --dns-name-label "$GRAFANA_NAME" \
-                            --location uksouth \
-                            --environment-variables \
-                                GF_SECURITY_ADMIN_USER=admin \
-                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-
-                        # Get endpoints
-                        PROMETHEUS_IP=$(az container show -g $RESOURCE_GROUP -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
-                        GRAFANA_IP=$(az container show -g $RESOURCE_GROUP -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
-
-                        echo "PROMETHEUS_URL=http://$PROMETHEUS_IP:9090" > monitoring.env
-                        echo "GRAFANA_URL=http://$GRAFANA_IP:3000" >> monitoring.env
-                        echo "GRAFANA_CREDS=admin:$GRAFANA_PASSWORD" >> monitoring.env
-                        '''
+                    // Add retry logic with quota verification
+                    retry(3) {
+                        withCredentials([
+                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                            string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
+                        ]) {
+                            sh '''#!/bin/bash
+                            set -eo pipefail
+        
+                            # Authenticate
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                            # Verify quota before deploying
+                            echo "🔍 Checking available quota before deployment..."
+                            QUOTA=$(az vm list-usage --location uksouth --query "[?localName=='Standard Cores'].{available:limit-currentValue}" -o tsv)
+                            if [ "$QUOTA" -lt 2 ]; then
+                                echo "❌ Insufficient quota available (need 2 cores, have $QUOTA)"
+                                exit 1
+                            fi
+        
+                            # Deploy with reduced resource requests
+                            echo "🚀 Deploying monitoring stack with reduced resources..."
+                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+        
+                            # Deploy Prometheus with minimal resources
+                            az container create \
+                              --resource-group "$RESOURCE_GROUP" \
+                              --name "$PROMETHEUS_NAME" \
+                              --image prom/prometheus:v2.47.0 \
+                              --os-type Linux \
+                              --cpu 0.5 \  # Reduced from 1.0
+                              --memory 1.0 \  # Reduced from 2.0
+                              --ports 9090 \
+                              --ip-address Public \
+                              --dns-name-label "$PROMETHEUS_NAME" \
+                              --location uksouth \
+                              --command-line "--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
+        
+                            # Deploy Grafana with minimal resources
+                            az container create \
+                                --resource-group "$RESOURCE_GROUP" \
+                                --name "$GRAFANA_NAME" \
+                                --image grafana/grafana:9.5.6 \
+                                --os-type Linux \
+                                --cpu 0.5 \  # Reduced from 1.0
+                                --memory 1.0 \  # Reduced from 2.0
+                                --ports 3000 \
+                                --ip-address Public \
+                                --dns-name-label "$GRAFANA_NAME" \
+                                --location uksouth \
+                                --environment-variables \
+                                    GF_SECURITY_ADMIN_USER=admin \
+                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
+        
+                            # Get endpoints
+                            PROMETHEUS_IP=$(az container show -g "$RESOURCE_GROUP" -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
+                            GRAFANA_IP=$(az container show -g "$RESOURCE_GROUP" -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
+        
+                            echo "PROMETHEUS_URL=http://$PROMETHEUS_IP:9090" > monitoring.env
+                            echo "GRAFANA_URL=http://$GRAFANA_IP:3000" >> monitoring.env
+                            echo "GRAFANA_CREDS=admin:$GRAFANA_PASSWORD" >> monitoring.env
+                            '''
+                        }
                     }
                 }
             }
