@@ -216,66 +216,8 @@
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # ===== CONTAINER CLEANUP =====
-                            echo "🧹 Cleaning up existing containers..."
-                            CONTAINERS=$(az container list \
-                                --resource-group MyPatientSurveyRG \
-                                --query "[?provisioningState!='Deleting'].name" \
-                                -o tsv)
-        
-                            if [ -n "$CONTAINERS" ]; then
-                                echo "🗑️ Found containers to delete:"
-                                echo "$CONTAINERS"
-                                
-                                # Serial deletion with proper error handling
-                                for CONTAINER in $CONTAINERS; do
-                                    echo "➖ Deleting $CONTAINER..."
-                                    if ! az container delete \
-                                        --resource-group MyPatientSurveyRG \
-                                        --name "$CONTAINER" \
-                                        --yes; then
-                                        echo "⚠️ Failed to delete $CONTAINER, attempting force delete..."
-                                        # Force delete by stopping first
-                                        az container stop \
-                                            --resource-group MyPatientSurveyRG \
-                                            --name "$CONTAINER" \
-                                            --yes || true
-                                        az container delete \
-                                            --resource-group MyPatientSurveyRG \
-                                            --name "$CONTAINER" \
-                                            --yes || true
-                                    fi
-                                done
-        
-                                # Verify all containers are gone
-                                echo "🔍 Verifying cleanup..."
-                                MAX_RETRIES=10
-                                for ((i=1; i<=$MAX_RETRIES; i++)); do
-                                    REMAINING=$(az container list \
-                                        --resource-group MyPatientSurveyRG \
-                                        --query "[].name" \
-                                        -o tsv)
-                                    
-                                    if [ -z "$REMAINING" ]; then
-                                        echo "✅ All containers deleted successfully"
-                                        break
-                                    else
-                                        echo "⌛ Containers remaining: $REMAINING"
-                                        if [ $i -eq $MAX_RETRIES ]; then
-                                            echo "❌ Critical: Containers still exist after $MAX_RETRIES attempts:"
-                                            echo "$REMAINING"
-                                            echo "Proceeding with deployment anyway..."
-                                            break
-                                        fi
-                                        sleep 15
-                                    fi
-                                done
-                            else
-                                echo "ℹ️ No containers found to delete"
-                            fi
-        
-                            # ===== DEPLOY NEW MONITORING STACK =====
-                            echo "🚀 Deploying new monitoring stack..."
+                            # ===== DEPLOY MONITORING STACK =====
+                            echo "🚀 Deploying monitoring stack..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                             GRAFANA_NAME="grafana-${BUILD_NUMBER}"
                             CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
@@ -287,7 +229,7 @@
                             fi
         
                             # ===== PROMETHEUS DEPLOYMENT =====
-                            echo "📊 Deploying Prometheus ($PROMETHEUS_NAME)..."
+                            echo "📊 Deploying Prometheus..."
                             CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
         
                             az container create \
@@ -305,7 +247,7 @@
                               --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
         
                             # ===== GRAFANA DEPLOYMENT =====
-                            echo "📈 Deploying Grafana ($GRAFANA_NAME)..."
+                            echo "📈 Deploying Grafana..."
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
@@ -326,7 +268,7 @@
                             echo "🔎 Verifying deployments..."
                             verify_container_ready() {
                                 local name=$1
-                                local max_retries=30  # Increased from 15
+                                local max_retries=30
                                 local retry_interval=10
                                 
                                 for ((i=1; i<=max_retries; i++)); do
@@ -341,10 +283,7 @@
                                         return 0
                                     elif [ "$state" == "Failed" ]; then
                                         echo "❌ Container $name deployment failed"
-                                        # Get logs for failed container
-                                        echo "=== $name logs ==="
                                         az container logs -g MyPatientSurveyRG -n "$name" || true
-                                        echo "=================="
                                         return 1
                                     fi
                                     
@@ -353,17 +292,15 @@
                                 done
         
                                 echo "❌ Timeout waiting for container $name to deploy"
-                                # Get logs for timeout
-                                echo "=== $name logs ==="
                                 az container logs -g MyPatientSurveyRG -n "$name" || true
-                                echo "=================="
                                 return 1
                             }
         
                             verify_container_ready "$PROMETHEUS_NAME" || exit 1
                             verify_container_ready "$GRAFANA_NAME" || exit 1
         
-                            # Get endpoints
+                            # ===== GET ENDPOINTS =====
+                            echo "🔗 Getting service endpoints..."
                             PROMETHEUS_IP=$(az container show \
                                 -g MyPatientSurveyRG \
                                 -n "$PROMETHEUS_NAME" \
@@ -375,17 +312,134 @@
                                 --query "ipAddress.ip" \
                                 -o tsv)
         
-                            echo "✨ Deployment successful!"
-                            echo "📊 Prometheus URL: http://$PROMETHEUS_IP:9090"
-                            echo "📈 Grafana URL: http://$GRAFANA_IP:3000"
-                            echo "🔑 Grafana Credentials: admin/$GRAFANA_PASSWORD"
+                            # Verify endpoints are not empty
+                            if [ -z "$PROMETHEUS_IP" ] || [ -z "$GRAFANA_IP" ]; then
+                                echo "❌ ERROR: Failed to get IP addresses"
+                                echo "Prometheus IP: $PROMETHEUS_IP"
+                                echo "Grafana IP: $GRAFANA_IP"
+                                exit 1
+                            fi
         
-                            # Write outputs
-                            echo "PROMETHEUS_URL=http://$PROMETHEUS_IP:9090" > monitoring.env
-                            echo "GRAFANA_URL=http://$GRAFANA_IP:3000" >> monitoring.env
-                            echo "GRAFANA_CREDS=admin:$GRAFANA_PASSWORD" >> monitoring.env
+                            # Write to monitoring.env with proper values
+                            echo "Writing monitoring environment variables..."
+                            cat <<EOF > monitoring.env
+        PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
+        GRAFANA_URL=http://${GRAFANA_IP}:3000
+        GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+        APP_IP=${APP_IP}
+        EOF
+        
+                            echo "=== monitoring.env contents ==="
+                            cat monitoring.env
+                            echo "=============================="
                             '''
                         }
+                    }
+                }
+            }
+        }
+        
+        stage('Configure Monitoring') {
+            steps {
+                script {
+                    // Read and verify monitoring.env
+                    echo "Reading monitoring environment variables..."
+                    def monitoringEnv = readFile('monitoring.env').trim()
+                    echo "Raw monitoring.env content:\n${monitoringEnv}"
+                    
+                    // Parse variables
+                    def envVars = [:]
+                    monitoringEnv.eachLine { line ->
+                        def parts = line.split('=', 2)
+                        if (parts.size() == 2) {
+                            envVars[parts[0]] = parts[1].trim()
+                        }
+                    }
+                    
+                    // Debug output
+                    echo "Parsed environment variables:"
+                    envVars.each { k, v -> echo "${k}=${v}" }
+                    
+                    // Verify required variables
+                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
+                    def missingVars = requiredVars.findAll { !envVars[it] }
+                    
+                    if (missingVars) {
+                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
+                    }
+                    
+                    def PROMETHEUS_IP = envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')
+                    def APP_IP = envVars.APP_IP
+                    def GRAFANA_URL = envVars.GRAFANA_URL
+        
+                    // Update Prometheus config
+                    sh """
+                        cat <<EOF > prometheus-config.yml
+                        global:
+                          scrape_interval: 15s
+                          evaluation_interval: 15s
+        
+                        scrape_configs:
+                          - job_name: 'node-exporter'
+                            static_configs:
+                              - targets: ['${APP_IP}:9100']
+                          - job_name: 'app-metrics'
+                            static_configs:
+                              - targets: ['${APP_IP}:8000']
+                        EOF
+        
+                        echo "Updating Prometheus configuration..."
+                        curl -v -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
+                    """
+        
+                    // Setup Grafana dashboard
+                    withCredentials([string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')]) {
+                        sh """
+                        echo "Waiting for Grafana to be ready..."
+                        until curl -s ${GRAFANA_URL}/api/health; do sleep 5; done
+        
+                        echo "Adding Prometheus datasource..."
+                        curl -v -X POST \
+                          -H "Content-Type: application/json" \
+                          -u admin:${GRAFANA_PASSWORD} \
+                          -d '{
+                            "name":"Prometheus",
+                            "type":"prometheus",
+                            "url":"http://${PROMETHEUS_IP}:9090",
+                            "access":"proxy"
+                          }' \
+                          ${GRAFANA_URL}/api/datasources
+        
+                        echo "Importing dashboard..."
+                        DASHBOARD_JSON='{
+                          "dashboard": {
+                            "title": "Application Metrics",
+                            "panels": [
+                              {
+                                "title": "CPU Usage",
+                                "type": "timeseries",
+                                "datasource": "Prometheus",
+                                "targets": [{"expr": "node_cpu_seconds_total"}],
+                                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+                              },
+                              {
+                                "title": "Memory Usage",
+                                "type": "timeseries",
+                                "datasource": "Prometheus",
+                                "targets": [{"expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes"}],
+                                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+                              }
+                            ]
+                          },
+                          "overwrite": true
+                        }'
+        
+                        curl -v -X POST \
+                          -H "Content-Type: application/json" \
+                          -u admin:${GRAFANA_PASSWORD} \
+                          -d "\$DASHBOARD_JSON" \
+                          ${GRAFANA_URL}/api/dashboards/db
+                        """
                     }
                 }
             }
@@ -618,112 +672,7 @@
             }
         }
         
-        stage('Configure Monitoring') {
-            steps {
-                script {
-                    // Read and verify monitoring.env
-                    echo "Reading monitoring environment variables..."
-                    def monitoringEnv = readFile('monitoring.env').trim()
-                    echo "Raw monitoring.env content:\n${monitoringEnv}"
-                    
-                    // Parse variables
-                    def envVars = [:]
-                    monitoringEnv.eachLine { line ->
-                        def parts = line.split('=', 2)
-                        if (parts.size() == 2) {
-                            envVars[parts[0]] = parts[1].trim()
-                        }
-                    }
-                    
-                    // Debug output
-                    echo "Parsed environment variables:"
-                    envVars.each { k, v -> echo "${k}=${v}" }
-                    
-                    // Verify required variables
-                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                    def missingVars = requiredVars.findAll { !envVars.containsKey(it) }
-                    
-                    if (missingVars) {
-                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
-                    }
-                    
-                    def PROMETHEUS_IP = envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')
-                    def APP_IP = envVars.APP_IP
-                    def GRAFANA_URL = envVars.GRAFANA_URL
         
-                    // Update Prometheus config
-                    sh """
-                        cat <<EOF > prometheus-config.yml
-                        global:
-                          scrape_interval: 15s
-                          evaluation_interval: 15s
-        
-                        scrape_configs:
-                          - job_name: 'node-exporter'
-                            static_configs:
-                              - targets: ['${APP_IP}:9100']
-                          - job_name: 'app-metrics'
-                            static_configs:
-                              - targets: ['${APP_IP}:8000']
-                        EOF
-        
-                        echo "Updating Prometheus configuration..."
-                        curl -v -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
-                    """
-        
-                    // Setup Grafana dashboard
-                    withCredentials([string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')]) {
-                        sh """
-                        echo "Waiting for Grafana to be ready..."
-                        until curl -s ${GRAFANA_URL}/api/health; do sleep 5; done
-        
-                        echo "Adding Prometheus datasource..."
-                        curl -v -X POST \
-                          -H "Content-Type: application/json" \
-                          -u admin:${GRAFANA_PASSWORD} \
-                          -d '{
-                            "name":"Prometheus",
-                            "type":"prometheus",
-                            "url":"http://${PROMETHEUS_IP}:9090",
-                            "access":"proxy"
-                          }' \
-                          ${GRAFANA_URL}/api/datasources
-        
-                        echo "Importing dashboard..."
-                        DASHBOARD_JSON='{
-                          "dashboard": {
-                            "title": "Application Metrics",
-                            "panels": [
-                              {
-                                "title": "CPU Usage",
-                                "type": "timeseries",
-                                "datasource": "Prometheus",
-                                "targets": [{"expr": "node_cpu_seconds_total"}],
-                                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
-                              },
-                              {
-                                "title": "Memory Usage",
-                                "type": "timeseries",
-                                "datasource": "Prometheus",
-                                "targets": [{"expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes"}],
-                                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
-                              }
-                            ]
-                          },
-                          "overwrite": true
-                        }'
-        
-                        curl -v -X POST \
-                          -H "Content-Type: application/json" \
-                          -u admin:${GRAFANA_PASSWORD} \
-                          -d "\$DASHBOARD_JSON" \
-                          ${GRAFANA_URL}/api/dashboards/db
-                        """
-                    }
-                }
-            }
-        }
-
         stage('Display Monitoring URLs') {
             steps {
                 script {
