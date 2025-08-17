@@ -15,23 +15,12 @@ pipeline {
               "type": "stat",
               "datasource": "Prometheus",
               "targets": [{
-                "expr": "up{job=~\\"aci-node-exporter|aci-app-metrics\\"}",
+                "expr": "up{job=~\\\\"aci-node-exporter|aci-app-metrics\\\\"}",
                 "legendFormat": "{{instance}}"
-              }],
-              "gridPos": {"x": 0, "y": 0, "w": 24, "h": 6}
-            }],
-            "templating": {
-              "list": [{
-                "name": "instance",
-                "type": "query",
-                "datasource": "Prometheus",
-                "query": "label_values(up{job=~\\"aci-node-exporter|aci-app-metrics\\"}, instance)"
               }]
-            }
-          },
-          "folderTitle": "Patient Survey",
-          "overwrite": true
-        }'''.replaceAll(/\n\s+/, "")  
+            }]
+          }
+        }'''.replaceAll(/\n\s+/, "").replaceAll('"', '\\\\"')
     }
 
     options {
@@ -298,7 +287,7 @@ pipeline {
                                 GF_SECURITY_ADMIN_USER=admin \
                                 GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
                                 GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
-                            --command-line "/bin/sh -c 'mkdir -p /etc/grafana/provisioning/dashboards && echo \"${DASHBOARD_JSON}\" > /etc/grafana/provisioning/dashboards/default.json && echo -e \"apiVersion: 1\\nproviders:\\n- name: default\\n  orgId: 1\\n  folder: \\\"Patient Survey\\\"\\n  type: file\\n  options:\\n    path: /etc/grafana/provisioning/dashboards\" > /etc/grafana/provisioning/dashboards.yml && /run.sh'"
+                            --command-line "/bin/sh -c 'mkdir -p /etc/grafana/provisioning/dashboards && echo \\\"${DASHBOARD_JSON}\\\" > /etc/grafana/provisioning/dashboards/default.json && echo -e \"apiVersion: 1\\\\nproviders:\\\\n- name: default\\\\n  orgId: 1\\\\n  folder: \\\\\\\"Patient Survey\\\\\\\"\\\\n  type: file\\\\n  options:\\\\n    path: /etc/grafana/provisioning/dashboards\" > /etc/grafana/provisioning/dashboards.yml && /run.sh'"
         
                         # ===== VERIFICATION =====
                         echo "🔎 Verifying deployments..."
