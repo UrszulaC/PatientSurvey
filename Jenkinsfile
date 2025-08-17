@@ -5,8 +5,8 @@ pipeline {
         IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
         DOCKER_REGISTRY = "index.docker.io"
         RESOURCE_GROUP = 'MyPatientSurveyRG'
-        DASHBOARD_JSON = '''
-        {
+        DASHBOARD_BASE64 = '''
+        echo '{
           "dashboard": {
             "title": "Patient Survey - Dynamic",
             "uid": "patient-survey",
@@ -15,12 +15,27 @@ pipeline {
               "type": "stat",
               "datasource": "Prometheus",
               "targets": [{
-                "expr": "up{job=~\\\\"aci-node-exporter|aci-app-metrics\\\\"}",
+                "expr": "up{job=~\"aci-node-exporter|aci-app-metrics\"}",
                 "legendFormat": "{{instance}}"
               }]
             }]
-          }
-        }'''.replaceAll(/\n\s+/, "").replaceAll('"', '\\\\"')
+          },
+          "folderTitle": "Patient Survey",
+          "overwrite": true
+        }' | base64 -w0
+        '''.execute().text.trim()
+    
+        // Base64-encoded provisioning config
+        PROVISIONING_BASE64 = '''
+        echo 'apiVersion: 1
+        providers:
+        - name: default
+          orgId: 1
+          folder: "Patient Survey"
+          type: file
+          options:
+            path: /etc/grafana/provisioning/dashboards' | base64 -w0
+        '''.execute().text.trim()
     }
 
     options {
@@ -271,25 +286,25 @@ pipeline {
                           --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
         
                         # ===== GRAFANA DEPLOYMENT =====
-                        echo "📈 Deploying Grafana ($GRAFANA_NAME)..."
                         az container create \
-                            --resource-group MyPatientSurveyRG \
-                            --name "$GRAFANA_NAME" \
-                            --image grafana/grafana:9.5.6 \
-                            --os-type Linux \
-                            --cpu 0.5 \
-                            --memory 1.5 \
-                            --ports 3000 \
-                            --ip-address Public \
-                            --dns-name-label "$GRAFANA_NAME" \
-                            --location uksouth \
-                            --environment-variables \
-                                GF_SECURITY_ADMIN_USER=admin \
-                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
-                                GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
-                            --command-line "/bin/sh -c 'mkdir -p /etc/grafana/provisioning/dashboards && echo \\\"${DASHBOARD_JSON}\\\" > /etc/grafana/provisioning/dashboards/default.json && echo -e \"apiVersion: 1\\\\nproviders:\\\\n- name: default\\\\n  orgId: 1\\\\n  folder: \\\\\\\"Patient Survey\\\\\\\"\\\\n  type: file\\\\n  options:\\\\n    path: /etc/grafana/provisioning/dashboards\" > /etc/grafana/provisioning/dashboards.yml && /run.sh'"
-        
-                        # ===== VERIFICATION =====
+    --resource-group MyPatientSurveyRG \
+    --name "$GRAFANA_NAME" \
+    --image grafana/grafana:9.5.6 \
+    --os-type Linux \
+    --cpu 0.5 \
+    --memory 1.5 \
+    --ports 3000 \
+    --ip-address Public \
+    --dns-name-label "$GRAFANA_NAME" \
+    --location uksouth \
+    --environment-variables \
+        GF_SECURITY_ADMIN_USER=admin \
+        GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
+        GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
+    --command-line "/bin/sh -c 'mkdir -p /etc/grafana/provisioning/dashboards && \
+        echo $DASHBOARD_BASE64 | base64 -d > /etc/grafana/provisioning/dashboards/default.json && \
+        echo $PROVISIONING_BASE64 | base64 -d > /etc/grafana/provisioning/dashboards.yml && \
+        /run.sh'"
                         echo "🔎 Verifying deployments..."
                         verify_container_ready() {
                             local name=$1
