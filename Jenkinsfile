@@ -4,7 +4,34 @@ pipeline {
         DB_NAME = 'patient_survey_db'
         IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
         DOCKER_REGISTRY = "index.docker.io"
-        RESOURCE_GROUP = 'MyPatientSurveyRG' 
+        RESOURCE_GROUP = 'MyPatientSurveyRG'
+        DASHBOARD_JSON = '''
+        {
+          "dashboard": {
+            "title": "Patient Survey - Dynamic",
+            "uid": "patient-survey",
+            "panels": [{
+              "title": "Container Health",
+              "type": "stat",
+              "datasource": "Prometheus",
+              "targets": [{
+                "expr": "up{job=~\\"aci-node-exporter|aci-app-metrics\\"}",
+                "legendFormat": "{{instance}}"
+              }],
+              "gridPos": {"x": 0, "y": 0, "w": 24, "h": 6}
+            }],
+            "templating": {
+              "list": [{
+                "name": "instance",
+                "type": "query",
+                "datasource": "Prometheus",
+                "query": "label_values(up{job=~\\"aci-node-exporter|aci-app-metrics\\"}, instance)"
+              }]
+            }
+          },
+          "folderTitle": "Patient Survey",
+          "overwrite": true
+        }'''.replaceAll(/\n\s+/, "")  
     }
 
     options {
@@ -269,7 +296,32 @@ pipeline {
                             --location uksouth \
                             --environment-variables \
                                 GF_SECURITY_ADMIN_USER=admin \
-                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
+                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
+                                GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
+                            --command-line "/bin/sh -c '
+                                # Create provisioning directories
+                                mkdir -p /etc/grafana/provisioning/dashboards
+                                
+                                # Write dashboard JSON
+                                cat <<EOF > /etc/grafana/provisioning/dashboards/default.json
+                                ${DASHBOARD_JSON}
+                                EOF
+                                
+                                # Write provisioning config
+                                cat <<EOF > /etc/grafana/provisioning/dashboards.yml
+                                apiVersion: 1
+                                providers:
+                                - name: default
+                                  orgId: 1
+                                  folder: \"Patient Survey\"
+                                  type: file
+                                  options:
+                                    path: /etc/grafana/provisioning/dashboards
+                                EOF
+                                
+                                # Start Grafana
+                                /run.sh
+                            '"
         
                         # ===== VERIFICATION =====
                         echo "🔎 Verifying deployments..."
