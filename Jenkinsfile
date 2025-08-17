@@ -702,8 +702,14 @@ stage('Deploy Application (Azure Container Instances)') {
                             error("Failed to get Prometheus server IP")
                         }
         
-                        // Trigger reload
+                        // Trigger reload and verify
                         sh """
+                            # Try to install jq if not present
+                            if ! command -v jq &> /dev/null; then
+                                echo "Installing jq..."
+                                sudo apt-get update && sudo apt-get install -y jq || echo "jq installation failed, will use basic output"
+                            fi
+                            
                             echo "Reloading Prometheus configuration at ${PROMETHEUS_IP}..."
                             curl -v -X POST http://${PROMETHEUS_IP}:9090/-/reload || {
                                 echo "ERROR: Prometheus reload failed"
@@ -714,8 +720,13 @@ stage('Deploy Application (Azure Container Instances)') {
                             sleep 10
                             
                             echo "Current targets:"
-                            curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
-                                jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health}'
+                            if command -v jq &> /dev/null; then
+                                curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
+                                    jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health}'
+                            else
+                                echo "jq not available, showing raw output:"
+                                curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets
+                            fi
                         """
                     }
                 }
