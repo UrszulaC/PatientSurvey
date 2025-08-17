@@ -685,32 +685,27 @@ stage('Deploy Application (Azure Container Instances)') {
         stage('Configure Dynamic Monitoring') {
             steps {
                 script {
-                    // Verify Prometheus config is valid (optional but recommended)
-                    def configCheck = sh(
-                        script: "curl -s -X POST http://${env.PROMETHEUS_SERVER}:9090/api/v1/admin/tsdb/snapshot",
-                        returnStatus: true
-                    )
+                    // 1. Load the Prometheus IP from previous stage
+                    def monitoringVars = readProperties file: 'monitoring.env'
+                    env.PROMETHEUS_SERVER = monitoringVars.PROMETHEUS_URL.replaceAll('http://', '').replaceAll(':9090', '')
                     
-                    if (configCheck != 0) {
-                        error("Prometheus configuration is invalid - check your prometheus.yml syntax")
-                    }
-        
-                    // Trigger Prometheus reload
+                    // 2. Verify configuration
+                    echo "Using Prometheus at: ${env.PROMETHEUS_SERVER}"
+                    
+                    // 3. Trigger reload
                     sh """
                         echo "Reloading Prometheus configuration..."
                         curl -v -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload || {
                             echo "ERROR: Prometheus reload failed"
                             exit 1
                         }
-                        echo "Prometheus reload triggered successfully"
-                    """
-                    
-                    // Optional: Verify targets are being discovered
-                    sh """
-                        echo "Waiting 10 seconds for target discovery..."
-                        sleep 10
-                        echo "Current targets:"
-                        curl -s http://${env.PROMETHEUS_SERVER}:9090/api/v1/targets | jq '.data.activeTargets[] | .discoveredLabels.__address__'
+                        
+                        echo "Waiting 15 seconds for changes to take effect..."
+                        sleep 15
+                        
+                        echo "Current active targets:"
+                        curl -s http://${env.PROMETHEUS_SERVER}:9090/api/v1/targets | \
+                            jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health}'
                     """
                 }
             }
