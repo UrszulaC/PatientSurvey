@@ -619,24 +619,19 @@ pipeline {
                     }
                 }
             }
-        
-        stage('Display Monitoring URLs') {
-            steps {
-                script {
-                    def monitoringEnv = readFile('monitoring.env').trim()
-                    def envVars = monitoringEnv.split('\n').collectEntries { it.split('=', 2) }
-
-                    echo """
-                    ========== MONITORING LINKS ==========
-                    Prometheus: ${envVars['PROMETHEUS_URL']}
-                    Grafana: ${envVars['GRAFANA_URL']} (admin:${envVars['GRAFANA_CREDS'].split(':')[1]})
-                    Application Metrics: http://${envVars['APP_IP']}:8000/metrics
-                    Node Metrics: http://${envVars['APP_IP']}:9100/metrics
-                    =====================================
-                    """
+            stage('Display Monitoring URLs') {
+                steps {
+                    sh '''#!/bin/bash
+                    echo "========== MONITORING LINKS =========="
+                    echo "Prometheus Dashboard: $(grep PROMETHEUS_URL monitoring.env | cut -d= -f2)"
+                    echo "Grafana Dashboard: $(grep GRAFANA_URL monitoring.env | cut -d= -f2)"
+                    echo "Application Metrics: http://$(grep APP_IP monitoring.env | cut -d= -f2):8000/metrics"
+                    echo "Node Metrics: http://$(grep APP_IP monitoring.env | cut -d= -f2):9100/metrics"
+                    echo "====================================="
+                    '''
                 }
             }
-        }
+        
     }
     post {
         always {
