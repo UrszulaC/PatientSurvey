@@ -612,54 +612,85 @@ pipeline {
                 }
             }
         }
-        
         stage('Configure Monitoring') {
-                steps {
-                    script {
-                        // Read monitoring.env more reliably
-                        def monitoringEnv = readFile('monitoring.env').trim()
-                        def envVars = [:]
-                        monitoringEnv.split('\n').each { line ->
-                            def parts = line.split('=', 2)
-                            if (parts.size() == 2) {
-                                envVars[parts[0].trim()] = parts[1].trim()
-                            }
+            steps {
+                script {
+                    // Read monitoring.env more reliably
+                    def monitoringEnv = readFile('monitoring.env').trim()
+                    def envVars = [:]
+                    monitoringEnv.split('\n').each { line ->
+                        def parts = line.split('=', 2)
+                        if (parts.size() == 2) {
+                            envVars[parts[0].trim()] = parts[1].trim()
                         }
-            
-                        // Verify required variables
-                        def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                        def missingVars = requiredVars.findAll { !envVars[it] }
-                        
-                        if (missingVars) {
-                            error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
-                        }
-            
-                        // Update Prometheus config
-                        sh """
-                            # Get Prometheus IP
-                            PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | sed 's|http://||;s|:9090||')
-                            
-                            # Create updated config
-                            cat <<EOF > prometheus-config.yml
-                            global:
-                              scrape_interval: 15s
-                              evaluation_interval: 15s
-            
-                            scrape_configs:
-                              - job_name: 'node-exporter'
-                                static_configs:
-                                  - targets: ['${envVars['APP_IP']}:9100']
-                              - job_name: 'app-metrics'
-                                static_configs:
-                                  - targets: ['${envVars['APP_IP']}:8000']
-                            EOF
-            
-                            # Reload Prometheus
-                            curl -X POST --data-binary @prometheus-config.yml http://\${PROMETHEUS_IP}:9090/-/reload || echo "⚠️ Prometheus reload failed (might need manual configuration)"
-                        """
                     }
+        
+                    // Verify required variables
+                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP', 'NODE_EXPORTER_IP']
+                    def missingVars = requiredVars.findAll { !envVars[it] }
+                    
+                    if (missingVars) {
+                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
+                    }
+        
+                    // Update Prometheus config
+                    sh """
+                        # Get Prometheus IP
+                        PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | sed 's|http://||;s|:9090||')
+                        
+                        # Create updated config with Node Exporter
+                        cat <<EOF > prometheus-config.yml
+                        global:
+                          scrape_interval: 15s
+                          evaluation_interval: 15s
+        
+                        scrape_configs:
+                          - job_name: 'node'
+                            static_configs:
+                              - targets: ['${envVars['NODE_EXPORTER_IP']}:9100']
+                            params:
+                              collect[]:
+                                - cpu
+                                - meminfo
+                                - diskstats
+                                - netdev
+                                - filesystem
+                                - loadavg
+                                - bonding
+                                - hwmon
+                          - job_name: 'app-metrics'
+                            static_configs:
+                              - targets: ['${envVars['APP_IP']}:8000']
+                        EOF
+        
+                        # Reload Prometheus with retries
+                        MAX_RETRIES=3
+                        RETRY_DELAY=5
+                        ATTEMPT=0
+                        while [ \$ATTEMPT -lt \$MAX_RETRIES ]; do
+                            echo "Reloading Prometheus (Attempt \$((ATTEMPT+1))..."
+                            if curl -X POST --max-time 10 --data-binary @prometheus-config.yml \
+                               http://\${PROMETHEUS_IP}:9090/-/reload; then
+                                echo "✅ Prometheus reloaded successfully"
+                                break
+                            else
+                                echo "⚠️ Attempt \$((ATTEMPT+1)) failed"
+                                ATTEMPT=\$((ATTEMPT+1))
+                                sleep \$RETRY_DELAY
+                            fi
+                        done
+        
+                        if [ \$ATTEMPT -eq \$MAX_RETRIES ]; then
+                            echo "❌ Failed to reload Prometheus after \$MAX_RETRIES attempts"
+                            echo "Current config:"
+                            cat prometheus-config.yml
+                            echo "Try manually reloading at: http://\${PROMETHEUS_IP}:9090/-/reload"
+                        fi
+                    """
                 }
             }
+        }
+        
             stage('Display Monitoring URLs') {
                 steps {
                     sh '''#!/bin/bash
