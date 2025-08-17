@@ -743,41 +743,74 @@ stage('Deploy Application (Azure Container Instances)') {
                     }
                     
                     def PROMETHEUS_IP = envVars['PROMETHEUS_URL'].replace('http://', '').replace(':9090', '')
-                    def APP_IP = envVars['APP_METRICS_URL'].replace('http://', '').replace(':8000/metrics', '')
+                    def APP_IP = envVars['NODE_METRICS_URL'].replace('http://', '').replace(':9100/metrics', '')
                     
                     echo "Using Prometheus IP: ${PROMETHEUS_IP}"
                     echo "Using Application IP: ${APP_IP}"
                     
-                    // Install jq if not present
+                    // Install required tools
                     sh '''
                         if ! command -v jq &> /dev/null; then
-                            sudo apt-get update && sudo apt-get install -y jq
+                            sudo apt-get update && sudo apt-get install -y jq curl
                         fi
                     '''
                     
-                    // Wait for metrics to appear with proper timeout and retries
-                    timeout(time: 2, unit: 'MINUTES') {
+                    // First, verify the node exporter is serving metrics directly
+                    sh """
+                        echo "=== Checking Node Exporter directly ==="
+                        curl -v http://${APP_IP}:9100/metrics || echo "Failed to reach node exporter"
+                    """
+                    
+                    // Then check Prometheus configuration
+                    sh """
+                        echo "=== Checking Prometheus Configuration ==="
+                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/status/config | jq .data.yaml
+                    """
+                    
+                    // Enhanced target verification with more debugging
+                    timeout(time: 5, unit: 'MINUTES') {
                         waitUntil {
                             try {
-                                def metrics = sh(script: """
+                                // Get all targets for better debugging
+                                def allTargets = sh(script: """
                                     curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
-                                    jq '.data.activeTargets[] | select(.labels.instance=="${APP_IP}:9100")'
+                                    jq -r '.data.activeTargets[] | "\(.discoveredLabels.__address__): \(.health)"'
                                 """, returnStdout: true).trim()
                                 
-                                echo "Metrics check result: ${metrics}"
-                                return metrics.contains('"health":"up"')
+                                echo "Current targets:\n${allTargets}"
+                                
+                                // Check specifically for our node exporter
+                                def nodeExporterStatus = sh(script: """
+                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
+                                    jq -r '.data.activeTargets[] | select(.discoveredLabels.__address__=="${APP_IP}:9100") | .health'
+                                """, returnStdout: true).trim()
+                                
+                                echo "Node exporter status: ${nodeExporterStatus}"
+                                
+                                if (nodeExporterStatus == "up") {
+                                    return true
+                                } else {
+                                    // If not up, try reloading Prometheus
+                                    sh """
+                                        echo "=== Reloading Prometheus ==="
+                                        curl -X POST http://${PROMETHEUS_IP}:9090/-/reload || true
+                                    """
+                                    sleep 10
+                                    return false
+                                }
                             } catch (Exception e) {
-                                echo "Error checking metrics: ${e.getMessage()}"
+                                echo "Verification error: ${e.getMessage()}"
+                                sleep 10
                                 return false
                             }
                         }
                     }
                     
-                    // Additional verification
+                    // Final verification
                     sh """
-                        echo "=== Final verification of all targets ==="
+                        echo "=== Final Target Status ==="
                         curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
-                        jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health}'
+                        jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health, lastError: .lastError}'
                     """
                 }
             }
