@@ -390,43 +390,83 @@ pipeline {
                         timeout(time: 15, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
-       
+        
                             # ===== AUTHENTICATION =====
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
-       
-                            # ===== DEPLOY PROMETHEUS =====
-                            echo "📊 Deploying Prometheus..."
-                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-       
-                            if [ ! -f "$CONFIG_FILE" ]; then
-                                echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
-                                exit 1
-                            fi
-       
-                            # Use placeholder IP initially
-                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
-                            CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
-       
+        
+                            # ===== DEPLOY NODE EXPORTER =====
+                            echo "🖥️ Deploying Node Exporter with enhanced collectors..."
+                            NODE_EXPORTER_NAME="node-exporter-${BUILD_NUMBER}"
                             az container create \
-                             --resource-group MyPatientSurveyRG \
-                             --name "$PROMETHEUS_NAME" \
-                             --image prom/prometheus:v2.47.0 \
-                             --os-type Linux \
-                             --cpu 0.5 \
-                             --memory 1.5 \
-                             --ports 9090 \
-                             --ip-address Public \
-                             --dns-name-label "$PROMETHEUS_NAME" \
-                             --location uksouth \
-                             --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-       
+                                --resource-group MyPatientSurveyRG \
+                                --name "$NODE_EXPORTER_NAME" \
+                                --image prom/node-exporter:v1.6.1 \
+                                --os-type Linux \
+                                --cpu 0.5 \
+                                --memory 1.5 \
+                                --ports 9100 \
+                                --ip-address Public \
+                                --dns-name-label "$NODE_EXPORTER_NAME" \
+                                --location uksouth \
+                                --command-line "--collector.bonding --collector.conntrack --collector.hwmon" \
+                                --cap-add SYS_ADMIN \
+                                --cap-add NET_ADMIN
+        
+                            NODE_EXPORTER_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$NODE_EXPORTER_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+        
+                            # ===== DEPLOY PROMETHEUS =====
+                            echo "📊 Deploying Prometheus with updated config..."
+                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            
+                            # Generate dynamic config
+                            cat > prometheus-custom.yml <<EOF
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+        
+        scrape_configs:
+          - job_name: 'node'
+            static_configs:
+              - targets: ['${NODE_EXPORTER_IP}:9100']
+            params:
+              collect[]:
+                - cpu
+                - meminfo
+                - diskstats
+                - netdev
+                - filesystem
+                - loadavg
+                - bonding
+                - hwmon
+          - job_name: 'app-metrics'
+            static_configs:
+              - targets: ['${APP_IP}:8000']
+        EOF
+        
+                            CONFIG_BASE64=$(base64 -w0 prometheus-custom.yml)
+        
+                            az container create \
+                                --resource-group MyPatientSurveyRG \
+                                --name "$PROMETHEUS_NAME" \
+                                --image prom/prometheus:v2.47.0 \
+                                --os-type Linux \
+                                --cpu 0.5 \
+                                --memory 1.5 \
+                                --ports 9090 \
+                                --ip-address Public \
+                                --dns-name-label "$PROMETHEUS_NAME" \
+                                --location uksouth \
+                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+        
                             # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
                             GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-       
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
@@ -441,7 +481,7 @@ pipeline {
                                 --environment-variables \
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-       
+        
                             # ===== GET MONITORING ENDPOINTS =====
                             echo "🔗 Getting monitoring endpoints..."
                             PROMETHEUS_IP=$(az container show \
@@ -454,18 +494,19 @@ pipeline {
                                 -n "$GRAFANA_NAME" \
                                 --query "ipAddress.ip" \
                                 -o tsv)
-       
-                            # ===== WRITE MONITORING ENV FILE =====
+        
+                            # ===== UPDATE MONITORING ENV FILE =====
                             echo "📝 Writing monitoring environment variables..."
                             cat > monitoring.env <<EOF
                             PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
                             GRAFANA_URL=http://${GRAFANA_IP}:3000
                             GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+                            NODE_EXPORTER_IP=${NODE_EXPORTER_IP}
                             EOF
-       
-                            echo "=== monitoring.env contents ==="
+        
+                            echo "=== Updated monitoring.env ==="
                             cat monitoring.env
-                            echo "=============================="
+                            echo "============================="
                             '''
                         }
                     }
