@@ -216,20 +216,6 @@
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # ===== GET APPLICATION IP =====
-                            echo "🔍 Getting application container IP..."
-                            APP_IP=$(az container show \
-                                --resource-group MyPatientSurveyRG \
-                                --name "patientsurvey-app-${BUILD_NUMBER}" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-                            
-                            if [ -z "$APP_IP" ]; then
-                                echo "❌ ERROR: Failed to get application IP"
-                                exit 1
-                            fi
-                            echo "✅ Application IP: $APP_IP"
-        
                             # ===== DEPLOY PROMETHEUS =====
                             echo "📊 Deploying Prometheus..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
@@ -240,8 +226,8 @@
                                 exit 1
                             fi
         
-                            # Update config with application IP
-                            sed -i "s/DYNAMIC_APP_IP/${APP_IP}/g" "$CONFIG_FILE"
+                            # Use placeholder IP initially
+                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
                             CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
         
                             az container create \
@@ -276,41 +262,6 @@
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
         
-                            # ===== VERIFY DEPLOYMENTS =====
-                            echo "🔎 Verifying deployments..."
-                            verify_container_ready() {
-                                local name=$1
-                                local max_retries=30
-                                local retry_interval=10
-                                
-                                for ((i=1; i<=max_retries; i++)); do
-                                    state=$(az container show \
-                                        -g MyPatientSurveyRG \
-                                        -n "$name" \
-                                        --query "containers[0].instanceView.currentState.state" \
-                                        -o tsv 2>/dev/null || echo "unknown")
-                                    
-                                    if [ "$state" == "Running" ]; then
-                                        echo "✅ $name is running"
-                                        return 0
-                                    elif [ "$state" == "Failed" ]; then
-                                        echo "❌ Container $name deployment failed"
-                                        az container logs -g MyPatientSurveyRG -n "$name" || true
-                                        return 1
-                                    fi
-                                    
-                                    echo "⌛ $name state: $state (attempt $i/$max_retries)"
-                                    sleep $retry_interval
-                                done
-        
-                                echo "❌ Timeout waiting for container $name to deploy"
-                                az container logs -g MyPatientSurveyRG -n "$name" || true
-                                return 1
-                            }
-        
-                            verify_container_ready "$PROMETHEUS_NAME" || exit 1
-                            verify_container_ready "$GRAFANA_NAME" || exit 1
-        
                             # ===== GET MONITORING ENDPOINTS =====
                             echo "🔗 Getting monitoring endpoints..."
                             PROMETHEUS_IP=$(az container show \
@@ -324,13 +275,12 @@
                                 --query "ipAddress.ip" \
                                 -o tsv)
         
-                            # ===== WRITE CLEAN ENVIRONMENT FILE =====
+                            # ===== WRITE MONITORING ENV FILE =====
                             echo "📝 Writing monitoring environment variables..."
                             cat > monitoring.env <<EOF
         PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
         GRAFANA_URL=http://${GRAFANA_IP}:3000
         GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
-        APP_IP=${APP_IP}
         EOF
         
                             echo "=== monitoring.env contents ==="
@@ -342,40 +292,94 @@
                 }
             }
         }
+        
+        stage('Deploy Application') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        usernamePassword(
+                            credentialsId: 'docker-hub-creds',
+                            usernameVariable: 'REGISTRY_USERNAME',
+                            passwordVariable: 'REGISTRY_PASSWORD'
+                        )
+                    ]) {
+                        sh '''#!/bin/bash
+                        set -e
+        
+                        # ===== AUTHENTICATION =====
+                        echo "🔑 Authenticating to Azure..."
+                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                        # ===== DEPLOY APPLICATION =====
+                        echo "🚀 Deploying application container..."
+                        ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                        az container create \
+                            --resource-group MyPatientSurveyRG \
+                            --name $ACI_NAME \
+                            --image ${IMAGE_TAG} \
+                            --os-type Linux \
+                            --cpu 1 \
+                            --memory 2 \
+                            --ports 8000 9100 \
+                            --restart-policy Always \
+                            --location uksouth \
+                            --ip-address Public \
+                            --environment-variables \
+                                DB_HOST=${DB_HOST} \
+                                DB_USER=${DB_USER} \
+                                DB_PASSWORD=${DB_PASSWORD} \
+                                DB_NAME=${DB_NAME} \
+                            --registry-login-server index.docker.io \
+                            --registry-username "$REGISTRY_USERNAME" \
+                            --registry-password "$REGISTRY_PASSWORD"
+        
+                        # ===== GET APPLICATION IP =====
+                        echo "🔄 Getting application IP..."
+                        APP_IP=$(az container show \
+                            --resource-group MyPatientSurveyRG \
+                            --name $ACI_NAME \
+                            --query "ipAddress.ip" \
+                            -o tsv)
+                        
+                        echo "APP_IP=${APP_IP}" >> monitoring.env
+                        '''
+                    }
+                }
+            }
+        }
+        
         stage('Configure Monitoring') {
             steps {
                 script {
-                    // Verify and read the file
-                    if (!fileExists('monitoring.env')) {
-                        error("monitoring.env file not found")
-                    }
-                    
-                    // Read and parse carefully
+                    // Read monitoring.env
+                    def monitoringEnv = readFile('monitoring.env').trim()
                     def envVars = [:]
-                    readFile('monitoring.env').split('\n').each { line ->
-                        line = line.trim()
-                        if (line && line.contains('=')) {
-                            def parts = line.split('=', 2)
-                            envVars[parts[0]] = parts[1]
+                    monitoringEnv.eachLine { line ->
+                        def parts = line.split('=', 2)
+                        if (parts.size() == 2) {
+                            envVars[parts[0]] = parts[1].trim()
                         }
                     }
-                    
-                    // Validate required variables
-                    def required = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                    def missing = required.findAll { !envVars[it]?.trim() }
-                    
-                    if (missing) {
-                        error("Missing required variables: ${missing.join(', ')}")
-                    }
-                    
-                    // Now use the variables
-                    def PROMETHEUS_IP = envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')
-                    def APP_IP = envVars.APP_IP
-                    def GRAFANA_URL = envVars.GRAFANA_URL
         
+                    // Verify required variables
+                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
+                    def missingVars = requiredVars.findAll { !envVars[it] }
+                    
+                    if (missingVars) {
+                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
+                    }
         
                     // Update Prometheus config
                     sh """
+                        # Get Prometheus IP
+                        PROMETHEUS_IP=${envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')}
+                        
+                        # Create updated config
                         cat <<EOF > prometheus-config.yml
                         global:
                           scrape_interval: 15s
@@ -384,65 +388,15 @@
                         scrape_configs:
                           - job_name: 'node-exporter'
                             static_configs:
-                              - targets: ['${APP_IP}:9100']
+                              - targets: ['${envVars.APP_IP}:9100']
                           - job_name: 'app-metrics'
                             static_configs:
-                              - targets: ['${APP_IP}:8000']
+                              - targets: ['${envVars.APP_IP}:8000']
                         EOF
         
-                        echo "Updating Prometheus configuration..."
-                        curl -v -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
+                        # Reload Prometheus
+                        curl -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
                     """
-        
-                    // Setup Grafana dashboard
-                    withCredentials([string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')]) {
-                        sh """
-                        echo "Waiting for Grafana to be ready..."
-                        until curl -s ${GRAFANA_URL}/api/health; do sleep 5; done
-        
-                        echo "Adding Prometheus datasource..."
-                        curl -v -X POST \
-                          -H "Content-Type: application/json" \
-                          -u admin:${GRAFANA_PASSWORD} \
-                          -d '{
-                            "name":"Prometheus",
-                            "type":"prometheus",
-                            "url":"http://${PROMETHEUS_IP}:9090",
-                            "access":"proxy"
-                          }' \
-                          ${GRAFANA_URL}/api/datasources
-        
-                        echo "Importing dashboard..."
-                        DASHBOARD_JSON='{
-                          "dashboard": {
-                            "title": "Application Metrics",
-                            "panels": [
-                              {
-                                "title": "CPU Usage",
-                                "type": "timeseries",
-                                "datasource": "Prometheus",
-                                "targets": [{"expr": "node_cpu_seconds_total"}],
-                                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
-                              },
-                              {
-                                "title": "Memory Usage",
-                                "type": "timeseries",
-                                "datasource": "Prometheus",
-                                "targets": [{"expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes"}],
-                                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
-                              }
-                            ]
-                          },
-                          "overwrite": true
-                        }'
-        
-                        curl -v -X POST \
-                          -H "Content-Type: application/json" \
-                          -u admin:${GRAFANA_PASSWORD} \
-                          -d "\$DASHBOARD_JSON" \
-                          ${GRAFANA_URL}/api/dashboards/db
-                        """
-                    }
                 }
             }
         }
