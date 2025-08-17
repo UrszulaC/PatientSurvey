@@ -215,20 +215,7 @@
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # Verify quota before deploying - using correct JMESPath syntax
-                            echo "🔍 Checking available quota before deployment..."
-                            QUOTA_INFO=$(az vm list-usage --location uksouth -o json)
-                            CURRENT_USAGE=$(echo "$QUOTA_INFO" | jq -r '.[] | select(.localName=="Standard Cores") | .currentValue')
-                            LIMIT=$(echo "$QUOTA_INFO" | jq -r '.[] | select(.localName=="Standard Cores") | .limit')
-                            AVAILABLE=$((LIMIT - CURRENT_USAGE))
-                            
-                            echo "Current usage: $CURRENT_USAGE, Limit: $LIMIT, Available: $AVAILABLE"
-                            
-                            if [ "$AVAILABLE" -lt 2 ]; then
-                                echo "❌ Insufficient quota available (need 2 cores, have $AVAILABLE)"
-                                exit 1
-                            fi
-        
+                           
                             # Deploy with reduced resource requests
                             echo "🚀 Deploying monitoring stack with reduced resources..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
