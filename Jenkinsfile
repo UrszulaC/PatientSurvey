@@ -683,49 +683,41 @@ stage('Deploy Application (Azure Container Instances)') {
             }
         }
         stage('Configure Dynamic Monitoring') {
-            environment {
-                PROMETHEUS_SERVER = sh(
-                    script: '''
-                        az container show -g MyPatientSurveyRG -n prometheus-${BUILD_NUMBER} \
-                            --query "ipAddress.ip" -o tsv
-                    ''',
-                    returnStdout: true
-                ).trim()
-            }
             steps {
                 script {
-                    // Verify we have an IP
-                    if (!env.PROMETHEUS_SERVER) {
-                        error("Failed to get Prometheus server IP")
-                    }
-                    
-                    // Full verification flow
-                    sh """
-                        # Verify Prometheus is reachable
-                        curl -s http://${env.PROMETHEUS_SERVER}:9090/-/healthy | grep 'Prometheus is Healthy' || {
-                            echo "ERROR: Prometheus not healthy"
-                            exit 1
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                    ]) {
+                        // Get Prometheus IP with authentication
+                        def PROMETHEUS_IP = sh(script: '''
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" > /dev/null
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null
+                            az container show -g MyPatientSurveyRG -n prometheus-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv
+                        ''', returnStdout: true).trim()
+        
+                        if (!PROMETHEUS_IP) {
+                            error("Failed to get Prometheus server IP")
                         }
-                        
-                        # Trigger reload
-                        echo "Triggering config reload..."
-                        curl -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload
-                        
-                        # Verify targets
-                        echo "Waiting for targets..."
-                        for i in {1..10}; do
-                            if curl -s http://${env.PROMETHEUS_SERVER}:9090/api/v1/targets | \
-                               grep '"health":"up"'; then
-                                break
-                            fi
-                            sleep 5
-                        done
-                        
-                        # Final status
-                        echo "=== Current Targets ==="
-                        curl -s http://${env.PROMETHEUS_SERVER}:9090/api/v1/targets | \
-                            jq '.data.activeTargets[] | {job: .labels.job, instance: .discoveredLabels.__address__, health: .health}'
-                    """
+        
+                        // Trigger reload
+                        sh """
+                            echo "Reloading Prometheus configuration at ${PROMETHEUS_IP}..."
+                            curl -v -X POST http://${PROMETHEUS_IP}:9090/-/reload || {
+                                echo "ERROR: Prometheus reload failed"
+                                exit 1
+                            }
+                            
+                            echo "Waiting 10 seconds for changes to propagate..."
+                            sleep 10
+                            
+                            echo "Current targets:"
+                            curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
+                                jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health}'
+                        """
+                    }
                 }
             }
         }
