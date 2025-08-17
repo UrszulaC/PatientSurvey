@@ -735,49 +735,57 @@ stage('Deploy Application (Azure Container Instances)') {
         stage('Verify Monitoring') {
             steps {
                 script {
-                    // Wait for metrics to appear
-                    timeout(time: 2, unit: 'MINUTES') {
-                        waitUntil {
-                            def metrics = sh(script: """
-                                curl -s http://${PROMETHEUS_SERVER}:9090/api/v1/targets | \
-                                jq '.data.activeTargets[] | select(.labels.instance=="${ACI_IP}:9100")'
-                            """, returnStdout: true)
-                            return metrics.contains('"health":"up"')
-                        }
-                    }
-                }
-            }
-        }
-        stage('Update Grafana Dashboard') {
-            steps {
-                script {
                     withCredentials([
-                        string(credentialsId: 'GRAFANA_SERVICE_ACCOUNT_TOKEN', variable: 'GRAFANA_TOKEN')
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
                     ]) {
+                        // Get fresh IPs (in case of redeployment)
+                        def PROMETHEUS_IP = sh(script: '''
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" > /dev/null
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null
+                            az container show -g MyPatientSurveyRG -n prometheus-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv
+                        ''', returnStdout: true).trim()
+        
+                        def GRAFANA_IP = sh(script: '''
+                            az container show -g MyPatientSurveyRG -n grafana-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv
+                        ''', returnStdout: true).trim()
+        
+                        // Fail if IPs are missing
+                        if (!PROMETHEUS_IP || !GRAFANA_IP) {
+                            error("Prometheus (${PROMETHEUS_IP}) or Grafana (${GRAFANA_IP}) IP not found")
+                        }
+        
+                        // 1. Verify Prometheus Targets
+                        timeout(time: 2, unit: 'MINUTES') {
+                            waitUntil {
+                                def targets = sh(script: """
+                                    curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
+                                    grep -A 5 '"health":"up"'
+                                """, returnStdout: true).trim()
+                                return targets.contains('"health":"up"') && !targets.contains('"health":"down"')
+                            }
+                        }
+        
+                        // 2. Verify Grafana Dashboard
                         sh """
-                        curl -X POST \
-                          -H "Authorization: Bearer ${GRAFANA_TOKEN}" \
-                          -H "Content-Type: application/json" \
-                          -d '{
-                            "dashboard": {
-                              "title": "ACI-${BUILD_NUMBER}",
-                              "panels": [{
-                                "title": "CPU Usage",
-                                "type": "timeseries",  // Note: "timeseries" replaces "graph" in Grafana 10+
-                                "datasource": "Prometheus",
-                                "targets": [{
-                                  "expr": "node_cpu_seconds_total{instance=~\"${APP_IP}:.+\"}"
-                                }]
-                              }]
-                            },
-                            "overwrite": true
-                          }' \
-                          "${GRAFANA_URL}/api/dashboards/db
+                            echo "Checking Grafana at ${GRAFANA_IP}..."
+                            curl -s -u admin:${GRAFANA_PASSWORD} \
+                                http://${GRAFANA_IP}:3000/api/dashboards/uid/your-dashboard-uid | \
+                                grep '"title":"ACI-${BUILD_NUMBER}"' || {
+                                    echo "ERROR: Grafana dashboard not found"
+                                    exit 1
+                                }
                         """
+        
+                        echo "✅ Monitoring verified: Prometheus (${PROMETHEUS_IP}) and Grafana (${GRAFANA_IP}) are healthy"
                     }
                 }
             }
         }
+       
     }
     post {
         always {
