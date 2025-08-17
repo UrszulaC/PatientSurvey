@@ -197,162 +197,163 @@
                 }
             }
         }
+        
         stage('Deploy Monitoring Stack') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
-                    ]) {
-                        timeout(time: 15, unit: 'MINUTES') {
-                            sh '''#!/bin/bash
-                            set -eo pipefail
-        
-                            # ===== AUTHENTICATION =====
-                            echo "🔑 Authenticating to Azure..."
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-                            # ===== DEPLOY PROMETHEUS =====
-                            echo "📊 Deploying Prometheus..."
-                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-        
-                            if [ ! -f "$CONFIG_FILE" ]; then
-                                echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
-                                exit 1
-                            fi
-        
-                            # Use placeholder IP initially
-                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
-                            CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
-        
-                            az container create \
-                              --resource-group MyPatientSurveyRG \
-                              --name "$PROMETHEUS_NAME" \
-                              --image prom/prometheus:v2.47.0 \
-                              --os-type Linux \
-                              --cpu 0.5 \
-                              --memory 1.5 \
-                              --ports 9090 \
-                              --ip-address Public \
-                              --dns-name-label "$PROMETHEUS_NAME" \
-                              --location uksouth \
-                              --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-        
-                            # ===== DEPLOY GRAFANA =====
-                            echo "📈 Deploying Grafana..."
-                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-        
-                            az container create \
-                                --resource-group MyPatientSurveyRG \
-                                --name "$GRAFANA_NAME" \
-                                --image grafana/grafana:9.5.6 \
-                                --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1.5 \
-                                --ports 3000 \
-                                --ip-address Public \
-                                --dns-name-label "$GRAFANA_NAME" \
-                                --location uksouth \
-                                --environment-variables \
-                                    GF_SECURITY_ADMIN_USER=admin \
-                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-        
-                            # ===== GET MONITORING ENDPOINTS =====
-                            echo "🔗 Getting monitoring endpoints..."
-                            PROMETHEUS_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$PROMETHEUS_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-                            GRAFANA_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$GRAFANA_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-        
-                            # ===== WRITE MONITORING ENV FILE =====
-                            echo "📝 Writing monitoring environment variables..."
-                            cat > monitoring.env <<EOF
-        PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
-        GRAFANA_URL=http://${GRAFANA_IP}:3000
-        GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
-        EOF
-        
-                            echo "=== monitoring.env contents ==="
-                            cat monitoring.env
-                            echo "=============================="
-                            '''
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('Deploy Application') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        usernamePassword(
-                            credentialsId: 'docker-hub-creds',
-                            usernameVariable: 'REGISTRY_USERNAME',
-                            passwordVariable: 'REGISTRY_PASSWORD'
-                        )
-                    ]) {
-                        sh '''#!/bin/bash
-                        set -e
-        
-                        # ===== AUTHENTICATION =====
-                        echo "🔑 Authenticating to Azure..."
-                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-                        # ===== DEPLOY APPLICATION =====
-                        echo "🚀 Deploying application container..."
-                        ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-                        az container create \
-                            --resource-group MyPatientSurveyRG \
-                            --name $ACI_NAME \
-                            --image ${IMAGE_TAG} \
-                            --os-type Linux \
-                            --cpu 1 \
-                            --memory 2 \
-                            --ports 8000 9100 \
-                            --restart-policy Always \
-                            --location uksouth \
-                            --ip-address Public \
-                            --environment-variables \
-                                DB_HOST=${DB_HOST} \
-                                DB_USER=${DB_USER} \
-                                DB_PASSWORD=${DB_PASSWORD} \
-                                DB_NAME=${DB_NAME} \
-                            --registry-login-server index.docker.io \
-                            --registry-username "$REGISTRY_USERNAME" \
-                            --registry-password "$REGISTRY_PASSWORD"
-        
-                        # ===== GET APPLICATION IP =====
-                        echo "🔄 Getting application IP..."
-                        APP_IP=$(az container show \
-                            --resource-group MyPatientSurveyRG \
-                            --name $ACI_NAME \
-                            --query "ipAddress.ip" \
-                            -o tsv)
-                        
-                        echo "APP_IP=${APP_IP}" >> monitoring.env
-                        '''
-                    }
-                }
-            }
-        }
-        
+           steps {
+               script {
+                   withCredentials([
+                       string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                       string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                       string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                       string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                       string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
+                   ]) {
+                       timeout(time: 15, unit: 'MINUTES') {
+                           sh '''#!/bin/bash
+                           set -eo pipefail
+       
+                           # ===== AUTHENTICATION =====
+                           echo "🔑 Authenticating to Azure..."
+                           az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                           az account set --subscription "$ARM_SUBSCRIPTION_ID"
+       
+                           # ===== DEPLOY PROMETHEUS =====
+                           echo "📊 Deploying Prometheus..."
+                           PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                           CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
+       
+                           if [ ! -f "$CONFIG_FILE" ]; then
+                               echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
+                               exit 1
+                           fi
+       
+                           # Use placeholder IP initially
+                           sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
+                           CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
+       
+                           az container create \
+                             --resource-group MyPatientSurveyRG \
+                             --name "$PROMETHEUS_NAME" \
+                             --image prom/prometheus:v2.47.0 \
+                             --os-type Linux \
+                             --cpu 0.5 \
+                             --memory 1.5 \
+                             --ports 9090 \
+                             --ip-address Public \
+                             --dns-name-label "$PROMETHEUS_NAME" \
+                             --location uksouth \
+                             --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+       
+                           # ===== DEPLOY GRAFANA =====
+                           echo "📈 Deploying Grafana..."
+                           GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+       
+                           az container create \
+                               --resource-group MyPatientSurveyRG \
+                               --name "$GRAFANA_NAME" \
+                               --image grafana/grafana:9.5.6 \
+                               --os-type Linux \
+                               --cpu 0.5 \
+                               --memory 1.5 \
+                               --ports 3000 \
+                               --ip-address Public \
+                               --dns-name-label "$GRAFANA_NAME" \
+                               --location uksouth \
+                               --environment-variables \
+                                   GF_SECURITY_ADMIN_USER=admin \
+                                   GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
+       
+                           # ===== GET MONITORING ENDPOINTS =====
+                           echo "🔗 Getting monitoring endpoints..."
+                           PROMETHEUS_IP=$(az container show \
+                               -g MyPatientSurveyRG \
+                               -n "$PROMETHEUS_NAME" \
+                               --query "ipAddress.ip" \
+                               -o tsv)
+                           GRAFANA_IP=$(az container show \
+                               -g MyPatientSurveyRG \
+                               -n "$GRAFANA_NAME" \
+                               --query "ipAddress.ip" \
+                               -o tsv)
+       
+                           # ===== WRITE MONITORING ENV FILE =====
+                           echo "📝 Writing monitoring environment variables..."
+                           cat > monitoring.env <<EOF
+       PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
+       GRAFANA_URL=http://${GRAFANA_IP}:3000
+       GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+       EOF
+       
+                           echo "=== monitoring.env contents ==="
+                           cat monitoring.env
+                           echo "=============================="
+                           '''
+                       }
+                   }
+               }
+           }
+       }
+       
+       stage('Deploy Application') {
+           steps {
+               script {
+                   withCredentials([
+                       string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                       string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                       string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                       string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
+                       usernamePassword(
+                           credentialsId: 'docker-hub-creds',
+                           usernameVariable: 'REGISTRY_USERNAME',
+                           passwordVariable: 'REGISTRY_PASSWORD'
+                       )
+                   ]) {
+                       sh '''#!/bin/bash
+                       set -e
+       
+                       # ===== AUTHENTICATION =====
+                       echo "🔑 Authenticating to Azure..."
+                       az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                       az account set --subscription "$ARM_SUBSCRIPTION_ID"
+       
+                       # ===== DEPLOY APPLICATION =====
+                       echo "🚀 Deploying application container..."
+                       ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                       az container create \
+                           --resource-group MyPatientSurveyRG \
+                           --name $ACI_NAME \
+                           --image ${IMAGE_TAG} \
+                           --os-type Linux \
+                           --cpu 1 \
+                           --memory 2 \
+                           --ports 8000 9100 \
+                           --restart-policy Always \
+                           --location uksouth \
+                           --ip-address Public \
+                           --environment-variables \
+                               DB_HOST=${DB_HOST} \
+                               DB_USER=${DB_USER} \
+                               DB_PASSWORD=${DB_PASSWORD} \
+                               DB_NAME=${DB_NAME} \
+                           --registry-login-server index.docker.io \
+                           --registry-username "$REGISTRY_USERNAME" \
+                           --registry-password "$REGISTRY_PASSWORD"
+       
+                       # ===== GET APPLICATION IP =====
+                       echo "🔄 Getting application IP..."
+                       APP_IP=$(az container show \
+                           --resource-group MyPatientSurveyRG \
+                           --name $ACI_NAME \
+                           --query "ipAddress.ip" \
+                           -o tsv)
+                       
+                       echo "APP_IP=${APP_IP}" >> monitoring.env
+                       '''
+                   }
+               }
+           }
+       }
+
         stage('Configure Monitoring') {
             steps {
                 script {
@@ -400,6 +401,7 @@
                 }
             }
         }
+         
         stage('Install kubectl') {
           steps {
             sh '''#!/bin/bash
@@ -574,61 +576,6 @@
               }
           }
       }
-      stage('Deploy Application') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
-                    ]) {
-                        sh '''#!/bin/bash
-                        set -e
-        
-                        # Authenticate
-                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-                        # Deploy app
-                        ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-                        az container create \
-                            --resource-group $RESOURCE_GROUP \
-                            --name $ACI_NAME \
-                            --image ${IMAGE_TAG} \
-                            --os-type Linux \
-                            --cpu 1 \
-                            --memory 2 \
-                            --ports 8000 9100 \
-                            --restart-policy Always \
-                            --location uksouth \
-                            --ip-address Public \
-                            --environment-variables \
-                                DB_HOST=${DB_HOST} \
-                                DB_USER=${DB_USER} \
-                                DB_PASSWORD=${DB_PASSWORD} \
-                                DB_NAME=${DB_NAME}
-        
-                        # Get app IP and write to file
-                        APP_IP=$(az container show --resource-group $RESOURCE_GROUP --name $ACI_NAME --query "ipAddress.ip" -o tsv)
-                        
-                        # Create monitoring.env with all required variables
-                        echo "Writing monitoring environment variables:"
-                        echo "PROMETHEUS_URL=${PROMETHEUS_URL}" > monitoring.env
-                        echo "GRAFANA_URL=${GRAFANA_URL}" >> monitoring.env
-                        echo "GRAFANA_CREDS=${GRAFANA_CREDS}" >> monitoring.env
-                        echo "APP_IP=${APP_IP}" >> monitoring.env
-                        
-                        echo "=== monitoring.env contents ==="
-                        cat monitoring.env
-                        echo "=============================="
-                        '''
-                    }
-                }
-            }
-        }
-        
-        
         stage('Display Monitoring URLs') {
             steps {
                 script {
