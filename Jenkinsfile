@@ -428,20 +428,30 @@
         stage('Configure Monitoring') {
             steps {
                 script {
-                    // Read monitoring endpoints
+                    // Read monitoring endpoints more reliably
                     def monitoringEnv = readFile('monitoring.env').trim()
-                    def envVars = monitoringEnv.split('\n').collectEntries { it.split('=', 2) }
+                    def envVars = [:]
+                    monitoringEnv.eachLine { line ->
+                        def parts = line.split('=', 2)
+                        if (parts.size() == 2) {
+                            envVars[parts[0]] = parts[1]
+                        }
+                    }
                     
-                    def PROMETHEUS_IP = envVars['PROMETHEUS_URL'].replace('http://', '').replace(':9090', '')
-                    def APP_IP = envVars['APP_IP']
-
+                    if (!envVars.PROMETHEUS_URL || !envVars.GRAFANA_URL || !envVars.APP_IP) {
+                        error("Missing required monitoring environment variables")
+                    }
+        
+                    def PROMETHEUS_IP = envVars.PROMETHEUS_URL.replace('http://', '').replace(':9090', '')
+                    def APP_IP = envVars.APP_IP
+        
                     // Update Prometheus config
                     sh """
                         cat <<EOF > prometheus-config.yml
                         global:
                           scrape_interval: 15s
                           evaluation_interval: 15s
-
+        
                         scrape_configs:
                           - job_name: 'node-exporter'
                             static_configs:
@@ -450,17 +460,17 @@
                             static_configs:
                               - targets: ['${APP_IP}:8000']
                         EOF
-
+        
                         # Send config to Prometheus
                         curl -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
                     """
-
+        
                     // Setup Grafana dashboard
                     withCredentials([string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')]) {
                         sh """
                         # Wait for Grafana to be ready
-                        until curl -s http://${envVars['GRAFANA_URL'].replace('http://', '')}/api/health; do sleep 5; done
-
+                        until curl -s ${envVars.GRAFANA_URL}/api/health; do sleep 5; done
+        
                         # Add Prometheus datasource
                         curl -X POST \
                           -H "Content-Type: application/json" \
@@ -471,8 +481,8 @@
                             "url":"http://${PROMETHEUS_IP}:9090",
                             "access":"proxy"
                           }' \
-                          ${envVars['GRAFANA_URL']}/api/datasources
-
+                          ${envVars.GRAFANA_URL}/api/datasources
+        
                         # Import simple dashboard
                         DASHBOARD_JSON='{
                           "dashboard": {
@@ -496,12 +506,12 @@
                           },
                           "overwrite": true
                         }'
-
+        
                         curl -X POST \
                           -H "Content-Type: application/json" \
                           -u admin:${GRAFANA_PASSWORD} \
                           -d "\$DASHBOARD_JSON" \
-                          ${envVars['GRAFANA_URL']}/api/dashboards/db
+                          ${envVars.GRAFANA_URL}/api/dashboards/db
                         """
                     }
                 }
