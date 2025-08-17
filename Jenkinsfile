@@ -158,76 +158,15 @@
                     ]) {
                         sh '''#!/bin/bash
                         set -eo pipefail
-        
-                        # ===== AUTHENTICATION =====
-                        echo "🔑 Authenticating to Azure..."
+
+                        # Authenticate to Azure
                         az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                         az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-                        # ===== CONTAINER CLEANUP =====
-                        echo "🧹 Cleaning up existing containers..."
-                        CONTAINERS=$(az container list \
-                            --resource-group MyPatientSurveyRG \
-                            --query "[?provisioningState!='Deleting'].name" \
-                            -o tsv)
-        
-                        if [ -n "$CONTAINERS" ]; then
-                            echo "🗑️ Found containers to delete:"
-                            echo "$CONTAINERS"
-                            
-                            # Parallel deletion with error handling
-                            for CONTAINER in $CONTAINERS; do
-                                (
-                                    echo "➖ Deleting $CONTAINER..."
-                                    if ! az container delete \
-                                        --resource-group MyPatientSurveyRG \
-                                        --name "$CONTAINER" \
-                                        --yes; then
-                                        echo "⚠️ Failed to delete $CONTAINER, attempting force delete..."
-                                        az container stop \
-                                            --resource-group MyPatientSurveyRG \
-                                            --name "$CONTAINER" \
-                                            --yes || true
-                                        az container delete \
-                                            --resource-group MyPatientSurveyRG \
-                                            --name "$CONTAINER" \
-                                            --yes || true
-                                    fi
-                                ) &
-                            done
-                            wait
-        
-                            # Verify cleanup
-                            echo "🔍 Verifying cleanup..."
-                            REMAINING=$(az container list \
-                                --resource-group MyPatientSurveyRG \
-                                --query "[].name" \
-                                -o tsv)
-                            [ -z "$REMAINING" ] || echo "⚠️ Containers remaining: $REMAINING"
-                        else
-                            echo "ℹ️ No containers found to delete"
-                        fi
-        
-                        # ===== DEPLOY MONITORING STACK =====
-                        echo "🚀 Deploying new monitoring stack..."
+
+                        # Deploy Prometheus with basic config
                         PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                        GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-                        CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-        
-                        # Validate config file exists
-                        if [ ! -f "$CONFIG_FILE" ]; then
-                            echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
-                            ls -la "$(dirname "$CONFIG_FILE")" || true
-                            exit 1
-                        fi
-        
-                        # ===== PHASE 1: INITIAL DEPLOYMENT =====
-                        echo "📊 Deploying Prometheus ($PROMETHEUS_NAME) with initial config..."
-                        INITIAL_CONFIG=$(sed 's/DYNAMIC_APP_IP/PLACEHOLDER_IP/g' "$CONFIG_FILE")
-                        CONFIG_BASE64=$(echo "$INITIAL_CONFIG" | base64 -w0)
-        
                         az container create \
-                          --resource-group MyPatientSurveyRG \
+                          --resource-group $RESOURCE_GROUP \
                           --name "$PROMETHEUS_NAME" \
                           --image prom/prometheus:v2.47.0 \
                           --os-type Linux \
@@ -237,11 +176,12 @@
                           --ip-address Public \
                           --dns-name-label "$PROMETHEUS_NAME" \
                           --location uksouth \
-                          --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-        
-                        echo "📈 Deploying Grafana ($GRAFANA_NAME)..."
+                          --command-line "/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
+
+                        # Deploy Grafana with pre-configured dashboard
+                        GRAFANA_NAME="grafana-${BUILD_NUMBER}"
                         az container create \
-                            --resource-group MyPatientSurveyRG \
+                            --resource-group $RESOURCE_GROUP \
                             --name "$GRAFANA_NAME" \
                             --image grafana/grafana:9.5.6 \
                             --os-type Linux \
@@ -254,53 +194,11 @@
                             --environment-variables \
                                 GF_SECURITY_ADMIN_USER=admin \
                                 GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-        
-                        # ===== VERIFICATION =====
-                        echo "🔎 Verifying deployments..."
-                        verify_container_ready() {
-                            local name=$1
-                            local max_retries=15
-                            local retry_interval=10
-                            
-                            for ((i=1; i<=max_retries; i++)); do
-                                state=$(az container show \
-                                    -g MyPatientSurveyRG \
-                                    -n "$name" \
-                                    --query "containers[0].instanceView.currentState.state" \
-                                    -o tsv 2>/dev/null || echo "unknown")
-                                
-                                if [ "$state" == "Running" ]; then
-                                    echo "✅ $name is running"
-                                    return 0
-                                else
-                                    echo "⌛ $name state: $state (attempt $i/$max_retries)"
-                                    sleep $retry_interval
-                                fi
-                            done
-                            echo "❌ Failed to verify $name is running"
-                            return 1
-                        }
-        
-                        verify_container_ready "$PROMETHEUS_NAME"
-                        verify_container_ready "$GRAFANA_NAME"
-        
+
                         # Get endpoints
-                        PROMETHEUS_IP=$(az container show \
-                            -g MyPatientSurveyRG \
-                            -n "$PROMETHEUS_NAME" \
-                            --query "ipAddress.ip" \
-                            -o tsv)
-                        GRAFANA_IP=$(az container show \
-                            -g MyPatientSurveyRG \
-                            -n "$GRAFANA_NAME" \
-                            --query "ipAddress.ip" \
-                            -o tsv)
-        
-                        echo "✨ Phase 1 complete!"
-                        echo "📊 Prometheus URL: http://$PROMETHEUS_IP:9090"
-                        echo "📈 Grafana URL: http://$GRAFANA_IP:3000"
-        
-                        # Write initial outputs
+                        PROMETHEUS_IP=$(az container show -g $RESOURCE_GROUP -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
+                        GRAFANA_IP=$(az container show -g $RESOURCE_GROUP -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
+
                         echo "PROMETHEUS_URL=http://$PROMETHEUS_IP:9090" > monitoring.env
                         echo "GRAFANA_URL=http://$GRAFANA_IP:3000" >> monitoring.env
                         echo "GRAFANA_CREDS=admin:$GRAFANA_PASSWORD" >> monitoring.env
@@ -309,7 +207,6 @@
                 }
             }
         }
-        
         stage('Install kubectl') {
           steps {
             sh '''#!/bin/bash
@@ -463,209 +360,28 @@
             }
         }
         stage('Build Docker Image') {
-    steps {
-        script {
-            withCredentials([usernamePassword(
-                credentialsId: 'docker-hub-creds',
-                usernameVariable: 'DOCKER_USER',
-                passwordVariable: 'DOCKER_PASS'
-            )]) {
-                // Build and push in one step to ensure the image is available
-                docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-                    docker.build(IMAGE_TAG, '.').push()
-                }
-                
-                // Verify the image was pushed successfully
-                sh """
-                    docker pull ${IMAGE_TAG} || exit 1
-                    echo "✅ Verified image ${IMAGE_TAG} exists in Docker Hub"
-                """
-            }
-        }
-    }
-}
-
-stage('Deploy Application (Azure Container Instances)') {
-    steps {
-        script {
-            withCredentials([
-                string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                usernamePassword(
-                    credentialsId: 'docker-hub-creds',
-                    usernameVariable: 'REGISTRY_USERNAME',
-                    passwordVariable: 'REGISTRY_PASSWORD'
-                )
-            ]) {
-                sh '''
-                    #!/bin/bash
-                    set -e
-
-                    # ===== AUTHENTICATION =====
-                    echo "🔑 Authenticating to Azure..."
-                    az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                    az account set --subscription "$ARM_SUBSCRIPTION_ID"
-
-                    # ===== VERIFY IMAGE EXISTS =====
-                    echo "🔍 Verifying Docker Hub image exists..."
-                    if ! docker pull ${IMAGE_TAG}; then
-                        echo "❌ ERROR: Image ${IMAGE_TAG} not found in Docker Hub!"
-                        exit 1
-                    fi
-
-                    # ===== DEPLOY APPLICATION =====
-                    echo "🚀 Deploying application container..."
-                    RESOURCE_GROUP_NAME="MyPatientSurveyRG"
-                    ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-                    ACI_LOCATION="uksouth"
-
-                    az container create \
-                        --resource-group $RESOURCE_GROUP_NAME \
-                        --name $ACI_NAME \
-                        --image ${IMAGE_TAG} \
-                        --os-type Linux \
-                        --cpu 1 \
-                        --memory 2 \
-                        --ports 8000 9100 \
-                        --restart-policy Always \
-                        --location $ACI_LOCATION \
-                        --ip-address Public \
-                        --environment-variables \
-                            DB_HOST=${DB_HOST} \
-                            DB_USER=${DB_USER} \
-                            DB_PASSWORD=${DB_PASSWORD} \
-                            DB_NAME=${DB_NAME} \
-                        --registry-login-server index.docker.io \
-                        --registry-username "$REGISTRY_USERNAME" \
-                        --registry-password "$REGISTRY_PASSWORD"
-        
-                            # ===== GET APPLICATION IP =====
-                            echo "🔄 Getting application IP..."
-                            MAX_RETRIES=10
-                            RETRY_DELAY=10
-                            APP_IP=""
-                            
-                            for i in $(seq 1 $MAX_RETRIES); do
-                                APP_IP=$(az container show \
-                                    --resource-group $RESOURCE_GROUP_NAME \
-                                    --name $ACI_NAME \
-                                    --query "ipAddress.ip" \
-                                    --output tsv)
-                                
-                                if [ -n "$APP_IP" ]; then
-                                    echo "✅ Application IP: $APP_IP"
-                                    break
-                                else
-                                    echo "Attempt $i/$MAX_RETRIES: IP not yet assigned..."
-                                    sleep $RETRY_DELAY
-                                fi
-                            done
-        
-                            if [ -z "$APP_IP" ]; then
-                                echo "❌ ERROR: Failed to get IP address after $MAX_RETRIES attempts"
-                                exit 1
-                            fi
-        
-                            # ===== VERIFY METRICS ENDPOINTS =====
-                            echo "🔍 Testing metrics endpoints..."
-                            MAX_RETRIES=5
-                            RETRY_DELAY=10
-                            
-                            # Get container logs for debugging
-                            echo "Container logs:"
-                            az container logs --resource-group $RESOURCE_GROUP_NAME --name $ACI_NAME
-                            
-                            # Test node-exporter with enhanced diagnostics
-                            for i in $(seq 1 $MAX_RETRIES); do
-                                if curl -v --connect-timeout 5 "http://${APP_IP}:9100/metrics" >/dev/null; then
-                                    echo "✅ node_exporter is reachable"
-                                    break
-                                else
-                                    echo "Attempt $i/$MAX_RETRIES: node_exporter not ready..."
-                                    [ $i -eq $MAX_RETRIES ] && {
-                                        echo "❌ node_exporter failed after $MAX_RETRIES attempts"
-                                        echo "Debug info:"
-                                        az container exec --resource-group $RESOURCE_GROUP_NAME --name $ACI_NAME --exec-command "ps aux"
-                                        exit 1
-                                    }
-                                    sleep $RETRY_DELAY
-                                fi
-                            done
-        
-                            # ===== UPDATE PROMETHEUS CONFIG =====
-                            echo "🔄 Updating Prometheus configuration..."
-                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-                            TMP_CONFIG="/tmp/prometheus-${BUILD_NUMBER}.yml"
-        
-                            # Replace placeholder with actual IP
-                            sed "s/DYNAMIC_APP_IP/${APP_IP}/g" "$CONFIG_FILE" > "$TMP_CONFIG"
-        
-                            # Verify substitution
-                            echo "=== Generated Prometheus Config ==="
-                            cat "$TMP_CONFIG"
-                            echo "=================================="
-        
-                            if grep -q "DYNAMIC_APP_IP" "$TMP_CONFIG"; then
-                                echo "❌ ERROR: Variable substitution failed in Prometheus config!"
-                                exit 1
-                            fi
-        
-                            CONFIG_BASE64=$(base64 -w0 "$TMP_CONFIG")
-        
-                            # ===== DEPLOY PROMETHEUS =====
-                            echo "📊 Redeploying Prometheus with updated config..."
-                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            
-                            # Delete existing Prometheus if exists
-                            if az container show --resource-group $RESOURCE_GROUP_NAME --name $PROMETHEUS_NAME &>/dev/null; then
-                                echo "♻️ Removing existing Prometheus..."
-                                az container delete \
-                                    --resource-group $RESOURCE_GROUP_NAME \
-                                    --name $PROMETHEUS_NAME \
-                                    --yes
-                            fi
-        
-                            # Create new Prometheus instance
-                            az container create \
-                                --resource-group $RESOURCE_GROUP_NAME \
-                                --name $PROMETHEUS_NAME \
-                                --image prom/prometheus:v2.47.0 \
-                                --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1.5 \
-                                --ports 9090 \
-                                --ip-address Public \
-                                --dns-name-label "$PROMETHEUS_NAME" \
-                                --location $ACI_LOCATION \
-                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-        
-                            # ===== VERIFY DEPLOYMENT =====
-                            echo "🔍 Verifying Prometheus deployment..."
-                            PROMETHEUS_IP=$(az container show \
-                                -g $RESOURCE_GROUP_NAME \
-                                -n "$PROMETHEUS_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-        
-                            echo "✅ Deployment successful!"
-                            echo "📊 Prometheus URL: http://${PROMETHEUS_IP}:9090"
-                            echo "📈 Application Metrics: http://${APP_IP}:8000/metrics"
-                            echo "🖥️ Node Metrics: http://${APP_IP}:9100/metrics"
-        
-                            # Write outputs for downstream jobs
-                            echo "PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090" > monitoring.env
-                            echo "APP_METRICS_URL=http://${APP_IP}:8000/metrics" >> monitoring.env
-                            echo "NODE_METRICS_URL=http://${APP_IP}:9100/metrics" >> monitoring.env
-        
-                            az logout
-                        '''
-                    }
-                }
-            }
-        }
-        stage('Configure Dynamic Monitoring') {
+          steps {
+              script {
+                  withCredentials([usernamePassword(
+                      credentialsId: 'docker-hub-creds',
+                      usernameVariable: 'DOCKER_USER',
+                      passwordVariable: 'DOCKER_PASS'
+                  )]) {
+                      // Build and push in one step to ensure the image is available
+                      docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
+                          docker.build(IMAGE_TAG, '.').push()
+                      }
+                      
+                      // Verify the image was pushed successfully
+                      sh """
+                          docker pull ${IMAGE_TAG} || exit 1
+                          echo "✅ Verified image ${IMAGE_TAG} exists in Docker Hub"
+                      """
+                  }
+              }
+          }
+      }
+      stage('Deploy Application') {
             steps {
                 script {
                     withCredentials([
@@ -674,275 +390,147 @@ stage('Deploy Application (Azure Container Instances)') {
                         string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
                     ]) {
-                        // Get Prometheus IP with authentication
-                        def PROMETHEUS_IP = sh(script: '''
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" > /dev/null
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null
-                            az container show -g MyPatientSurveyRG -n prometheus-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv
-                        ''', returnStdout: true).trim()
-        
-                        if (!PROMETHEUS_IP) {
-                            error("Failed to get Prometheus server IP")
-                        }
-        
-                        // Trigger reload and verify
-                        sh """
-                            # Try to install jq if not present
-                            if ! command -v jq &> /dev/null; then
-                                echo "Installing jq..."
-                                sudo apt-get update && sudo apt-get install -y jq || echo "jq installation failed, will use basic output"
-                            fi
-                            
-                            echo "Reloading Prometheus configuration at ${PROMETHEUS_IP}..."
-                            curl -v -X POST http://${PROMETHEUS_IP}:9090/-/reload || {
-                                echo "ERROR: Prometheus reload failed"
-                                exit 1
-                            }
-                            
-                            echo "Waiting 10 seconds for changes to propagate..."
-                            sleep 10
-                            
-                            echo "Current targets:"
-                            if command -v jq &> /dev/null; then
-                                curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \
-                                    jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health}'
-                            else
-                                echo "jq not available, showing raw output:"
-                                curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets
-                            fi
-                        """
+                        sh '''#!/bin/bash
+                        set -e
+
+                        # Authenticate
+                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+                        # Deploy app
+                        ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                        az container create \
+                            --resource-group $RESOURCE_GROUP \
+                            --name $ACI_NAME \
+                            --image ${IMAGE_TAG} \
+                            --os-type Linux \
+                            --cpu 1 \
+                            --memory 2 \
+                            --ports 8000 9100 \
+                            --restart-policy Always \
+                            --location uksouth \
+                            --ip-address Public \
+                            --environment-variables \
+                                DB_HOST=${DB_HOST} \
+                                DB_USER=${DB_USER} \
+                                DB_PASSWORD=${DB_PASSWORD} \
+                                DB_NAME=${DB_NAME}
+
+                        # Get app IP
+                        APP_IP=$(az container show --resource-group $RESOURCE_GROUP --name $ACI_NAME --query "ipAddress.ip" -o tsv)
+                        echo "APP_IP=$APP_IP" >> monitoring.env
+                        '''
                     }
                 }
             }
         }
-        
-        stage('Verify Node Exporter') {
+
+        stage('Configure Monitoring') {
             steps {
                 script {
-                    def APP_IP = readFile('monitoring.env')
-                               .split('\n')
-                               .find { it.startsWith('NODE_METRICS_URL') }
-                               .replace('NODE_METRICS_URL=http://', '')
-                               .replace(':9100/metrics', '')
-                    
-                    sh """
-                        echo "=== Testing Node Exporter Directly ==="
-                        curl -v --connect-timeout 5 http://${APP_IP}:9100/metrics || {
-                            echo "❌ Node exporter not reachable"
-                            echo "Checking container processes..."
-                            az container exec --resource-group MyPatientSurveyRG \\
-                                            --name patientsurvey-app-${BUILD_NUMBER} \\
-                                            --exec-command "ps aux" || true
-                            exit 1
-                        }
-                    """
-                }
-            }
-        }
-        stage('Verify Monitoring') {
-            steps {
-                script {
-                    // Get IPs from environment
+                    // Read monitoring endpoints
                     def monitoringEnv = readFile('monitoring.env').trim()
                     def envVars = monitoringEnv.split('\n').collectEntries { it.split('=', 2) }
                     
                     def PROMETHEUS_IP = envVars['PROMETHEUS_URL'].replace('http://', '').replace(':9090', '')
-                    def APP_IP = envVars['NODE_METRICS_URL'].replace('http://', '').replace(':9100/metrics', '')
-                    
-                    // Install required tools
-                    sh '''
-                        if ! command -v jq &> /dev/null; then
-                            sudo apt-get update && sudo apt-get install -y jq curl
-                        fi
-                    '''
-                    
-                    // Wait for Prometheus to be fully ready
-                    timeout(time: 2, unit: 'MINUTES') {
-                        waitUntil {
-                            try {
-                                sh(script: "curl -s --fail http://${PROMETHEUS_IP}:9090/-/ready", returnStatus: true) == 0
-                            } catch (Exception e) {
-                                sleep 5
-                                false
-                            }
-                        }
-                    }
-                    
-                    // 1. First verify Node Exporter is directly accessible
-                    def nodeExporterAccessible = sh(script: """
-                        if curl -s --connect-timeout 5 http://${APP_IP}:9100/metrics | grep -q 'node_'; then
-                            echo "accessible"
-                        else
-                            echo "inaccessible"
-                        fi
-                    """, returnStdout: true).trim()
-                    
-                    if (nodeExporterAccessible != "accessible") {
-                        error("❌ Node Exporter at ${APP_IP}:9100 is not accessible")
-                    }
-                    
-                    // 2. Prepare the final config
-                    def finalConfig = sh(script: """
-                        cat <<EOF | base64 -w0
+                    def APP_IP = envVars['APP_IP']
+
+                    // Update Prometheus config
+                    sh """
+                        cat <<EOF > prometheus-config.yml
                         global:
                           scrape_interval: 15s
                           evaluation_interval: 15s
-                        
+
                         scrape_configs:
                           - job_name: 'node-exporter'
                             static_configs:
                               - targets: ['${APP_IP}:9100']
+                          - job_name: 'app-metrics'
+                            static_configs:
+                              - targets: ['${APP_IP}:8000']
                         EOF
-                    """, returnStdout: true).trim()
-                    
-                    // 3. Update config with retry logic
-                    def configUpdated = false
-                    def retryCount = 0
-                    def maxRetries = 3
-                    
-                    while (!configUpdated && retryCount < maxRetries) {
-                        retryCount++
-                        
-                        try {
-                            sh """
-                                curl -X POST --data-binary "${finalConfig}" \\
-                                http://${PROMETHEUS_IP}:9090/-/reload
-                            """
-                            
-                            // Verify the config was applied
-                            def currentTargets = sh(script: """
-                                curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \\
-                                jq -r '.data.activeTargets[] | .discoveredLabels.__address__'
-                            """, returnStdout: true).trim()
-                            
-                            if (currentTargets.contains("${APP_IP}:9100")) {
-                                configUpdated = true
-                                echo "✅ Config updated successfully"
-                            } else {
-                                echo "⚠️ Config update attempt ${retryCount}/${maxRetries} failed"
-                                sleep 10
-                            }
-                        } catch (Exception e) {
-                            echo "⚠️ Config update failed (attempt ${retryCount}/${maxRetries}): ${e.getMessage()}"
-                            sleep 10
-                        }
-                    }
-                    
-                    if (!configUpdated) {
-                        error("❌ Failed to update Prometheus config after ${maxRetries} attempts")
-                    }
-                    
-                    // 4. Final verification with timeout
-                    timeout(time: 3, unit: 'MINUTES') {
-                        waitUntil {
-                            def targetStatus = sh(script: """
-                                curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \\
-                                jq -r '.data.activeTargets[] | \\
-                                select(.discoveredLabels.__address__=="${APP_IP}:9100") | \\
-                                .health'
-                            """, returnStdout: true).trim()
-                            
-                            if (targetStatus == "up") {
-                                echo "✅ Node Exporter is UP"
-                                return true
-                            } else {
-                                echo "⌛ Waiting for Node Exporter to come up (current status: ${targetStatus})"
-                                sleep 10
-                                return false
-                            }
-                        }
-                    }
-                    
-                    // Final status
-                    sh """
-                        echo "=== Final Monitoring Status ==="
-                        echo "Prometheus: http://${PROMETHEUS_IP}:9090"
-                        echo "Node Exporter: http://${APP_IP}:9100/metrics"
-                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \\
-                        jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health, lastScrape: .lastScrape}'
+
+                        # Send config to Prometheus
+                        curl -X POST --data-binary @prometheus-config.yml http://${PROMETHEUS_IP}:9090/-/reload
                     """
-                }
-            }
-        }
-        stage('Verify Prometheus Config') {
-            steps {
-                script {
-                    def PROMETHEUS_IP = readFile('monitoring.env')
-                                      .split('\n')
-                                      .find { it.startsWith('PROMETHEUS_URL') }
-                                      .replace('PROMETHEUS_URL=http://', '')
-                                      .replace(':9090', '')
-                    
-                    sh """
-                        echo "=== Current Prometheus Configuration ==="
-                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/status/config | jq -r .data.yaml
-                        
-                        echo "=== Checking Prometheus Targets ==="
-                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | jq '.data.activeTargets[]'
-                        
-                        echo "=== Checking Service Discovery ==="
-                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | jq '.data.activeTargets[].discoveredLabels'
-                    """
-                }
-            }
-        }
-        stage('Update Grafana Dashboard') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'GRAFANA_SERVICE_ACCOUNT_TOKEN', variable: 'GRAFANA_TOKEN')
-                    ]) {
+
+                    // Setup Grafana dashboard
+                    withCredentials([string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')]) {
                         sh """
+                        # Wait for Grafana to be ready
+                        until curl -s http://${envVars['GRAFANA_URL'].replace('http://', '')}/api/health; do sleep 5; done
+
+                        # Add Prometheus datasource
                         curl -X POST \
-                          -H "Authorization: Bearer ${GRAFANA_TOKEN}" \
                           -H "Content-Type: application/json" \
+                          -u admin:${GRAFANA_PASSWORD} \
                           -d '{
-                            "dashboard": {
-                              "title": "ACI-${BUILD_NUMBER}",
-                              "panels": [{
-                                "title": "CPU Usage",
-                                "type": "timeseries",  // Note: "timeseries" replaces "graph" in Grafana 10+
-                                "datasource": "Prometheus",
-                                "targets": [{
-                                  "expr": "node_cpu_seconds_total{instance=~\"${APP_IP}:.+\"}"
-                                }]
-                              }]
-                            },
-                            "overwrite": true
+                            "name":"Prometheus",
+                            "type":"prometheus",
+                            "url":"http://${PROMETHEUS_IP}:9090",
+                            "access":"proxy"
                           }' \
-                          "${GRAFANA_URL}/api/dashboards/db
+                          ${envVars['GRAFANA_URL']}/api/datasources
+
+                        # Import simple dashboard
+                        DASHBOARD_JSON='{
+                          "dashboard": {
+                            "title": "Application Metrics",
+                            "panels": [
+                              {
+                                "title": "CPU Usage",
+                                "type": "timeseries",
+                                "datasource": "Prometheus",
+                                "targets": [{"expr": "node_cpu_seconds_total"}],
+                                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+                              },
+                              {
+                                "title": "Memory Usage",
+                                "type": "timeseries",
+                                "datasource": "Prometheus",
+                                "targets": [{"expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes"}],
+                                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+                              }
+                            ]
+                          },
+                          "overwrite": true
+                        }'
+
+                        curl -X POST \
+                          -H "Content-Type: application/json" \
+                          -u admin:${GRAFANA_PASSWORD} \
+                          -d "\$DASHBOARD_JSON" \
+                          ${envVars['GRAFANA_URL']}/api/dashboards/db
                         """
                     }
                 }
             }
         }
+
+        stage('Display Monitoring URLs') {
+            steps {
+                script {
+                    def monitoringEnv = readFile('monitoring.env').trim()
+                    def envVars = monitoringEnv.split('\n').collectEntries { it.split('=', 2) }
+
+                    echo """
+                    ========== MONITORING LINKS ==========
+                    Prometheus: ${envVars['PROMETHEUS_URL']}
+                    Grafana: ${envVars['GRAFANA_URL']} (admin:${envVars['GRAFANA_CREDS'].split(':')[1]})
+                    Application Metrics: http://${envVars['APP_IP']}:8000/metrics
+                    Node Metrics: http://${envVars['APP_IP']}:9100/metrics
+                    =====================================
+                    """
+                }
+            }
+        }
     }
+
     post {
         always {
             junit 'test-results/*.xml'
             cleanWs()
-        }
-        failure {
-            script {
-                withCredentials([
-                    string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                    string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                    string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                    string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
-                ]) {
-                    sh '''
-                    # Clean up monitoring on failure
-                    az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
-                    az account set --subscription $ARM_SUBSCRIPTION_ID
-                    az container delete --yes --no-wait \
-                        --resource-group MyPatientSurveyRG \
-                        --name prometheus-${BUILD_NUMBER} || true
-                    az container delete --yes --no-wait \
-                        --resource-group MyPatientSurveyRG \
-                        --name grafana-${BUILD_NUMBER} || true
-                    '''
-                }
-            }
         }
     }
 }
