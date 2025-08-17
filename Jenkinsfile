@@ -287,24 +287,24 @@ pipeline {
         
                         # ===== GRAFANA DEPLOYMENT =====
                         az container create \
-    --resource-group MyPatientSurveyRG \
-    --name "$GRAFANA_NAME" \
-    --image grafana/grafana:9.5.6 \
-    --os-type Linux \
-    --cpu 0.5 \
-    --memory 1.5 \
-    --ports 3000 \
-    --ip-address Public \
-    --dns-name-label "$GRAFANA_NAME" \
-    --location uksouth \
-    --environment-variables \
-        GF_SECURITY_ADMIN_USER=admin \
-        GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
-        GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
-    --command-line "/bin/sh -c 'mkdir -p /etc/grafana/provisioning/dashboards && \
-        echo $DASHBOARD_BASE64 | base64 -d > /etc/grafana/provisioning/dashboards/default.json && \
-        echo $PROVISIONING_BASE64 | base64 -d > /etc/grafana/provisioning/dashboards.yml && \
-        /run.sh'"
+                            --resource-group MyPatientSurveyRG \
+                            --name "$GRAFANA_NAME" \
+                            --image grafana/grafana:9.5.6 \
+                            --os-type Linux \
+                            --cpu 0.5 \
+                            --memory 1.5 \
+                            --ports 3000 \
+                            --ip-address Public \
+                            --dns-name-label "$GRAFANA_NAME" \
+                            --location uksouth \
+                            --environment-variables \
+                                GF_SECURITY_ADMIN_USER=admin \
+                                GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
+                                GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
+                            --command-line "/bin/sh -c 'mkdir -p /etc/grafana/provisioning/dashboards && \
+                                echo $DASHBOARD_BASE64 | base64 -d > /etc/grafana/provisioning/dashboards/default.json && \
+                                echo $PROVISIONING_BASE64 | base64 -d > /etc/grafana/provisioning/dashboards.yml && \
+                                /run.sh'"
                         echo "🔎 Verifying deployments..."
                         verify_container_ready() {
                             local name=$1
