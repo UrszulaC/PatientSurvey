@@ -235,9 +235,15 @@
                         fi
         
                         # ===== PROMETHEUS DEPLOYMENT =====
-                        echo "📊 Deploying Prometheus ($PROMETHEUS_NAME)..."
-                        CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
-        
+                        # base64 encoded config with proper escaping
+                        CONFIG_CONTENT=$(cat $CONFIG_FILE | sed "s/DYNAMIC_APP_IP/${APP_IP}/g")
+                        CONFIG_BASE64=$(echo "$CONFIG_CONTENT" | base64 -w0)
+                        
+                        # Add debug output
+                        echo "=== Final Prometheus Config ==="
+                        echo "$CONFIG_CONTENT"
+                        echo "=============================="
+                        
                         az container create \
                           --resource-group MyPatientSurveyRG \
                           --name "$PROMETHEUS_NAME" \
@@ -249,10 +255,7 @@
                           --ip-address Public \
                           --dns-name-label "$PROMETHEUS_NAME" \
                           --location uksouth \
-                          --environment-variables \
-                            PROMETHEUS_WEB_LISTEN_ADDRESS=0.0.0.0:9090 \
-                            CONFIG_BASE64="$CONFIG_BASE64" \
-                          --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+                          --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && cat /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
         
                         # ===== GRAFANA DEPLOYMENT =====
                         echo "📈 Deploying Grafana ($GRAFANA_NAME)..."
@@ -811,6 +814,51 @@ stage('Deploy Application (Azure Container Instances)') {
                         echo \"=== Final Target Status ===\"
                         curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | \\
                         jq '.data.activeTargets[] | {instance: .discoveredLabels.__address__, health: .health, lastError: .lastError}'
+                    """
+                }
+            }
+        }
+        stage('Verify Node Exporter') {
+            steps {
+                script {
+                    def APP_IP = readFile('monitoring.env')
+                               .split('\n')
+                               .find { it.startsWith('NODE_METRICS_URL') }
+                               .replace('NODE_METRICS_URL=http://', '')
+                               .replace(':9100/metrics', '')
+                    
+                    sh """
+                        echo "=== Testing Node Exporter Directly ==="
+                        curl -v --connect-timeout 5 http://${APP_IP}:9100/metrics || {
+                            echo "❌ Node exporter not reachable"
+                            echo "Checking container processes..."
+                            az container exec --resource-group MyPatientSurveyRG \\
+                                            --name patientsurvey-app-${BUILD_NUMBER} \\
+                                            --exec-command "ps aux" || true
+                            exit 1
+                        }
+                    """
+                }
+            }
+        }
+        stage('Verify Prometheus Config') {
+            steps {
+                script {
+                    def PROMETHEUS_IP = readFile('monitoring.env')
+                                      .split('\n')
+                                      .find { it.startsWith('PROMETHEUS_URL') }
+                                      .replace('PROMETHEUS_URL=http://', '')
+                                      .replace(':9090', '')
+                    
+                    sh """
+                        echo "=== Current Prometheus Configuration ==="
+                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/status/config | jq -r .data.yaml
+                        
+                        echo "=== Checking Prometheus Targets ==="
+                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | jq '.data.activeTargets[]'
+                        
+                        echo "=== Checking Service Discovery ==="
+                        curl -s http://${PROMETHEUS_IP}:9090/api/v1/targets | jq '.data.activeTargets[].discoveredLabels'
                     """
                 }
             }
