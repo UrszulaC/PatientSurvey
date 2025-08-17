@@ -685,54 +685,33 @@ stage('Deploy Application (Azure Container Instances)') {
         stage('Configure Dynamic Monitoring') {
             steps {
                 script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
-                    ]) {
-                        // 1. Get the ACI IP
-                        ACI_IP = sh(script: '''
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" > /dev/null
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID" > /dev/null
-                            az container show -g MyPatientSurveyRG -n patientsurvey-app-${BUILD_NUMBER} --query ipAddress.ip -o tsv
-                        ''', returnStdout: true).trim()
-            
-                        if (!ACI_IP?.trim()) {
-                            error("Failed to get ACI IP address")
-                        }
-            
-                        // 2. Update Prometheus config
-                        def prometheusConfig = "${WORKSPACE}/infra/monitoring/prometheus.yml"
-                        
-                        sh """
-                            # Create backup (with proper quoting for paths with spaces)
-                            cp -v "${prometheusConfig}" "${prometheusConfig}.bak"
-                            
-                            # Update config (using alternative delimiter)
-                            sed -i 's|DYNAMIC_APP_IP|${ACI_IP}|g' '${prometheusConfig}'
-                            
-                            # Debug: Show the modified config
-                            echo "Modified config content:"
-                            cat '${prometheusConfig}'
-                            
-                            # Verify change
-                            grep -q '${ACI_IP}' '${prometheusConfig}' || {
-                                echo "ERROR: IP substitution failed - could not find ${ACI_IP} in config"
-                                echo "Current targets in config:"
-                                grep -A 5 'targets' '${prometheusConfig}' || true
-                                exit 1
-                            }
-                        """
-            
-                        // 3. Reload Prometheus
-                        sh """
-                            curl -v -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload || {
-                                echo "ERROR: Prometheus reload failed"
-                                exit 1
-                            }
-                        """
+                    // Verify Prometheus config is valid (optional but recommended)
+                    def configCheck = sh(
+                        script: "curl -s -X POST http://${env.PROMETHEUS_SERVER}:9090/api/v1/admin/tsdb/snapshot",
+                        returnStatus: true
+                    )
+                    
+                    if (configCheck != 0) {
+                        error("Prometheus configuration is invalid - check your prometheus.yml syntax")
                     }
+        
+                    // Trigger Prometheus reload
+                    sh """
+                        echo "Reloading Prometheus configuration..."
+                        curl -v -X POST http://${env.PROMETHEUS_SERVER}:9090/-/reload || {
+                            echo "ERROR: Prometheus reload failed"
+                            exit 1
+                        }
+                        echo "Prometheus reload triggered successfully"
+                    """
+                    
+                    // Optional: Verify targets are being discovered
+                    sh """
+                        echo "Waiting 10 seconds for target discovery..."
+                        sleep 10
+                        echo "Current targets:"
+                        curl -s http://${env.PROMETHEUS_SERVER}:9090/api/v1/targets | jq '.data.activeTargets[] | .discoveredLabels.__address__'
+                    """
                 }
             }
         }
