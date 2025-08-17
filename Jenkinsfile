@@ -216,26 +216,19 @@
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # ===== CLEANUP EXISTING CONTAINERS =====
-                            echo "🧹 Cleaning up existing containers..."
-                            CONTAINERS=$(az container list \
+                            # ===== GET APPLICATION IP =====
+                            echo "🔍 Getting application container IP..."
+                            APP_IP=$(az container show \
                                 --resource-group MyPatientSurveyRG \
-                                --query "[?contains(name, 'prometheus-') || contains(name, 'grafana-')].name" \
+                                --name "patientsurvey-app-${BUILD_NUMBER}" \
+                                --query "ipAddress.ip" \
                                 -o tsv)
-        
-                            if [ -n "$CONTAINERS" ]; then
-                                echo "🗑️ Found monitoring containers to delete:"
-                                echo "$CONTAINERS"
-                                
-                                for CONTAINER in $CONTAINERS; do
-                                    echo "➖ Deleting $CONTAINER..."
-                                    az container delete \
-                                        --resource-group MyPatientSurveyRG \
-                                        --name "$CONTAINER" \
-                                        --yes --no-wait || true
-                                done
-                                sleep 10  # Wait for deletions to initiate
+                            
+                            if [ -z "$APP_IP" ]; then
+                                echo "❌ ERROR: Failed to get application IP"
+                                exit 1
                             fi
+                            echo "✅ Application IP: $APP_IP"
         
                             # ===== DEPLOY PROMETHEUS =====
                             echo "📊 Deploying Prometheus..."
@@ -247,6 +240,8 @@
                                 exit 1
                             fi
         
+                            # Update config with application IP
+                            sed -i "s/DYNAMIC_APP_IP/${APP_IP}/g" "$CONFIG_FILE"
                             CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
         
                             az container create \
@@ -316,8 +311,8 @@
                             verify_container_ready "$PROMETHEUS_NAME" || exit 1
                             verify_container_ready "$GRAFANA_NAME" || exit 1
         
-                            # ===== GET ENDPOINTS =====
-                            echo "🔗 Getting service endpoints..."
+                            # ===== GET MONITORING ENDPOINTS =====
+                            echo "🔗 Getting monitoring endpoints..."
                             PROMETHEUS_IP=$(az container show \
                                 -g MyPatientSurveyRG \
                                 -n "$PROMETHEUS_NAME" \
@@ -331,14 +326,13 @@
         
                             # ===== WRITE CLEAN ENVIRONMENT FILE =====
                             echo "📝 Writing monitoring environment variables..."
-                            {
-                                echo "PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090"
-                                echo "GRAFANA_URL=http://${GRAFANA_IP}:3000"
-                                echo "GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}"
-                                echo "APP_IP=${APP_IP}"
-                            } > monitoring.env
+                            cat > monitoring.env <<EOF
+        PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
+        GRAFANA_URL=http://${GRAFANA_IP}:3000
+        GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+        APP_IP=${APP_IP}
+        EOF
         
-                            # Debug output (doesn't affect the file)
                             echo "=== monitoring.env contents ==="
                             cat monitoring.env
                             echo "=============================="
