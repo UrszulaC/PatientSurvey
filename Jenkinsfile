@@ -17,6 +17,78 @@
                 cleanWs()
             }
         }
+        stage('Cleanup Old Containers') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                    ]) {
+                        sh '''#!/bin/bash
+                        set -e
+        
+                        echo "🔑 Authenticating to Azure..."
+                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                        echo "🧹 Cleaning up old containers..."
+                        # List all containers except those with current BUILD_NUMBER
+                        CONTAINERS=$(az container list \
+                            --resource-group "$RESOURCE_GROUP" \
+                            --query "[?contains(name, 'patientsurvey') && !contains(name, '${BUILD_NUMBER}')].name" \
+                            -o tsv)
+                        
+                        if [ -n "$CONTAINERS" ]; then
+                            echo "🗑️ Found containers to delete:"
+                            echo "$CONTAINERS"
+                            
+                            # Delete containers in parallel
+                            for CONTAINER in $CONTAINERS; do
+                                (
+                                    echo "➖ Deleting $CONTAINER..."
+                                    az container delete \
+                                        --resource-group "$RESOURCE_GROUP" \
+                                        --name "$CONTAINER" \
+                                        --yes --no-wait || true
+                                ) &
+                            done
+                            wait
+                            echo "✅ Old containers deletion initiated"
+                        else
+                            echo "ℹ️ No old containers found to delete"
+                        fi
+        
+                        # Also clean up monitoring containers from previous runs
+                        echo "🧹 Cleaning up old monitoring containers..."
+                        MONITORING_CONTAINERS=$(az container list \
+                            --resource-group "$RESOURCE_GROUP" \
+                            --query "[?contains(name, 'prometheus-') || contains(name, 'grafana-') && !contains(name, '${BUILD_NUMBER}')].name" \
+                            -o tsv)
+                        
+                        if [ -n "$MONITORING_CONTAINERS" ]; then
+                            echo "🗑️ Found monitoring containers to delete:"
+                            echo "$MONITORING_CONTAINERS"
+                            
+                            for CONTAINER in $MONITORING_CONTAINERS; do
+                                (
+                                    echo "➖ Deleting $CONTAINER..."
+                                    az container delete \
+                                        --resource-group "$RESOURCE_GROUP" \
+                                        --name "$CONTAINER" \
+                                        --yes --no-wait || true
+                                ) &
+                            done
+                            wait
+                        fi
+                        '''
+                    }
+                }
+            }
+        }
+
+
         stage('Clean Environment') {
           steps {
             sh '''
@@ -561,9 +633,43 @@
     }
 
     post {
-        always {
-            junit 'test-results/*.xml'
-            cleanWs()
+    always {
+        junit 'test-results/*.xml'
+        script {
+            withCredentials([
+                string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+            ]) {
+                sh '''#!/bin/bash
+                set -e
+                echo "🧹 Post-build cleanup..."
+                az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                az account set --subscription "$ARM_SUBSCRIPTION_ID"
+                
+                # Delete current build containers if pipeline failed
+                if [ "$BUILD_RESULT" != "SUCCESS" ]; then
+                    echo "⚠️ Pipeline failed - cleaning up current build containers"
+                    az container delete \
+                        --resource-group "$RESOURCE_GROUP" \
+                        --name "patientsurvey-app-${BUILD_NUMBER}" \
+                        --yes --no-wait || true
+                    
+                    az container delete \
+                        --resource-group "$RESOURCE_GROUP" \
+                        --name "prometheus-${BUILD_NUMBER}" \
+                        --yes --no-wait || true
+                    
+                    az container delete \
+                        --resource-group "$RESOURCE_GROUP" \
+                        --name "grafana-${BUILD_NUMBER}" \
+                        --yes --no-wait || true
+                fi
+                '''
+            }
         }
+        cleanWs()
     }
+}
 }
