@@ -19,6 +19,9 @@ survey_failures = Counter('patient_survey_failures_total', 'Total failed survey 
 active_surveys = Counter('active_surveys_total', 'Number of active surveys initialized')
 question_count = Counter('survey_questions_total', 'Total number of questions initialized')
 
+# Start Prometheus metrics server
+start_http_server(8000)
+logger.info("Prometheus metrics available on port 8000")
 
 # This function needs to handle its own connection for creating/dropping databases
 # Decorator connects to a specific database.
