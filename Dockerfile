@@ -1,13 +1,15 @@
 FROM python:3.9-slim-bullseye
 
-# Install system dependencies
+# Install system dependencies including ODBC
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         wget \
-        procps \
-        net-tools \
+        unixodbc \
+        unixodbc-dev \
+        odbcinst \
         libodbc1 \
-        unixodbc-dev && \
+        procps \
+        net-tools && \
     rm -rf /var/lib/apt/lists/*
 
 # Install node_exporter
@@ -21,6 +23,9 @@ COPY . .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Verify ODBC installation
+RUN odbcinst -j && ldconfig
 
 # Run services
 CMD ["sh", "-c", "/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100 & python3 -m app.main"]
