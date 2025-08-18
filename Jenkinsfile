@@ -367,7 +367,7 @@ pipeline {
                             --source-address-prefix Internet \
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
-                            --destination-port-range 8001 \
+                            --destination-port-range 9100 \
                             --description "Allow Prometheus scraping from anywhere"
         
                         echo "✅ Network security configured"
@@ -417,7 +417,7 @@ pipeline {
                              --os-type Linux \
                              --cpu 0.5 \
                              --memory 1.5 \
-                             --ports 8001 \
+                             --ports 9090 \
                              --ip-address Public \
                              --dns-name-label "$PROMETHEUS_NAME" \
                              --location uksouth \
@@ -639,3 +639,4 @@ pipeline {
         }
     }
 }
+
