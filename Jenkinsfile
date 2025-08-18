@@ -497,6 +497,7 @@ pipeline {
                             cat monitoring.env
                             echo "=============================="
                             '''
+                            archiveArtifacts artifacts: 'monitoring.env'
                         }
                     }
                 }
@@ -506,6 +507,7 @@ pipeline {
         stage('Deploy Application') {
             steps {
                 script {
+                    unarchive mapping: ['monitoring.env': 'monitoring.env']
                     withCredentials([
                         string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
@@ -605,6 +607,7 @@ pipeline {
         stage('Configure Monitoring') {
                 steps {
                     script {
+                        unarchive mapping: ['monitoring.env': 'monitoring.env']
                         // Verify monitoring.env exists before reading
                         if (!fileExists('monitoring.env')) {
                             error("monitoring.env file not found! Check previous stage logs.")
