@@ -487,10 +487,10 @@ pipeline {
                             # ===== WRITE MONITORING ENV FILE =====
                             echo "📝 Writing monitoring environment variables..."
                             cat > monitoring.env <<EOF
-        PROMETHEUS_URL=http://prometheus-epa.uksouth.azurecontainer.io:9090
-        GRAFANA_URL=http://grafana-epa.uksouth.azurecontainer.io:3000
-        GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
-        EOF
+                            PROMETHEUS_URL=http://prometheus-epa.uksouth.azurecontainer.io:9090
+                            GRAFANA_URL=http://grafana-epa.uksouth.azurecontainer.io:3000
+                            GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+                            EOF
         
                             echo "=== monitoring.env contents ==="
                             cat monitoring.env
