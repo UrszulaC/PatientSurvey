@@ -40,7 +40,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN odbcinst -j && ldconfig
 
 # Expose ports: node_exporter
-EXPOSE 9100
+EXPOSE 9100 8001 \
 
 # Healthcheck for node_exporter
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
