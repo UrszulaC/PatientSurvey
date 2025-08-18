@@ -4,20 +4,39 @@ global:
   scrape_timeout: 10s
 
 scrape_configs:
-  # Self-monitoring
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  # Patient Survey App (CLI app metrics on 8001)
   - job_name: 'patient-survey-app'
     static_configs:
-      - targets: ['${APP_IP}:8001']
+      - targets: ['${APP_IP}:8001']   # <-- variable placeholder
 
-  # Node Exporter (inside your app container)
-  - job_name: 'node-exporter'
+  - job_name: 'myapp-node'
     static_configs:
-      - targets: ['${APP_IP}:9100']
+      - targets: ['${APP_IP}:9100']  # <-- variable placeholder
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
+        action: keep
+
+  - job_name: 'aci-node-exporter'
+    azure_sd_configs:
+      - environment: AzurePublicCloud
+        subscription_id: '${AZURE_SUBSCRIPTION_ID}'
+        tenant_id: '${AZURE_TENANT_ID}'
+        client_id: '${AZURE_CLIENT_ID}'
+        client_secret: '${AZURE_CLIENT_SECRET}'
+        refresh_interval: 60s
+        port: 9100
+    relabel_configs:
+      - source_labels: [__meta_azure_machine_name]
+        target_label: aci_name
+      - source_labels: [__meta_azure_resource_group]
+        target_label: resource_group
+      - action: keep
+        regex: '.*:9100'
+        source_labels: [__address__]
     metric_relabel_configs:
       - source_labels: [__name__]
         regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
