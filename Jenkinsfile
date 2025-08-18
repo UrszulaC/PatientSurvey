@@ -412,6 +412,7 @@ pipeline {
                 }
             }
         }
+        
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
@@ -425,52 +426,45 @@ pipeline {
                         timeout(time: 15, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
-        
+       
                             # ===== AUTHENTICATION =====
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-                            # ===== CONSTANTS =====
-                            RESOURCE_GROUP="MyPatientSurveyRG"
-                            LOCATION="uksouth"
-                            PROMETHEUS_NAME="prometheus-epa"
-                            GRAFANA_NAME="grafana-epa"
-                            PROMETHEUS_CONFIG="$WORKSPACE/infra/monitoring/prometheus.yml"
-        
-                            # ===== CLEANUP EXISTING CONTAINERS =====
-                            echo "🧹 Cleaning up existing containers if any..."
-                            az container delete -g "$RESOURCE_GROUP" -n "$PROMETHEUS_NAME" --yes --no-wait || true
-                            az container delete -g "$RESOURCE_GROUP" -n "$GRAFANA_NAME" --yes --no-wait || true
-        
+       
                             # ===== DEPLOY PROMETHEUS =====
                             echo "📊 Deploying Prometheus..."
-                            if [ ! -f "$PROMETHEUS_CONFIG" ]; then
-                                echo "❌ Error: prometheus.yml not found at $PROMETHEUS_CONFIG"
+                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
+       
+                            if [ ! -f "$CONFIG_FILE" ]; then
+                                echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
                                 exit 1
                             fi
-        
-                            # Replace placeholder IP if needed
-                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$PROMETHEUS_CONFIG"
-                            CONFIG_BASE64=$(base64 -w0 "$PROMETHEUS_CONFIG")
-        
+       
+                            # Use placeholder IP initially
+                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
+                            CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
+       
                             az container create \
-                                --resource-group "$RESOURCE_GROUP" \
-                                --name "$PROMETHEUS_NAME" \
-                                --image prom/prometheus:v2.47.0 \
-                                --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1.5 \
-                                --ports 9090 \
-                                --ip-address Public \
-                                --dns-name-label "$PROMETHEUS_NAME" \
-                                --location "$LOCATION" \
-                                --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-        
+                             --resource-group MyPatientSurveyRG \
+                             --name "$PROMETHEUS_NAME" \
+                             --image prom/prometheus:v2.47.0 \
+                             --os-type Linux \
+                             --cpu 0.5 \
+                             --memory 1.5 \
+                             --ports 9090 \
+                             --ip-address Public \
+                             --dns-name-label "prometheus-survey" \
+                             --location uksouth \
+                             --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+       
                             # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
+                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+       
                             az container create \
-                                --resource-group "$RESOURCE_GROUP" \
+                                --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
                                 --image grafana/grafana:9.5.6 \
                                 --os-type Linux \
@@ -478,26 +472,43 @@ pipeline {
                                 --memory 1.5 \
                                 --ports 3000 \
                                 --ip-address Public \
-                                --dns-name-label "$GRAFANA_NAME" \
-                                --location "$LOCATION" \
+                                --dns-name-label "grafana-survey" \
+                                --location uksouth \
                                 --environment-variables \
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-        
-                            # ===== WRITE MONITORING ENV FILE ===== 
-                            echo "📝 Writing monitoring environment variables..." 
-                            cat > monitoring.env <<EOF 
-                            PROMETHEUS_URL=http://prometheus-epa.uksouth.azurecontainer.io:9090 
-                            GRAFANA_URL=http://grafana-epa.uksouth.azurecontainer.io:3000 
-                            GRAFANA_CREDS=admin:${GRAFANA_PASSWORD} EOF 
-                            echo "=== monitoring.env contents ===" cat monitoring.env 
+       
+                            # ===== GET MONITORING ENDPOINTS =====
+                            echo "🔗 Getting monitoring endpoints..."
+                            PROMETHEUS_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$PROMETHEUS_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+                            GRAFANA_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$GRAFANA_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+       
+                            # ===== WRITE MONITORING ENV FILE =====
+                            echo "📝 Writing monitoring environment variables..."
+                            cat > monitoring.env <<EOF
+                            PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
+                            GRAFANA_URL=http://${GRAFANA_IP}:3000
+                            GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+                            EOF
+       
+                            echo "=== monitoring.env contents ==="
+                            cat monitoring.env
                             echo "=============================="
+                            '''
                         }
                     }
                 }
             }
         }
-
+        
         stage('Deploy Application') {
             steps {
                 script {
@@ -640,22 +651,23 @@ pipeline {
                     }
                 }
             }
+
+            
             stage('Display Monitoring URLs') {
                 steps {
                     sh '''#!/bin/bash
-                    # Load variables from monitoring.env
-                    set -eo pipefail
-                    source monitoring.env
-            
-                    echo "========== MONITORING LINKS =========="
-                    echo "Prometheus Dashboard: $PROMETHEUS_URL"
-                    echo "Grafana Dashboard: $GRAFANA_URL"
-                    echo "Node Metrics: http://$APP_IP:9100/metrics"
-                    echo "Patient Survey App Metrics: http://$APP_IP:8001/metrics"
-                    echo "====================================="
+                        # Load variables from monitoring.env
+                        source monitoring.env
+                        
+                        echo "========== MONITORING LINKS =========="
+                        echo "Prometheus Dashboard: $PROMETHEUS_URL"
+                        echo "Grafana Dashboard: $GRAFANA_URL"
+                        echo "Node Metrics: http://$APP_IP:9100/metrics"
+                        echo "Patient Survey App Metrics: http://$APP_IP:8001/metrics"
+                        echo "====================================="
                     '''
                 }
-            }          
+            }
         
     }
     post {
