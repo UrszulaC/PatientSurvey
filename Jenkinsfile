@@ -573,10 +573,10 @@ pipeline {
             }
         }
         
-        stage('Configure Monitoring') {
+            stage('Configure Monitoring') {
                 steps {
                     script {
-                        // Read monitoring.env more reliably
+                        // Read monitoring.env
                         def monitoringEnv = readFile('monitoring.env').trim()
                         def envVars = [:]
                         monitoringEnv.split('\n').each { line ->
@@ -586,20 +586,15 @@ pipeline {
                             }
                         }
             
-                        // Verify required variables
                         def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
                         def missingVars = requiredVars.findAll { !envVars[it] }
-                        
                         if (missingVars) {
                             error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
                         }
             
-                        // Update Prometheus config
                         sh """
-                            # Get Prometheus IP
                             PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | sed 's|http://||;s|:9090||')
-                            
-                            # Create updated config
+            
                             cat <<EOF > prometheus-config.yml
                             global:
                               scrape_interval: 15s
@@ -609,14 +604,18 @@ pipeline {
                               - job_name: 'node-exporter'
                                 static_configs:
                                   - targets: ['${envVars['APP_IP']}:9100']
+            
+                              - job_name: 'app-metrics'
+                                static_configs:
+                                  - targets: ['${envVars['APP_IP']}:8001']
                             EOF
             
-                            # Reload Prometheus
                             curl -X POST --data-binary @prometheus-config.yml http://\${PROMETHEUS_IP}:9090/-/reload || echo "⚠️ Prometheus reload failed (might need manual configuration)"
                         """
                     }
                 }
             }
+
             
             stage('Display Monitoring URLs') {
                 steps {
