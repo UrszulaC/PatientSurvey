@@ -620,12 +620,15 @@ pipeline {
             stage('Display Monitoring URLs') {
                 steps {
                     sh '''#!/bin/bash
-                    echo "========== MONITORING LINKS =========="
-                    echo "Prometheus Dashboard: $(grep PROMETHEUS_URL monitoring.env | cut -d= -f2)"
-                    echo "Grafana Dashboard: $(grep GRAFANA_URL monitoring.env | cut -d= -f2)"
-                    echo "Node Metrics: http://$(grep APP_IP monitoring.env | cut -d= -f2):9100/metrics"
-                    echo "App Metrics: http://$(grep APP_IP monitoring.env | cut -d= -f2):8001/metrics"
-                    echo "====================================="
+                        # Load variables from monitoring.env
+                        source monitoring.env
+                        
+                        echo "========== MONITORING LINKS =========="
+                        echo "Prometheus Dashboard: $PROMETHEUS_URL"
+                        echo "Grafana Dashboard: $GRAFANA_URL"
+                        echo "Node Metrics: http://$APP_IP:9100/metrics"
+                        echo "Patient Survey App Metrics: http://$APP_IP:8001/metrics"
+                        echo "====================================="
                     '''
                 }
             }
