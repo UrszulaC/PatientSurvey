@@ -2,7 +2,7 @@ FROM python:3.9-slim-bullseye
 
 WORKDIR /app
 
-# Install minimal requirements
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         wget && \
@@ -14,12 +14,15 @@ RUN wget https://github.com/prometheus/node_exporter/releases/download/v1.6.1/no
     rm /tmp/node_exporter.tar.gz && \
     chmod +x /usr/local/bin/node_exporter
 
-COPY app/ .
+# Copy application files
+COPY app /app
 COPY requirements.txt .
 
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Run both services (node_exporter in background, app in foreground)
-EXPOSE 9100
+# Set the working directory to root (since your app runs from /)
+WORKDIR /
 
-CMD ["sh", "-c", "/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100 & python3 /app/main.py"]
+# Run both services
+CMD ["sh", "-c", "/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100 & cd / && python3 -m app.main"]
