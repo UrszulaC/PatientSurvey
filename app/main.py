@@ -2,8 +2,8 @@ import logging
 import json
 import time
 import pyodbc
-from utils.db_utils import get_db_connection
-from config import Config
+from app.utils.db_utils import get_db_connection
+from app.config import Config
 
 from prometheus_client import start_http_server, Counter
 import threading
