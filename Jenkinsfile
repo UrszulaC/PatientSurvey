@@ -448,8 +448,8 @@ pipeline {
                                 --name "$GRAFANA_NAME" \
                                 --image grafana/grafana:9.5.6 \
                                 --os-type Linux \
-                                --cpu 1 \  # Increased from 0.5
-                                --memory 2 \  # Increased from 1.5
+                                --cpu 1 \
+                                --memory 2 \
                                 --ports 3000 \
                                 --ip-address Public \
                                 --dns-name-label "$GRAFANA_NAME" \
