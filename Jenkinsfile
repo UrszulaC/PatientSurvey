@@ -86,7 +86,43 @@ pipeline {
                 '''
             }
         }
+        stage('Prepare Prometheus Config') {
+            steps {
+                sh '''
+                # Ensure APP_IP is set in Jenkins environment
+                echo "Using APP_IP=${APP_IP}"
         
+                # Generate Prometheus config dynamically
+                cat > prometheus.yml <<EOL
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+          scrape_timeout: 10s
+        
+        scrape_configs:
+          # Prometheus self-monitoring
+          - job_name: 'prometheus'
+            static_configs:
+              - targets: ['localhost:9090']
+        
+          # Patient Survey CLI app metrics
+          - job_name: 'patient-survey-app'
+            static_configs:
+              - targets: ['${APP_IP}:8001']
+        
+          # Node exporter metrics (inside app container)
+          - job_name: 'myapp-node'
+            static_configs:
+              - targets: ['${APP_IP}:9100']
+        EOL
+        
+                # Start Prometheus with the generated config
+                nohup prometheus --config.file=prometheus.yml > prometheus.log 2>&1 &
+                echo "Prometheus started with dynamic config"
+                '''
+            }
+        }
+
         stage('Install Terraform') {
             steps {
                 sh '''
