@@ -82,7 +82,7 @@ pipeline {
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
                         string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
                     ]) {
-                        timeout(time: 15, unit: 'MINUTES') {
+                        timeout(time: 20, unit: 'MINUTES') {  // Increased timeout
                             sh '''#!/bin/bash
                             set -eo pipefail
         
@@ -94,23 +94,49 @@ pipeline {
                             }
                             az account set --subscription "$ARM_SUBSCRIPTION_ID" --output none
         
+                            # ===== RESOURCE CLEANUP =====
+                            echo "🧹 CLEANING UP PREVIOUS RESOURCES..."
+                            
+                            # List of resource names to clean up
+                            declare -a resources=(
+                                "node-exporter-${BUILD_NUMBER}"
+                                "prometheus-${BUILD_NUMBER}"
+                                "grafana-${BUILD_NUMBER}"
+                                "node-exporter-$((BUILD_NUMBER-1))"
+                                "prometheus-$((BUILD_NUMBER-1))"
+                                "grafana-$((BUILD_NUMBER-1))"
+                            )
+        
+                            # Clean up each resource with timeout
+                            for resource in "${resources[@]}"; do
+                                echo "🔄 Checking for existing resource: $resource"
+                                if az container show -g "$RESOURCE_GROUP" -n "$resource" --query "name" -o tsv &>/dev/null; then
+                                    echo "⚠️ Found existing container $resource - deleting..."
+                                    if ! timeout 120 az container delete -g "$RESOURCE_GROUP" -n "$resource" --yes --output none; then
+                                        echo "❌ Failed to delete $resource - attempting force delete..."
+                                        az container delete -g "$RESOURCE_GROUP" -n "$resource" --yes --no-wait --output none
+                                    fi
+                                    sleep 10  # Short pause between deletions
+                                fi
+                            done
+        
+                            # Additional cleanup for dangling resources
+                            echo "🧹 Cleaning up any dangling public IPs..."
+                            az network public-ip list -g "$RESOURCE_GROUP" --query "[?tags.'aci-container-name'].id" -o tsv | while read ip_id; do
+                                echo "Deleting orphaned IP: $ip_id"
+                                az network public-ip delete --ids "$ip_id" --yes --output none
+                            done
+        
+                            # Wait for clean state
+                            echo "⏳ Waiting for cleanup to complete..."
+                            sleep 30
+        
                             # ===== DEPLOY NODE EXPORTER =====
                             echo "🚀 Deploying Node Exporter..."
                             NODE_EXPORTER_NAME="node-exporter-${BUILD_NUMBER}"
                             
-                            # Clean up any existing container first (with timeout)
-                            echo "🧹 Checking for existing container..."
-                            if timeout 60 az container show -g "$RESOURCE_GROUP" -n "$NODE_EXPORTER_NAME" --query "name" -o tsv &>/dev/null; then
-                                echo "⚠️ Existing container found, deleting it..."
-                                timeout 120 az container delete -g "$RESOURCE_GROUP" -n "$NODE_EXPORTER_NAME" --yes --output none || {
-                                    echo "❌ Failed to delete existing container"
-                                    exit 1
-                                }
-                                sleep 15  # Wait for cleanup
-                            fi
-        
                             # Deploy with explicit timeout and diagnostics
-                            echo "📦 Creating new Node Exporter instance (with timeout)..."
+                            echo "📦 Creating new Node Exporter instance..."
                             if ! timeout 300 az container create \
                                 --resource-group "$RESOURCE_GROUP" \
                                 --name "$NODE_EXPORTER_NAME" \
@@ -146,7 +172,6 @@ pipeline {
                 }
             }
         }
-        
         stage('Deploy Application') {
             steps {
                 script {
