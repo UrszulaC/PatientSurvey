@@ -333,28 +333,18 @@ pipeline {
                         NSG_NAME="monitoring-nsg"
                         RG_NAME="MyPatientSurveyRG"
         
-                        # Check if NSG exists
+                        # Create NSG if it doesn't exist
                         if ! az network nsg show -g "$RG_NAME" -n "$NSG_NAME" &>/dev/null; then
                             echo "🛠️ Creating NSG $NSG_NAME..."
-                            az network nsg create \
-                                --resource-group "$RG_NAME" \
-                                --name "$NSG_NAME" \
-                                --location uksouth
+                            az network nsg create --resource-group "$RG_NAME" --name "$NSG_NAME" --location uksouth
                         fi
         
-                        # Delete existing rules if they exist (idempotent)
+                        # Delete existing rules if they exist
                         echo "♻️ Removing existing rules if present..."
-                        az network nsg rule delete \
-                            --resource-group "$RG_NAME" \
-                            --nsg-name "$NSG_NAME" \
-                            --name AllowNodeExporter || true
-                        
-                        az network nsg rule delete \
-                            --resource-group "$RG_NAME" \
-                            --nsg-name "$NSG_NAME" \
-                            --name AllowAppMetrics || true
+                        az network nsg rule delete --resource-group "$RG_NAME" --nsg-name "$NSG_NAME" --name AllowNodeExporter || true
+                        az network nsg rule delete --resource-group "$RG_NAME" --nsg-name "$NSG_NAME" --name AllowPrometheus || true
         
-                        # Add required rules with broader access
+                        # Add Node Exporter rule
                         echo "➕ Adding Node Exporter rule (port 9100)..."
                         az network nsg rule create \
                             --resource-group "$RG_NAME" \
@@ -370,12 +360,29 @@ pipeline {
                             --destination-port-range 9100 \
                             --description "Allow Prometheus scraping from anywhere"
         
+                        # Add Prometheus rule
+                        echo "➕ Adding Prometheus rule (port 9090)..."
+                        az network nsg rule create \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowPrometheus \
+                            --priority 320 \
+                            --direction Inbound \
+                            --access Allow \
+                            --protocol Tcp \
+                            --source-address-prefix Internet \
+                            --source-port-range '*' \
+                            --destination-address-prefix '*' \
+                            --destination-port-range 9090 \
+                            --description "Allow external access to Prometheus dashboard"
+        
                         echo "✅ Network security configured"
                         '''
                     }
                 }
             }
         }
+
         
         stage('Deploy Monitoring Stack') {
             steps {
