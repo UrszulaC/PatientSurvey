@@ -386,131 +386,114 @@ pipeline {
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
                         string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
                     ]) {
-                        timeout(time: 30, unit: 'MINUTES') {
+                        timeout(time: 10, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
         
-                            # ===== IMPROVED AZURE AUTH =====
-                            echo "🔑 Authenticating to Azure with retries..."
-                            for i in {1..3}; do
-                                if az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"; then
-                                    az account set --subscription "$ARM_SUBSCRIPTION_ID"
-                                    break
-                                elif [ $i -eq 3 ]; then
-                                    echo "❌ Azure authentication failed after 3 attempts"
-                                    exit 1
-                                else
-                                    sleep 10
-                                fi
-                            done
+                            # ===== AZURE AUTH =====
+                            echo "🔑 Authenticating to Azure..."
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" || {
+                                echo "❌ Azure authentication failed"
+                                exit 1
+                            }
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # ===== NODE EXPORTER DEPLOYMENT =====
-                            echo "🖥️ Deploying Node Exporter with stability improvements..."
+                            # ===== DEPLOY NODE EXPORTER =====
+                            echo "🖥️ Deploying Basic Node Exporter..."
                             NODE_EXPORTER_NAME="node-exporter-${BUILD_NUMBER}"
                             
-                            # Minimal safe collectors for ACI
-                            COLLECTORS=(
-                                "--collector.disable-defaults"
-                                "--collector.cpu"
-                                "--collector.meminfo" 
-                                "--collector.diskstats"
-                                "--collector.filesystem"
-                                "--collector.loadavg"
-                            )
-        
-                            # Deployment with health check
+                            # Minimal safe configuration for ACI
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$NODE_EXPORTER_NAME" \
                                 --image prom/node-exporter:v1.6.1 \
                                 --os-type Linux \
                                 --cpu 1 \
-                                --memory 2 \
+                                --memory 1.5 \
                                 --ports 9100 \
                                 --ip-address Public \
                                 --location uksouth \
-                                --command-line "${COLLECTORS[*]}" \
-                                --no-wait  # Don't block pipeline
+                                --command-line "--collector.disable-defaults --collector.cpu --collector.meminfo --collector.diskstats --collector.filesystem"
         
-                            echo "⏳ Waiting for Node Exporter to stabilize..."
-                            NODE_EXPORTER_IP=""
-                            for i in {1..10}; do
-                                if [ -z "$NODE_EXPORTER_IP" ]; then
-                                    NODE_EXPORTER_IP=$(az container show \
-                                        -g MyPatientSurveyRG \
-                                        -n "$NODE_EXPORTER_NAME" \
-                                        --query "ipAddress.ip" \
-                                        -o tsv || true)
-                                    sleep 15
-                                else
-                                    break
-                                fi
-                            done
+                            echo "⏳ Waiting for Node Exporter IP assignment..."
+                            sleep 15  # Give Azure time to assign IP
         
-                            [ -z "$NODE_EXPORTER_IP" ] && { echo "❌ Failed to get Node Exporter IP"; exit 1; }
-                            echo "✅ Node Exporter deployed at $NODE_EXPORTER_IP:9100"
+                            NODE_EXPORTER_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$NODE_EXPORTER_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
         
-                            # ===== PROMETHEUS & GRAFANA DEPLOYMENT =====
-                            echo "📊 Starting parallel monitoring deployment..."
-                            (
-                                # Prometheus deployment
-                                echo "Deploying Prometheus..."
-                                PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                                cat > config.yml <<EOF
-                                global:
-                                  scrape_interval: 15s
-                                  evaluation_interval: 15s
-                                scrape_configs:
-                                  - job_name: 'node'
-                                    static_configs:
-                                      - targets: ['$NODE_EXPORTER_IP:9100']
-                                  - job_name: 'app'
-                                    static_configs:
-                                      - targets: ['${APP_IP}:8000']
-                                EOF
+                            if [ -z "$NODE_EXPORTER_IP" ]; then
+                                echo "❌ Node Exporter failed to start. Checking logs..."
+                                az container logs --resource-group MyPatientSurveyRG --name "$NODE_EXPORTER_NAME" || true
+                                exit 1
+                            fi
         
-                                az container create \
-                                    --resource-group MyPatientSurveyRG \
-                                    --name "$PROMETHEUS_NAME" \
-                                    --image prom/prometheus:v2.47.0 \
-                                    --os-type Linux \
-                                    --cpu 2 \
-                                    --memory 3 \
-                                    --ports 9090 \
-                                    --ip-address Public \
-                                    --location uksouth \
-                                    --command-line "--config.file=/etc/prometheus/prometheus.yml" \
-                                    --file config.yml=/etc/prometheus/prometheus.yml
-                            ) &  # Run in background
+                            echo "✅ Node Exporter running at: $NODE_EXPORTER_IP:9100"
         
-                            (
-                                # Grafana deployment
-                                echo "Deploying Grafana..."
-                                GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-                                az container create \
-                                    --resource-group MyPatientSurveyRG \
-                                    --name "$GRAFANA_NAME" \
-                                    --image grafana/grafana:9.5.6 \
-                                    --os-type Linux \
-                                    --cpu 1 \
-                                    --memory 2 \
-                                    --ports 3000 \
-                                    --ip-address Public \
-                                    --location uksouth \
-                                    --environment-variables \
-                                        GF_SECURITY_ADMIN_USER=admin \
-                                        GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-                            ) &  # Run in background
+                            # ===== DEPLOY PROMETHEUS =====
+                            echo "📊 Deploying Prometheus..."
+                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            
+                            cat <<EOF > prometheus-config.yml
+                            global:
+                              scrape_interval: 15s
+                              evaluation_interval: 15s
         
-                            wait
+                            scrape_configs:
+                              - job_name: 'node'
+                                static_configs:
+                                  - targets: ['$NODE_EXPORTER_IP:9100']
+                              - job_name: 'app'
+                                static_configs:
+                                  - targets: ['${APP_IP}:8000']
+                            EOF
         
-                            # ===== VERIFICATION =====
-                            echo "🔍 Verifying deployments..."
-                            PROMETHEUS_IP=$(az container show -g MyPatientSurveyRG -n "prometheus-${BUILD_NUMBER}" --query "ipAddress.ip" -o tsv)
-                            GRAFANA_IP=$(az container show -g MyPatientSurveyRG -n "grafana-${BUILD_NUMBER}" --query "ipAddress.ip" -o tsv)
+                            az container create \
+                                --resource-group MyPatientSurveyRG \
+                                --name "$PROMETHEUS_NAME" \
+                                --image prom/prometheus:v2.47.0 \
+                                --os-type Linux \
+                                --cpu 1 \
+                                --memory 2 \
+                                --ports 9090 \
+                                --ip-address Public \
+                                --location uksouth \
+                                --command-line "--config.file=/etc/prometheus/prometheus.yml" \
+                                --file prometheus-config.yml=/etc/prometheus/prometheus.yml
         
-                            echo "✅ Prometheus: http://$PROMETHEUS_IP:9090"
-                            echo "✅ Grafana: http://$GRAFANA_IP:3000 (admin:${GRAFANA_PASSWORD})"
+                            PROMETHEUS_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$PROMETHEUS_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+                            echo "✅ Prometheus running at: $PROMETHEUS_IP:9090"
+        
+                            # ===== DEPLOY GRAFANA =====
+                            echo "📈 Deploying Grafana..."
+                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+                            az container create \
+                                --resource-group MyPatientSurveyRG \
+                                --name "$GRAFANA_NAME" \
+                                --image grafana/grafana:9.5.6 \
+                                --os-type Linux \
+                                --cpu 1 \
+                                --memory 2 \
+                                --ports 3000 \
+                                --ip-address Public \
+                                --location uksouth \
+                                --environment-variables \
+                                    GF_SECURITY_ADMIN_USER=admin \
+                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
+        
+                            GRAFANA_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$GRAFANA_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+                            echo "✅ Grafana running at: $GRAFANA_IP:3000"
+                            echo "Grafana credentials: admin:$GRAFANA_PASSWORD"
         
                             # Save endpoints
                             cat > monitoring.env <<EOF
