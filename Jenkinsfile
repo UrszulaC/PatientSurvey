@@ -333,18 +333,33 @@ pipeline {
                         NSG_NAME="monitoring-nsg"
                         RG_NAME="MyPatientSurveyRG"
         
-                        # Create NSG if it doesn't exist
+                        # Check if NSG exists
                         if ! az network nsg show -g "$RG_NAME" -n "$NSG_NAME" &>/dev/null; then
                             echo "🛠️ Creating NSG $NSG_NAME..."
-                            az network nsg create --resource-group "$RG_NAME" --name "$NSG_NAME" --location uksouth
+                            az network nsg create \
+                                --resource-group "$RG_NAME" \
+                                --name "$NSG_NAME" \
+                                --location uksouth
                         fi
         
-                        # Add Prometheus rule (9090)
-                        echo "➕ Adding Prometheus rule..."
+                        # Delete existing rules if they exist (idempotent)
+                        echo "♻️ Removing existing rules if present..."
+                        az network nsg rule delete \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowNodeExporter || true
+                        
+                        az network nsg rule delete \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowAppMetrics || true
+        
+                        # Add required rules with broader access
+                        echo "➕ Adding Node Exporter rule (port 9100)..."
                         az network nsg rule create \
                             --resource-group "$RG_NAME" \
                             --nsg-name "$NSG_NAME" \
-                            --name AllowPrometheus \
+                            --name AllowNodeExporter \
                             --priority 310 \
                             --direction Inbound \
                             --access Allow \
@@ -352,37 +367,8 @@ pipeline {
                             --source-address-prefix Internet \
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
-                            --destination-port-range 9090
-        
-                        # Add Grafana rule (3000)
-                        echo "➕ Adding Grafana rule..."
-                        az network nsg rule create \
-                            --resource-group "$RG_NAME" \
-                            --nsg-name "$NSG_NAME" \
-                            --name AllowGrafana \
-                            --priority 320 \
-                            --direction Inbound \
-                            --access Allow \
-                            --protocol Tcp \
-                            --source-address-prefix Internet \
-                            --source-port-range '*' \
-                            --destination-address-prefix '*' \
-                            --destination-port-range 3000
-        
-                        # Add App Metrics rule (8000)
-                        echo "➕ Adding App Metrics rule..."
-                        az network nsg rule create \
-                            --resource-group "$RG_NAME" \
-                            --nsg-name "$NSG_NAME" \
-                            --name AllowAppMetrics \
-                            --priority 330 \
-                            --direction Inbound \
-                            --access Allow \
-                            --protocol Tcp \
-                            --source-address-prefix Internet \
-                            --source-port-range '*' \
-                            --destination-address-prefix '*' \
-                            --destination-port-range 8000
+                            --destination-port-range 9100 \
+                            --description "Allow Prometheus scraping from anywhere"
         
                         echo "✅ Network security configured"
                         '''
@@ -390,8 +376,8 @@ pipeline {
                 }
             }
         }
-
-       stage('Deploy Monitoring Stack') {
+        
+        stage('Deploy Monitoring Stack') {
             steps {
                 script {
                     withCredentials([
@@ -404,55 +390,92 @@ pipeline {
                         timeout(time: 15, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
+       
+                            # ===== AUTHENTICATION =====
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-                            # Prometheus + Grafana deployment here...
-        
-                            echo "📝 Creating monitoring.env..."
+       
+                            # ===== DEPLOY PROMETHEUS =====
+                            echo "📊 Deploying Prometheus..."
+                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
+       
+                            if [ ! -f "$CONFIG_FILE" ]; then
+                                echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
+                                exit 1
+                            fi
+       
+                            # Use placeholder IP initially
+                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
+                            CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
+       
+                            az container create \
+                             --resource-group MyPatientSurveyRG \
+                             --name "$PROMETHEUS_NAME" \
+                             --image prom/prometheus:v2.47.0 \
+                             --os-type Linux \
+                             --cpu 0.5 \
+                             --memory 1.5 \
+                             --ports 9090 \
+                             --ip-address Public \
+                             --dns-name-label "$PROMETHEUS_NAME" \
+                             --location uksouth \
+                             --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+       
+                            # ===== DEPLOY GRAFANA =====
+                            echo "📈 Deploying Grafana..."
+                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+       
+                            az container create \
+                                --resource-group MyPatientSurveyRG \
+                                --name "$GRAFANA_NAME" \
+                                --image grafana/grafana:9.5.6 \
+                                --os-type Linux \
+                                --cpu 0.5 \
+                                --memory 1.5 \
+                                --ports 3000 \
+                                --ip-address Public \
+                                --dns-name-label "$GRAFANA_NAME" \
+                                --location uksouth \
+                                --environment-variables \
+                                    GF_SECURITY_ADMIN_USER=admin \
+                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
+       
+                            # ===== GET MONITORING ENDPOINTS =====
+                            echo "🔗 Getting monitoring endpoints..."
+                            PROMETHEUS_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$PROMETHEUS_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+                            GRAFANA_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$GRAFANA_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+       
+                            # ===== WRITE MONITORING ENV FILE =====
+                            echo "📝 Writing monitoring environment variables..."
                             cat > monitoring.env <<EOF
                             PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
                             GRAFANA_URL=http://${GRAFANA_IP}:3000
                             GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
                             EOF
-        
-                            if [ ! -f monitoring.env ]; then
-                                echo "❌ ERROR: Failed to create monitoring.env"
-                                exit 1
-                            fi
-        
+       
                             echo "=== monitoring.env contents ==="
                             cat monitoring.env
                             echo "=============================="
                             '''
-                            archiveArtifacts artifacts: 'monitoring.env', allowEmptyArchive: false
                         }
                     }
                 }
             }
         }
-
+        
         stage('Deploy Application') {
             steps {
                 script {
-                    // Pre-check workspace
-                    sh '''
-                    echo "=== Pre-unarchive workspace contents ==="
-                    ls -la
-                    echo "=============================="
-                    '''
-        
-                    unarchive mapping: ['monitoring.env': 'monitoring.env'], fingerprintArtifacts: true
-        
-                    sh '''
-                    echo "=== Post-unarchive workspace contents ==="
-                    ls -la
-                    echo "=== monitoring.env contents ==="
-                    cat monitoring.env || true
-                    echo "=============================="
-                    '''
-        
                     withCredentials([
                         string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
@@ -468,14 +491,29 @@ pipeline {
                             sh '''#!/bin/bash
                             set -eo pipefail
         
+                            # ===== AUTHENTICATION =====
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
+                            # ===== VERIFY IMAGE EXISTS =====
                             echo "🔍 Verifying Docker image exists..."
-                            docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
-                            docker pull ${IMAGE_TAG}
+                            if ! docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"; then
+                                echo "❌ ERROR: Failed to login to Docker Hub"
+                                exit 1
+                            fi
+                            
+                            if ! docker pull ${IMAGE_TAG}; then
+                                echo "❌ ERROR: Failed to pull image ${IMAGE_TAG}"
+                                echo "Please verify:"
+                                echo "1. The image exists in Docker Hub"
+                                echo "2. The credentials have proper permissions"
+                                echo "3. The image tag is correct"
+                                exit 1
+                            fi
+                            echo "✅ Image verified successfully"
         
+                            # ===== DEPLOY APPLICATION =====
                             echo "🚀 Deploying application container..."
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
                             az container create \
@@ -497,126 +535,88 @@ pipeline {
                                 --registry-login-server index.docker.io \
                                 --registry-username "$DOCKER_HUB_USER" \
                                 --registry-password "$DOCKER_HUB_PASSWORD" \
-                                --command-line "python3 -m app.main"
+                                --command-line "python3 -m app.main"  # Run terminal-based application
         
+                            # ===== GET APPLICATION IP =====
                             echo "🔄 Getting application IP..."
-                            APP_IP=$(az container show \
-                                --resource-group MyPatientSurveyRG \
-                                --name $ACI_NAME \
-                                --query "ipAddress.ip" -o tsv)
+                            MAX_RETRIES=10
+                            RETRY_DELAY=10
+                            APP_IP=""
+                            
+                            for ((i=1; i<=$MAX_RETRIES; i++)); do
+                                APP_IP=$(az container show \
+                                    --resource-group MyPatientSurveyRG \
+                                    --name $ACI_NAME \
+                                    --query "ipAddress.ip" \
+                                    -o tsv)
+                                
+                                if [ -n "$APP_IP" ]; then
+                                    echo "✅ Application IP: $APP_IP"
+                                    break
+                                else
+                                    echo "Attempt $i/$MAX_RETRIES: IP not yet assigned..."
+                                    sleep $RETRY_DELAY
+                                fi
+                            done
         
+                            if [ -z "$APP_IP" ]; then
+                                echo "❌ ERROR: Failed to get IP address after $MAX_RETRIES attempts"
+                                exit 1
+                            fi
+        
+                            # Update monitoring.env with application IP
                             echo "APP_IP=$APP_IP" >> monitoring.env
                             '''
-                            archiveArtifacts artifacts: 'monitoring.env', fingerprint: true
                         }
                     }
                 }
             }
         }
-
         
         stage('Configure Monitoring') {
-                    steps {
-                        script {
-                            // Verify workspace state before unarchiving
-                            sh '''
-                            echo "=== Pre-configure workspace contents ==="
-                            ls -la
-                            echo "=============================="
-                            '''
-                            
-                            // Force unarchive with verification
-                            unarchive mapping: [
-                                'monitoring.env': 'monitoring.env'
-                            ], fingerprintArtifacts: true, quiet: false
-                            
-                            // Verify file exists and has content
-                            sh '''
-                            if [ ! -f monitoring.env ]; then
-                                echo "❌ ERROR: monitoring.env missing!"
-                                exit 1
-                            fi
-                            
-                            if [ ! -s monitoring.env ]; then
-                                echo "❌ ERROR: monitoring.env is empty!"
-                                exit 1
-                            fi
-                            
-                            echo "=== monitoring.env contents ==="
-                            cat monitoring.env
-                            echo "=============================="
-                            '''
-                            
-                            // Read with better error handling
-                            try {
-                                def monitoringEnv = readFile('monitoring.env').trim()
-                                echo "Raw monitoring.env content:\n${monitoringEnv}"
-                                
-                                def envVars = [:]
-                                monitoringEnv.eachLine { line ->
-                                    if (line.trim() && !line.startsWith("#")) {
-                                        def parts = line.split('=', 2)
-                                        if (parts.size() == 2) {
-                                            envVars[parts[0].trim()] = parts[1].trim()
-                                        }
-                                    }
-                                }
-                            } catch (FileNotFoundException e) {
-                                error "Failed to read monitoring.env file: ${e.getMessage()}"
+                steps {
+                    script {
+                        // Read monitoring.env more reliably
+                        def monitoringEnv = readFile('monitoring.env').trim()
+                        def envVars = [:]
+                        monitoringEnv.split('\n').each { line ->
+                            def parts = line.split('=', 2)
+                            if (parts.size() == 2) {
+                                envVars[parts[0].trim()] = parts[1].trim()
                             }
+                        }
+            
+                        // Verify required variables
+                        def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
+                        def missingVars = requiredVars.findAll { !envVars[it] }
+                        
+                        if (missingVars) {
+                            error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
+                        }
+            
+                        // Update Prometheus config
+                        sh """
+                            # Get Prometheus IP
+                            PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | sed 's|http://||;s|:9090||')
                             
-                            withCredentials([
-                                string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                                string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                                string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                                string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
-                            ]) {
-                                // Reconfigure Prometheus config file with the new application IP
-                                sh """
-                                    # Re-authenticating with Azure is a good practice here
-                                    echo "🔑 Re-authenticating to Azure..."
-                                    az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                                    az account set --subscription "$ARM_SUBSCRIPTION_ID"
-                
-                                    echo "🔄 Updating Prometheus configuration with new app IP..."
-                                    APP_IP=$(az container show --resource-group MyPatientSurveyRG --name patientsurvey-app-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv)
-                
-                                    if [ -z "\$APP_IP" ]; then
-                                        echo "❌ ERROR: Could not get application IP."
-                                        exit 1
-                                    fi
-                
-                                    PROMETHEUS_CONFIG_PATH="/etc/prometheus/prometheus.yml"
-                                    TEMP_CONFIG_PATH="/tmp/prometheus.yml"
-                
-                                    # Get account key for the file share
-                                    FILE_SHARE_KEY=$(az storage account keys list --resource-group MyPatientSurveyRG --account-name mypatientsurveytfstate --query '[0].value' -o tsv)
-                
-                                    # Mount the file share and copy the existing config
-                                    # Note: This is a complex operation in Jenkins.
-                                    # A better approach might be to use a separate container or a tool that can directly update the file share content.
-                                    # For this example, we assume we can update the content directly.
-                
-                                    # Simplified for demonstration: Create a new config and upload it
-                                    cat > /tmp/prometheus-updated.yml <<EOF
-                    global:
-                      scrape_interval: 15s
-                      evaluation_interval: 15s
-                    scrape_configs:
-                      - job_name: 'app-metrics'
-                        static_configs:
-                          - targets: ['\${APP_IP}:9100']
-                    EOF
-
-                    # Upload the updated file to the Azure File Share
-                    az storage file upload --account-name mypatientsurveytfstate --share-name tfstate --source "/tmp/prometheus-updated.yml" --path "prometheus/prometheus.yml" --account-key "\$FILE_SHARE_KEY"
-                    echo "✅ Prometheus configuration updated on Azure File Share"
-                """
+                            # Create updated config
+                            cat <<EOF > prometheus-config.yml
+                            global:
+                              scrape_interval: 15s
+                              evaluation_interval: 15s
+            
+                            scrape_configs:
+                              - job_name: 'node-exporter'
+                                static_configs:
+                                  - targets: ['${envVars['APP_IP']}:9100']
+                            EOF
+            
+                            # Reload Prometheus
+                            curl -X POST --data-binary @prometheus-config.yml http://\${PROMETHEUS_IP}:9090/-/reload || echo "⚠️ Prometheus reload failed (might need manual configuration)"
+                        """
+                    }
+                }
             }
-        }
-    }
-}
-        
             
             stage('Display Monitoring URLs') {
                 steps {
