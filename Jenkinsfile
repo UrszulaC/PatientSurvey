@@ -620,107 +620,108 @@ pipeline {
                 }
             }
         }
+        
         stage('Configure Monitoring') {
-                steps {
-                    script {
-                        // Verify workspace state before unarchiving
-                        sh '''
-                        echo "=== Pre-configure workspace contents ==="
-                        ls -la
-                        echo "=============================="
-                        '''
-                        
-                        // Force unarchive with verification
-                        unarchive mapping: [
-                            'monitoring.env': 'monitoring.env'
-                        ], fingerprintArtifacts: true, quiet: false
-                        
-                        // Verify file exists and has content
-                        sh '''
-                        if [ ! -f monitoring.env ]; then
-                            echo "❌ ERROR: monitoring.env missing!"
-                            exit 1
-                        fi
-                        
-                        if [ ! -s monitoring.env ]; then
-                            echo "❌ ERROR: monitoring.env is empty!"
-                            exit 1
-                        fi
-                        
-                        echo "=== monitoring.env contents ==="
-                        cat monitoring.env
-                        echo "=============================="
-                        '''
-            
-            
-                        // Read with better error handling
-                        try {
-                            def monitoringEnv = readFile('monitoring.env').trim()
-                            echo "Raw monitoring.env content:\n${monitoringEnv}"
+                    steps {
+                        script {
+                            // Verify workspace state before unarchiving
+                            sh '''
+                            echo "=== Pre-configure workspace contents ==="
+                            ls -la
+                            echo "=============================="
+                            '''
                             
-                            def envVars = [:]
-                            monitoringEnv.eachLine { line ->
-                                if (line.trim() && !line.startsWith("#")) {
-                                    def parts = line.split('=', 2)
-                                    if (parts.size() == 2) {
-                                        envVars[parts[0].trim()] = parts[1].trim()
+                            // Force unarchive with verification
+                            unarchive mapping: [
+                                'monitoring.env': 'monitoring.env'
+                            ], fingerprintArtifacts: true, quiet: false
+                            
+                            // Verify file exists and has content
+                            sh '''
+                            if [ ! -f monitoring.env ]; then
+                                echo "❌ ERROR: monitoring.env missing!"
+                                exit 1
+                            fi
+                            
+                            if [ ! -s monitoring.env ]; then
+                                echo "❌ ERROR: monitoring.env is empty!"
+                                exit 1
+                            fi
+                            
+                            echo "=== monitoring.env contents ==="
+                            cat monitoring.env
+                            echo "=============================="
+                            '''
+                            
+                            // Read with better error handling
+                            try {
+                                def monitoringEnv = readFile('monitoring.env').trim()
+                                echo "Raw monitoring.env content:\n${monitoringEnv}"
+                                
+                                def envVars = [:]
+                                monitoringEnv.eachLine { line ->
+                                    if (line.trim() && !line.startsWith("#")) {
+                                        def parts = line.split('=', 2)
+                                        if (parts.size() == 2) {
+                                            envVars[parts[0].trim()] = parts[1].trim()
+                                        }
                                     }
                                 }
+                            } catch (FileNotFoundException e) {
+                                error "Failed to read monitoring.env file: ${e.getMessage()}"
                             }
-            
-                            // Verify required variables with better messaging
-                            def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                            def missingVars = requiredVars.findAll { !envVars[it] }
                             
-                            if (missingVars) {
-                                error("""
-                                Missing required monitoring variables: ${missingVars.join(', ')}
-                                Current variables available: ${envVars.keySet().join(', ')}
-                                monitoring.env content:
-                                ${monitoringEnv}
-                                """)
-                            }
-            
-                            // Update Prometheus config
-                            sh """
-                                # Debug output
-                                echo "Using Prometheus URL: ${envVars['PROMETHEUS_URL']}"
-                                echo "Using App IP: ${envVars['APP_IP']}"
-                                
-                                # Get Prometheus IP
-                                PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | awk -F[/:] '{print \$4}')
-                                
-                                # Create config with actual IP
-                                cat <<EOF > prometheus-config.yml
-                                global:
-                                  scrape_interval: 15s
-                                  evaluation_interval: 15s
-                                scrape_configs:
-                                  - job_name: 'app-metrics'
-                                    static_configs:
-                                      - targets: ['${envVars['APP_IP']}:8000']
-                                EOF
-            
-                                # Reload Prometheus with timeout and retries
-                                MAX_RETRIES=3
-                                for i in \$(seq 1 \$MAX_RETRIES); do
-                                    echo "Reload attempt \$i/\$MAX_RETRIES"
-                                    if curl -m 10 -X POST --data-binary @prometheus-config.yml \
-                                       "http://\${PROMETHEUS_IP}:9090/-/reload"; then
-                                        echo "✅ Prometheus config reloaded successfully"
-                                        break
-                                    else
-                                        echo "⚠️ Attempt \$i failed"
-                                        sleep 5
+                            withCredentials([
+                                string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                                string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                                string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                                string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                            ]) {
+                                // Reconfigure Prometheus config file with the new application IP
+                                sh """
+                                    # Re-authenticating with Azure is a good practice here
+                                    echo "🔑 Re-authenticating to Azure..."
+                                    az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                                    az account set --subscription "$ARM_SUBSCRIPTION_ID"
+                
+                                    echo "🔄 Updating Prometheus configuration with new app IP..."
+                                    APP_IP=$(az container show --resource-group MyPatientSurveyRG --name patientsurvey-app-${BUILD_NUMBER} --query "ipAddress.ip" -o tsv)
+                
+                                    if [ -z "\$APP_IP" ]; then
+                                        echo "❌ ERROR: Could not get application IP."
+                                        exit 1
                                     fi
-                                done
-                            """
-                        } catch (Exception e) {
-                            error("Failed to configure monitoring: ${e.getMessage()}")
-                        }
-                    }
-                }
+                
+                                    PROMETHEUS_CONFIG_PATH="/etc/prometheus/prometheus.yml"
+                                    TEMP_CONFIG_PATH="/tmp/prometheus.yml"
+                
+                                    # Get account key for the file share
+                                    FILE_SHARE_KEY=$(az storage account keys list --resource-group MyPatientSurveyRG --account-name mypatientsurveytfstate --query '[0].value' -o tsv)
+                
+                                    # Mount the file share and copy the existing config
+                                    # Note: This is a complex operation in Jenkins.
+                                    # A better approach might be to use a separate container or a tool that can directly update the file share content.
+                                    # For this example, we assume we can update the content directly.
+                
+                                    # Simplified for demonstration: Create a new config and upload it
+                                    cat > /tmp/prometheus-updated.yml <<EOF
+                    global:
+                      scrape_interval: 15s
+                      evaluation_interval: 15s
+                    scrape_configs:
+                      - job_name: 'app-metrics'
+                        static_configs:
+                          - targets: ['\${APP_IP}:9100']
+                    EOF
+
+                    # Upload the updated file to the Azure File Share
+                    az storage file upload --account-name mypatientsurveytfstate --share-name tfstate --source "/tmp/prometheus-updated.yml" --path "prometheus/prometheus.yml" --account-key "\$FILE_SHARE_KEY"
+                    echo "✅ Prometheus configuration updated on Azure File Share"
+                """
             }
+        }
+    }
+}
         
             
             stage('Display Monitoring URLs') {
