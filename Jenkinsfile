@@ -339,17 +339,12 @@ pipeline {
                             az network nsg create --resource-group "$RG_NAME" --name "$NSG_NAME" --location uksouth
                         fi
         
-                        # Delete existing rules if they exist
-                        echo "♻️ Removing existing rules if present..."
-                        az network nsg rule delete --resource-group "$RG_NAME" --nsg-name "$NSG_NAME" --name AllowNodeExporter || true
-                        az network nsg rule delete --resource-group "$RG_NAME" --nsg-name "$NSG_NAME" --name AllowPrometheus || true
-        
-                        # Add Node Exporter rule
-                        echo "➕ Adding Node Exporter rule (port 9100)..."
+                        # Add Prometheus rule (9090)
+                        echo "➕ Adding Prometheus rule..."
                         az network nsg rule create \
                             --resource-group "$RG_NAME" \
                             --nsg-name "$NSG_NAME" \
-                            --name AllowNodeExporter \
+                            --name AllowPrometheus \
                             --priority 310 \
                             --direction Inbound \
                             --access Allow \
@@ -357,15 +352,14 @@ pipeline {
                             --source-address-prefix Internet \
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
-                            --destination-port-range 9100 \
-                            --description "Allow Prometheus scraping from anywhere"
+                            --destination-port-range 9090
         
-                        # Add Prometheus rule
-                        echo "➕ Adding Prometheus rule (port 9090)..."
+                        # Add Grafana rule (3000)
+                        echo "➕ Adding Grafana rule..."
                         az network nsg rule create \
                             --resource-group "$RG_NAME" \
                             --nsg-name "$NSG_NAME" \
-                            --name AllowPrometheus \
+                            --name AllowGrafana \
                             --priority 320 \
                             --direction Inbound \
                             --access Allow \
@@ -373,8 +367,22 @@ pipeline {
                             --source-address-prefix Internet \
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
-                            --destination-port-range 9090 \
-                            --description "Allow external access to Prometheus dashboard"
+                            --destination-port-range 3000
+        
+                        # Add App Metrics rule (8000)
+                        echo "➕ Adding App Metrics rule..."
+                        az network nsg rule create \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowAppMetrics \
+                            --priority 330 \
+                            --direction Inbound \
+                            --access Allow \
+                            --protocol Tcp \
+                            --source-address-prefix Internet \
+                            --source-port-range '*' \
+                            --destination-address-prefix '*' \
+                            --destination-port-range 8000
         
                         echo "✅ Network security configured"
                         '''
@@ -383,7 +391,6 @@ pipeline {
             }
         }
 
-        
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
@@ -397,50 +404,52 @@ pipeline {
                         timeout(time: 15, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
-       
+        
                             # ===== AUTHENTICATION =====
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
-       
+        
                             # ===== DEPLOY PROMETHEUS =====
                             echo "📊 Deploying Prometheus..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-       
-                            if [ ! -f "$CONFIG_FILE" ]; then
-                                echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
-                                exit 1
-                            fi
-       
-                            # Use placeholder IP initially
-                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
-                            CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
-       
+                            
+                            # Generate dynamic config
+                            cat > prometheus-config.yml <<EOF
+                            global:
+                              scrape_interval: 15s
+                              evaluation_interval: 15s
+        
+                            scrape_configs:
+                              - job_name: 'app-metrics'
+                                static_configs:
+                                  - targets: ['${APP_IP}:8000']
+                            EOF
+        
                             az container create \
-                             --resource-group MyPatientSurveyRG \
-                             --name "$PROMETHEUS_NAME" \
-                             --image prom/prometheus:v2.47.0 \
-                             --os-type Linux \
-                             --cpu 0.5 \
-                             --memory 1.5 \
-                             --ports 9090 \
-                             --ip-address Public \
-                             --dns-name-label "$PROMETHEUS_NAME" \
-                             --location uksouth \
-                             --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-       
+                                --resource-group MyPatientSurveyRG \
+                                --name "$PROMETHEUS_NAME" \
+                                --image prom/prometheus:v2.47.0 \
+                                --os-type Linux \
+                                --cpu 1 \  # Increased from 0.5
+                                --memory 2 \  # Increased from 1.5
+                                --ports 9090 \
+                                --ip-address Public \
+                                --dns-name-label "$PROMETHEUS_NAME" \
+                                --location uksouth \
+                                --command-line "--config.file=/etc/prometheus/prometheus.yml" \
+                                --file prometheus-config.yml=/etc/prometheus/prometheus.yml
+        
                             # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
                             GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-       
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
                                 --image grafana/grafana:9.5.6 \
                                 --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1.5 \
+                                --cpu 1 \  # Increased from 0.5
+                                --memory 2 \  # Increased from 1.5
                                 --ports 3000 \
                                 --ip-address Public \
                                 --dns-name-label "$GRAFANA_NAME" \
@@ -448,37 +457,23 @@ pipeline {
                                 --environment-variables \
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-       
-                            # ===== GET MONITORING ENDPOINTS =====
-                            echo "🔗 Getting monitoring endpoints..."
-                            PROMETHEUS_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$PROMETHEUS_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-                            GRAFANA_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$GRAFANA_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-       
-                            # ===== WRITE MONITORING ENV FILE =====
-                            echo "📝 Writing monitoring environment variables..."
+        
+                            # ===== SAVE ENDPOINTS =====
+                            PROMETHEUS_IP=$(az container show -g MyPatientSurveyRG -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
+                            GRAFANA_IP=$(az container show -g MyPatientSurveyRG -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
+        
                             cat > monitoring.env <<EOF
-                            PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
-                            GRAFANA_URL=http://${GRAFANA_IP}:3000
-                            GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+                            PROMETHEUS_URL=http://$PROMETHEUS_IP:9090
+                            GRAFANA_URL=http://$GRAFANA_IP:3000
+                            GRAFANA_CREDS=admin:$GRAFANA_PASSWORD
                             EOF
-       
-                            echo "=== monitoring.env contents ==="
-                            cat monitoring.env
-                            echo "=============================="
                             '''
                         }
                     }
                 }
             }
         }
+        
         
         stage('Deploy Application') {
             steps {
@@ -579,51 +574,59 @@ pipeline {
                 }
             }
         }
-        
         stage('Configure Monitoring') {
-                steps {
-                    script {
-                        // Read monitoring.env more reliably
-                        def monitoringEnv = readFile('monitoring.env').trim()
-                        def envVars = [:]
-                        monitoringEnv.split('\n').each { line ->
-                            def parts = line.split('=', 2)
-                            if (parts.size() == 2) {
-                                envVars[parts[0].trim()] = parts[1].trim()
-                            }
+            steps {
+                script {
+                    def monitoringEnv = readFile('monitoring.env').trim()
+                    def envVars = [:]
+                    monitoringEnv.split('\n').each { line ->
+                        def parts = line.split('=', 2)
+                        if (parts.size() == 2) {
+                            envVars[parts[0].trim()] = parts[1].trim()
                         }
-            
-                        // Verify required variables
-                        def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                        def missingVars = requiredVars.findAll { !envVars[it] }
-                        
-                        if (missingVars) {
-                            error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
-                        }
-            
-                        // Update Prometheus config
-                        sh """
-                            # Get Prometheus IP
-                            PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | sed 's|http://||;s|:9090||')
-                            
-                            # Create updated config
-                            cat <<EOF > prometheus-config.yml
-                            global:
-                              scrape_interval: 15s
-                              evaluation_interval: 15s
-            
-                            scrape_configs:
-                              - job_name: 'node-exporter'
-                                static_configs:
-                                  - targets: ['${envVars['APP_IP']}:9100']
-                            EOF
-            
-                            # Reload Prometheus
-                            curl -X POST --data-binary @prometheus-config.yml http://\${PROMETHEUS_IP}:9090/-/reload || echo "⚠️ Prometheus reload failed (might need manual configuration)"
-                        """
                     }
+        
+                    // Verify required variables
+                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
+                    def missingVars = requiredVars.findAll { !envVars[it] }
+                    
+                    if (missingVars) {
+                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
+                    }
+        
+                    // Update Prometheus config
+                    sh """
+                        # Get Prometheus IP
+                        PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | sed 's|http://||;s|:9090||')
+                        
+                        # Create updated config
+                        cat <<EOF > prometheus-config.yml
+                        global:
+                          scrape_interval: 15s
+                          evaluation_interval: 15s
+        
+                        scrape_configs:
+                          - job_name: 'app-metrics'
+                            static_configs:
+                              - targets: ['${envVars['APP_IP']}:8000']
+                        EOF
+        
+                        # Reload Prometheus with retries
+                        MAX_RETRIES=3
+                        for i in \$(seq 1 \$MAX_RETRIES); do
+                            if curl -X POST --max-time 10 --data-binary @prometheus-config.yml http://\${PROMETHEUS_IP}:9090/-/reload; then
+                                echo "✅ Prometheus config reloaded successfully"
+                                break
+                            else
+                                echo "⚠️ Attempt \$i failed to reload Prometheus"
+                                sleep 5
+                            fi
+                        done
+                    """
                 }
             }
+        }
+        
             
             stage('Display Monitoring URLs') {
                 steps {
