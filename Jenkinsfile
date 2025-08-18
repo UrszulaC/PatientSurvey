@@ -424,8 +424,8 @@ pipeline {
                                 --name "$NODE_EXPORTER_NAME" \
                                 --image prom/node-exporter:v1.6.1 \
                                 --os-type Linux \
-                                --cpu 1 \  # Increased CPU
-                                --memory 2 \  # Increased memory
+                                --cpu 1 \
+                                --memory 2 \
                                 --ports 9100 \
                                 --ip-address Public \
                                 --location uksouth \
