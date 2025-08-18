@@ -9,10 +9,11 @@ RUN apt-get update && \
         odbcinst \
         libodbc1 \
         procps \
-        net-tools && \
+        net-tools \
+        supervisor && \
     rm -rf /var/lib/apt/lists/*
 
-# Install node_exporter
+# Install node_exporter (container stats only)
 RUN wget https://github.com/prometheus/node_exporter/releases/download/v1.6.1/node_exporter-1.6.1.linux-amd64.tar.gz && \
     tar xvfz node_exporter-* -C /usr/local/bin/ --strip-components=1 && \
     rm node_exporter-*.tar.gz && \
@@ -27,5 +28,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Verify ODBC installation
 RUN odbcinst -j && ldconfig
 
-# Run services
-CMD ["sh", "-c", "/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100 & python3 -m app.main"]
+# Add startup script
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
+# Expose ports: node_exporter
+EXPOSE 9100
+
+
+# Run both processes
+CMD ["/start.sh"]
+
