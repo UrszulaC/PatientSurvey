@@ -19,6 +19,7 @@ RUN wget https://github.com/prometheus/node_exporter/releases/download/v1.6.1/no
     chmod +x /usr/local/bin/node_exporter
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 COPY . .
 
 # Install Python dependencies
