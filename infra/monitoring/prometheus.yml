@@ -3,15 +3,20 @@ global:
   evaluation_interval: 15s
   scrape_timeout: 10s
 
-# Rule files (uncomment if using alerts)
-# rule_files:
-#   - 'alert.rules'
-
 scrape_configs:
   # Self-monitoring
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+
+  # Local docker-compose app (node_exporter inside app container)
+  - job_name: 'myapp-node'
+    static_configs:
+      - targets: ['app:9100']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
+        action: keep
 
   # Dynamic Azure Container Instances discovery
   - job_name: 'aci-node-exporter'
@@ -22,48 +27,18 @@ scrape_configs:
         client_id: '${AZURE_CLIENT_ID}'
         client_secret: '${AZURE_CLIENT_SECRET}'
         refresh_interval: 60s
-        port: 9100  # Explicitly set node exporter port
+        port: 9100
     
     relabel_configs:
-      # Add ACI name as label
       - source_labels: [__meta_azure_machine_name]
         target_label: aci_name
-      
-      # Add resource group as label
       - source_labels: [__meta_azure_resource_group]
         target_label: resource_group
-      
-      # Filter to only port 9100 targets
       - action: keep
         regex: '.*:9100'
         source_labels: [__address__]
-    
     metric_relabel_configs:
-      # Example: Filter specific metrics
       - source_labels: [__name__]
         regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
         action: keep
 
-  # Optional: Application metrics (if your app exposes /metrics)
-  - job_name: 'aci-app-metrics'
-    metrics_path: '/metrics'
-    azure_sd_configs:
-      - environment: AzurePublicCloud
-        subscription_id: '${AZURE_SUBSCRIPTION_ID}'
-        tenant_id: '${AZURE_TENANT_ID}'
-        client_id: '${AZURE_CLIENT_ID}'
-        client_secret: '${AZURE_CLIENT_SECRET}'
-        port: 8000 
-    
-    relabel_configs:
-      - source_labels: [__meta_azure_machine_name]
-        target_label: aci_name
-      - action: keep
-        regex: '.*:8000'
-        source_labels: [__address__]
-
-# Alertmanager (uncomment if used)
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets: ['alertmanager:9093']
