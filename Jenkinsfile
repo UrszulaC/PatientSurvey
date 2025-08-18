@@ -97,41 +97,142 @@ pipeline {
                             # ===== DEPLOY NODE EXPORTER =====
                             echo "🚀 Deploying Node Exporter..."
                             NODE_EXPORTER_NAME="node-exporter-${BUILD_NUMBER}"
-                            az container create \\
-                                --resource-group MyPatientSurveyRG \\
-                                --name "$NODE_EXPORTER_NAME" \\
-                                --image prom/node-exporter:v1.6.1 \\
-                                --os-type Linux \\
-                                --cpu 1 --memory 1 \\
-                                --ports 9100 \\
-                                --ip-address Public \\
-                                --location uksouth \\
-                                --command-line "--collector.disable-defaults --collector.cpu --collector.meminfo" \\
-                                --no-wait --output none
+                            
+                            # First check if container already exists
+                            if az container show -g "$RESOURCE_GROUP" -n "$NODE_EXPORTER_NAME" --query "name" -o tsv &>/dev/null; then
+                                echo "⚠️ Node Exporter container already exists, deleting it..."
+                                az container delete -g "$RESOURCE_GROUP" -n "$NODE_EXPORTER_NAME" --yes --output none
+                                sleep 30  # Wait for cleanup
+                            fi
+        
+                            # Deploy with explicit DNS name label to help with IP assignment
+                            echo "📦 Creating new Node Exporter instance..."
+                            az container create \
+                                --resource-group "$RESOURCE_GROUP" \
+                                --name "$NODE_EXPORTER_NAME" \
+                                --image prom/node-exporter:v1.6.1 \
+                                --os-type Linux \
+                                --cpu 1 --memory 1 \
+                                --ports 9100 \
+                                --ip-address Public \
+                                --dns-name-label "node-exporter-${BUILD_NUMBER}" \
+                                --location uksouth \
+                                --command-line "--collector.disable-defaults --collector.cpu --collector.meminfo" \
+                                --output none
         
                             echo "⏱️ Waiting for Node Exporter IP assignment..."
-                            MAX_RETRIES=20
-                            RETRY_DELAY=15
+                            MAX_RETRIES=30  # Increased from 20
+                            RETRY_DELAY=10  # Reduced from 15
                             NODE_EXPORTER_IP=""
                             
                             for ((i=1; i<=$MAX_RETRIES; i++)); do
-                                NODE_EXPORTER_IP=$(az container show -g MyPatientSurveyRG -n "$NODE_EXPORTER_NAME" --query "ipAddress.ip" -o tsv)
+                                NODE_EXPORTER_IP=$(az container show -g "$RESOURCE_GROUP" -n "$NODE_EXPORTER_NAME" --query "ipAddress.ip" -o tsv)
                                 if [ -n "$NODE_EXPORTER_IP" ]; then
                                     echo "✅ Node Exporter IP: $NODE_EXPORTER_IP"
+                                    echo "NODE_EXPORTER_IP=$NODE_EXPORTER_IP" >> monitoring.env
                                     break
                                 else
                                     echo "Attempt $i/$MAX_RETRIES: IP not yet assigned... Retrying in $RETRY_DELAY seconds."
                                     sleep $RETRY_DELAY
+                                    
+                                    # After 10 attempts, try to get more diagnostic info
+                                    if [ $i -eq 10 ]; then
+                                        echo "🔍 Gathering diagnostic information..."
+                                        az container show -g "$RESOURCE_GROUP" -n "$NODE_EXPORTER_NAME" --query "provisioningState" -o tsv
+                                        az container show -g "$RESOURCE_GROUP" -n "$NODE_EXPORTER_NAME" --query "instanceView.state" -o tsv
+                                    fi
                                 fi
                             done
         
                             if [ -z "$NODE_EXPORTER_IP" ]; then
-                                echo "❌ ERROR: Node Exporter IP not assigned after $MAX_RETRIES attempts. Cannot continue."
+                                echo "❌ ERROR: Node Exporter IP not assigned after $MAX_RETRIES attempts."
+                                echo "⚠️ Checking container state..."
+                                az container show -g "$RESOURCE_GROUP" -n "$NODE_EXPORTER_NAME" --output json
                                 exit 1
                             fi
         
-                            # The rest of the script (Prometheus, Grafana deployment, etc.) remains the same.
-                            # ...
+                            # ===== DEPLOY PROMETHEUS =====
+                            echo "📊 Deploying Prometheus..."
+                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            
+                            # Create Prometheus config file
+                            cat <<EOF > prometheus-config.yml
+                            global:
+                              scrape_interval: 15s
+                              evaluation_interval: 15s
+        
+                            scrape_configs:
+                              - job_name: 'node-exporter'
+                                static_configs:
+                                  - targets: ['$NODE_EXPORTER_IP:9100']
+                            EOF
+        
+                            az container create \
+                                --resource-group "$RESOURCE_GROUP" \
+                                --name "$PROMETHEUS_NAME" \
+                                --image prom/prometheus:latest \
+                                --os-type Linux \
+                                --cpu 1 --memory 2 \
+                                --ports 9090 \
+                                --ip-address Public \
+                                --dns-name-label "prometheus-${BUILD_NUMBER}" \
+                                --location uksouth \
+                                --command-line "--config.file=/etc/prometheus/prometheus.yml" \
+                                --volumes prometheus-config.yml:/etc/prometheus/prometheus.yml \
+                                --output none
+        
+                            echo "⏱️ Waiting for Prometheus IP assignment..."
+                            PROMETHEUS_IP=""
+                            for ((i=1; i<=15; i++)); do
+                                PROMETHEUS_IP=$(az container show -g "$RESOURCE_GROUP" -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
+                                if [ -n "$PROMETHEUS_IP" ]; then
+                                    echo "✅ Prometheus IP: $PROMETHEUS_IP"
+                                    echo "PROMETHEUS_URL=http://$PROMETHEUS_IP:9090" >> monitoring.env
+                                    break
+                                else
+                                    echo "Waiting for Prometheus IP... (attempt $i/15)"
+                                    sleep 10
+                                fi
+                            done
+        
+                            if [ -z "$PROMETHEUS_IP" ]; then
+                                echo "⚠️ WARNING: Prometheus IP not assigned, but continuing..."
+                            fi
+        
+                            # ===== DEPLOY GRAFANA =====
+                            echo "📈 Deploying Grafana..."
+                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
+                            
+                            az container create \
+                                --resource-group "$RESOURCE_GROUP" \
+                                --name "$GRAFANA_NAME" \
+                                --image grafana/grafana:latest \
+                                --os-type Linux \
+                                --cpu 1 --memory 2 \
+                                --ports 3000 \
+                                --ip-address Public \
+                                --dns-name-label "grafana-${BUILD_NUMBER}" \
+                                --location uksouth \
+                                --environment-variables GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
+                                --output none
+        
+                            echo "⏱️ Waiting for Grafana IP assignment..."
+                            GRAFANA_IP=""
+                            for ((i=1; i<=15; i++)); do
+                                GRAFANA_IP=$(az container show -g "$RESOURCE_GROUP" -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
+                                if [ -n "$GRAFANA_IP" ]; then
+                                    echo "✅ Grafana IP: $GRAFANA_IP"
+                                    echo "GRAFANA_URL=http://$GRAFANA_IP:3000" >> monitoring.env
+                                    break
+                                else
+                                    echo "Waiting for Grafana IP... (attempt $i/15)"
+                                    sleep 10
+                                fi
+                            done
+        
+                            if [ -z "$GRAFANA_IP" ]; then
+                                echo "⚠️ WARNING: Grafana IP not assigned, but continuing..."
+                            fi
                             '''
                         }
                     }
