@@ -5,8 +5,8 @@ services:
     build: .
     container_name: myapp
     ports:
-      - "9100:9100"   # node_exporter metrics
-    restart: always   # auto-restart if unhealthy
+      - "9100:9100"
+    restart: always
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9100/metrics"]
       interval: 30s
