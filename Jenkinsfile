@@ -391,7 +391,7 @@ pipeline {
             }
         }
 
-        stage('Deploy Monitoring Stack') {
+       stage('Deploy Monitoring Stack') {
             steps {
                 script {
                     withCredentials([
@@ -414,8 +414,9 @@ pipeline {
                             echo "📊 Deploying Prometheus..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                             
-                            # Create config with placeholder targets
-                            cat > prometheus-config.yml <<EOF
+                            # Create temporary config
+                            mkdir -p /tmp/prometheus
+                            cat > /tmp/prometheus/prometheus.yml <<'EOF'
                             global:
                               scrape_interval: 15s
                               evaluation_interval: 15s
@@ -437,7 +438,10 @@ pipeline {
                                 --dns-name-label "$PROMETHEUS_NAME" \
                                 --location uksouth \
                                 --command-line "--config.file=/etc/prometheus/prometheus.yml" \
-                                --file prometheus-config.yml=/etc/prometheus/prometheus.yml
+                                --azure-file-volume-account-name mypatientsurveytfstate \
+                                --azure-file-volume-account-key "$(az storage account keys list --resource-group MyPatientSurveyRG --account-name mypatientsurveytfstate --query '[0].value' -o tsv)" \
+                                --azure-file-volume-share-name tfstate \
+                                --azure-file-volume-mount-path /etc/prometheus
         
                             # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
@@ -457,7 +461,7 @@ pipeline {
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
         
-                            # ===== GET AND VERIFY ENDPOINTS =====
+                            # ===== GET ENDPOINTS =====
                             echo "🔗 Getting monitoring endpoints..."
                             PROMETHEUS_IP=$(az container show \
                                 -g MyPatientSurveyRG \
@@ -470,34 +474,27 @@ pipeline {
                                 --query "ipAddress.ip" \
                                 -o tsv)
         
-                            # Verify endpoints were obtained
-                            if [ -z "$PROMETHEUS_IP" ] || [ -z "$GRAFANA_IP" ]; then
-                                echo "❌ ERROR: Failed to get one or more IP addresses"
-                                echo "Prometheus IP: $PROMETHEUS_IP"
-                                echo "Grafana IP: $GRAFANA_IP"
-                                exit 1
-                            fi
-        
-                            # ===== CREATE MONITORING.ENV WITH VERIFICATION =====
-                            echo "📝 Creating monitoring.env with verification..."
-                            cat <<EOF > monitoring.env
-                            # Auto-generated monitoring endpoints
-                            PROMETHEUS_URL=http://$PROMETHEUS_IP:9090
-                            GRAFANA_URL=http://$GRAFANA_IP:3000
-                            GRAFANA_CREDS=admin:$GRAFANA_PASSWORD
+                            # ===== CREATE MONITORING.ENV =====
+                            echo "📝 Creating monitoring.env..."
+                            cat > monitoring.env <<EOF
+                            PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
+                            GRAFANA_URL=http://${GRAFANA_IP}:3000
+                            GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
                             EOF
         
-                            # Verify file was created and contains data
-                            if [ ! -f monitoring.env ] || [ ! -s monitoring.env ]; then
-                                echo "❌ ERROR: monitoring.env file not created properly"
+                            # Verify file creation
+                            if [ ! -f monitoring.env ]; then
+                                echo "❌ ERROR: Failed to create monitoring.env"
                                 exit 1
                             fi
         
-                            echo "=== monitoring.env CONTENTS ==="
+                            echo "=== monitoring.env contents ==="
                             cat monitoring.env
                             echo "=============================="
                             '''
-                            archiveArtifacts artifacts: 'monitoring.env'
+                            
+                            // Archive the file properly
+                            archiveArtifacts artifacts: 'monitoring.env', allowEmptyArchive: false
                         }
                     }
                 }
@@ -507,7 +504,24 @@ pipeline {
         stage('Deploy Application') {
             steps {
                 script {
-                    unarchive mapping: ['monitoring.env': 'monitoring.env']
+                    sh '''
+                    echo "=== Pre-unarchive workspace contents ==="
+                    ls -la
+                    echo "=============================="
+                    '''
+                    
+                    // Unarchive with verification
+                    unarchive mapping: [
+                        'monitoring.env': 'monitoring.env'
+                    ], fingerprintArtifacts: true
+                    
+                    sh '''
+                    echo "=== Post-unarchive workspace contents ==="
+                    ls -la
+                    echo "=== monitoring.env contents ==="
+                    cat monitoring.env || true
+                    echo "=============================="
+                    '''
                     withCredentials([
                         string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
@@ -595,10 +609,12 @@ pipeline {
                                 echo "❌ ERROR: Failed to get IP address after $MAX_RETRIES attempts"
                                 exit 1
                             fi
-        
-                            # Update monitoring.env with application IP
+                            sh '''
                             echo "APP_IP=$APP_IP" >> monitoring.env
                             '''
+                            
+                            archiveArtifacts artifacts: 'monitoring.env', fingerprint: tru
+                           
                         }
                     }
                 }
@@ -607,11 +623,35 @@ pipeline {
         stage('Configure Monitoring') {
                 steps {
                     script {
-                        unarchive mapping: ['monitoring.env': 'monitoring.env']
-                        // Verify monitoring.env exists before reading
-                        if (!fileExists('monitoring.env')) {
-                            error("monitoring.env file not found! Check previous stage logs.")
-                        }
+                        // Verify workspace state before unarchiving
+                        sh '''
+                        echo "=== Pre-configure workspace contents ==="
+                        ls -la
+                        echo "=============================="
+                        '''
+                        
+                        // Force unarchive with verification
+                        unarchive mapping: [
+                            'monitoring.env': 'monitoring.env'
+                        ], fingerprintArtifacts: true, quiet: false
+                        
+                        // Verify file exists and has content
+                        sh '''
+                        if [ ! -f monitoring.env ]; then
+                            echo "❌ ERROR: monitoring.env missing!"
+                            exit 1
+                        fi
+                        
+                        if [ ! -s monitoring.env ]; then
+                            echo "❌ ERROR: monitoring.env is empty!"
+                            exit 1
+                        fi
+                        
+                        echo "=== monitoring.env contents ==="
+                        cat monitoring.env
+                        echo "=============================="
+                        '''
+            
             
                         // Read with better error handling
                         try {
