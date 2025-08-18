@@ -6,7 +6,7 @@ RUN apt-get update && \
     wget \
     unixodbc \
     unixodbc-dev \
-    procps \  # Provides ps command
+    procps \
     libc6 \
     libgcc1 && \
     rm -rf /var/lib/apt/lists/*
