@@ -1,6 +1,18 @@
 version: '3.8'
 
 services:
+  app:
+    build: .
+    container_name: myapp
+    ports:
+      - "9100:9100"   # node_exporter metrics
+    restart: always   # auto-restart if unhealthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   prometheus:
     image: prom/prometheus
     container_name: prometheus
@@ -8,3 +20,4 @@ services:
       - "9090:9090"
     volumes:
       - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: always
