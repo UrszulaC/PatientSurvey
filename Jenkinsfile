@@ -431,8 +431,8 @@ pipeline {
                                 --name "$PROMETHEUS_NAME" \
                                 --image prom/prometheus:v2.47.0 \
                                 --os-type Linux \
-                                --cpu 1 \  # Increased from 0.5
-                                --memory 2 \  # Increased from 1.5
+                                --cpu 1 \
+                                --memory 2 \
                                 --ports 9090 \
                                 --ip-address Public \
                                 --dns-name-label "$PROMETHEUS_NAME" \
