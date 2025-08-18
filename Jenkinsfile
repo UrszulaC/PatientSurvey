@@ -386,7 +386,7 @@ pipeline {
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
                         string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
                     ]) {
-                        timeout(time: 30, unit: 'MINUTES') {  // Increased timeout
+                        timeout(time: 30, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
         
@@ -502,7 +502,7 @@ pipeline {
                                         GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
                             ) &  # Run in background
         
-                            wait  # Wait for both deployments to complete
+                            wait
         
                             # ===== VERIFICATION =====
                             echo "🔍 Verifying deployments..."
