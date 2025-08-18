@@ -30,6 +30,9 @@ RUN odbcinst -j && ldconfig
 # Expose ports: node_exporter
 EXPOSE 9100
 
+# Healthcheck for node_exporter
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD curl -f http://localhost:9100/metrics || exit 1
 
 # Run both processes: node_exporter in background, app in foreground
 CMD sh -c "/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100 & exec python3 -m app.main"
