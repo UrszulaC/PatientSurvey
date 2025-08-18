@@ -624,6 +624,7 @@ pipeline {
                     echo "Prometheus Dashboard: $(grep PROMETHEUS_URL monitoring.env | cut -d= -f2)"
                     echo "Grafana Dashboard: $(grep GRAFANA_URL monitoring.env | cut -d= -f2)"
                     echo "Node Metrics: http://$(grep APP_IP monitoring.env | cut -d= -f2):9100/metrics"
+                    echo "App Metrics: http://$(grep APP_IP monitoring.env | cut -d= -f2):8001/metrics"
                     echo "====================================="
                     '''
                 }
