@@ -4,12 +4,16 @@ FROM python:3.9-slim-bullseye
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         wget \
+        curl \
+        gnupg \
         unixodbc \
         unixodbc-dev \
         odbcinst \
         libodbc1 \
         procps \
-        net-tools && \
+        net-tools \
+        apt-transport-https \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Install node_exporter (container stats only)
@@ -17,12 +21,13 @@ RUN wget https://github.com/prometheus/node_exporter/releases/download/v1.6.1/no
     tar xvfz node_exporter-* -C /usr/local/bin/ --strip-components=1 && \
     rm node_exporter-*.tar.gz && \
     chmod +x /usr/local/bin/node_exporter
-    
+
 # Install Microsoft ODBC Driver 17 for SQL Server
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql17
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+    apt-get update && \
+    ACCEPT_EULA=Y apt-get install -y msodbcsql17 && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 ENV PYTHONPATH=/app
