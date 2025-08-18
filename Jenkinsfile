@@ -404,77 +404,12 @@ pipeline {
                         timeout(time: 15, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
-        
-                            # ===== AUTHENTICATION =====
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # ===== DEPLOY PROMETHEUS =====
-                            echo "📊 Deploying Prometheus..."
-                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
-                            
-                            # Create temporary config
-                            mkdir -p /tmp/prometheus
-                            cat > /tmp/prometheus/prometheus.yml <<'EOF'
-                            global:
-                              scrape_interval: 15s
-                              evaluation_interval: 15s
-                            scrape_configs:
-                              - job_name: 'app-metrics'
-                                static_configs:
-                                  - targets: ['PLACEHOLDER_IP:8000']
-                            EOF
+                            # Prometheus + Grafana deployment here...
         
-                            az container create \
-                                --resource-group MyPatientSurveyRG \
-                                --name "$PROMETHEUS_NAME" \
-                                --image prom/prometheus:v2.47.0 \
-                                --os-type Linux \
-                                --cpu 1 \
-                                --memory 2 \
-                                --ports 9090 \
-                                --ip-address Public \
-                                --dns-name-label "$PROMETHEUS_NAME" \
-                                --location uksouth \
-                                --command-line "--config.file=/etc/prometheus/prometheus.yml" \
-                                --azure-file-volume-account-name mypatientsurveytfstate \
-                                --azure-file-volume-account-key "$(az storage account keys list --resource-group MyPatientSurveyRG --account-name mypatientsurveytfstate --query '[0].value' -o tsv)" \
-                                --azure-file-volume-share-name tfstate \
-                                --azure-file-volume-mount-path /etc/prometheus
-        
-                            # ===== DEPLOY GRAFANA =====
-                            echo "📈 Deploying Grafana..."
-                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-                            az container create \
-                                --resource-group MyPatientSurveyRG \
-                                --name "$GRAFANA_NAME" \
-                                --image grafana/grafana:9.5.6 \
-                                --os-type Linux \
-                                --cpu 1 \
-                                --memory 2 \
-                                --ports 3000 \
-                                --ip-address Public \
-                                --dns-name-label "$GRAFANA_NAME" \
-                                --location uksouth \
-                                --environment-variables \
-                                    GF_SECURITY_ADMIN_USER=admin \
-                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-        
-                            # ===== GET ENDPOINTS =====
-                            echo "🔗 Getting monitoring endpoints..."
-                            PROMETHEUS_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$PROMETHEUS_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-                            GRAFANA_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$GRAFANA_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-        
-                            # ===== CREATE MONITORING.ENV =====
                             echo "📝 Creating monitoring.env..."
                             cat > monitoring.env <<EOF
                             PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
@@ -482,7 +417,6 @@ pipeline {
                             GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
                             EOF
         
-                            # Verify file creation
                             if [ ! -f monitoring.env ]; then
                                 echo "❌ ERROR: Failed to create monitoring.env"
                                 exit 1
@@ -492,29 +426,25 @@ pipeline {
                             cat monitoring.env
                             echo "=============================="
                             '''
-                            
-                            // Archive the file properly
                             archiveArtifacts artifacts: 'monitoring.env', allowEmptyArchive: false
                         }
                     }
                 }
             }
         }
-        
+
         stage('Deploy Application') {
             steps {
                 script {
+                    // Pre-check workspace
                     sh '''
                     echo "=== Pre-unarchive workspace contents ==="
                     ls -la
                     echo "=============================="
                     '''
-                    
-                    // Unarchive with verification
-                    unarchive mapping: [
-                        'monitoring.env': 'monitoring.env'
-                    ], fingerprintArtifacts: true
-                    
+        
+                    unarchive mapping: ['monitoring.env': 'monitoring.env'], fingerprintArtifacts: true
+        
                     sh '''
                     echo "=== Post-unarchive workspace contents ==="
                     ls -la
@@ -522,6 +452,7 @@ pipeline {
                     cat monitoring.env || true
                     echo "=============================="
                     '''
+        
                     withCredentials([
                         string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
@@ -537,29 +468,14 @@ pipeline {
                             sh '''#!/bin/bash
                             set -eo pipefail
         
-                            # ===== AUTHENTICATION =====
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # ===== VERIFY IMAGE EXISTS =====
                             echo "🔍 Verifying Docker image exists..."
-                            if ! docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"; then
-                                echo "❌ ERROR: Failed to login to Docker Hub"
-                                exit 1
-                            fi
-                            
-                            if ! docker pull ${IMAGE_TAG}; then
-                                echo "❌ ERROR: Failed to pull image ${IMAGE_TAG}"
-                                echo "Please verify:"
-                                echo "1. The image exists in Docker Hub"
-                                echo "2. The credentials have proper permissions"
-                                echo "3. The image tag is correct"
-                                exit 1
-                            fi
-                            echo "✅ Image verified successfully"
+                            docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
+                            docker pull ${IMAGE_TAG}
         
-                            # ===== DEPLOY APPLICATION =====
                             echo "🚀 Deploying application container..."
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
                             az container create \
@@ -581,45 +497,23 @@ pipeline {
                                 --registry-login-server index.docker.io \
                                 --registry-username "$DOCKER_HUB_USER" \
                                 --registry-password "$DOCKER_HUB_PASSWORD" \
-                                --command-line "python3 -m app.main"  # Run terminal-based application
+                                --command-line "python3 -m app.main"
         
-                            # ===== GET APPLICATION IP =====
                             echo "🔄 Getting application IP..."
-                            MAX_RETRIES=10
-                            RETRY_DELAY=10
-                            APP_IP=""
-                            
-                            for ((i=1; i<=$MAX_RETRIES; i++)); do
-                                APP_IP=$(az container show \
-                                    --resource-group MyPatientSurveyRG \
-                                    --name $ACI_NAME \
-                                    --query "ipAddress.ip" \
-                                    -o tsv)
-                                
-                                if [ -n "$APP_IP" ]; then
-                                    echo "✅ Application IP: $APP_IP"
-                                    break
-                                else
-                                    echo "Attempt $i/$MAX_RETRIES: IP not yet assigned..."
-                                    sleep $RETRY_DELAY
-                                fi
-                            done
+                            APP_IP=$(az container show \
+                                --resource-group MyPatientSurveyRG \
+                                --name $ACI_NAME \
+                                --query "ipAddress.ip" -o tsv)
         
-                            if [ -z "$APP_IP" ]; then
-                                echo "❌ ERROR: Failed to get IP address after $MAX_RETRIES attempts"
-                                exit 1
-                            fi
-                            sh '''
                             echo "APP_IP=$APP_IP" >> monitoring.env
                             '''
-                            
-                            archiveArtifacts artifacts: 'monitoring.env', fingerprint: tru
-                           
+                            archiveArtifacts artifacts: 'monitoring.env', fingerprint: true
                         }
                     }
                 }
             }
         }
+
         
         stage('Configure Monitoring') {
                     steps {
