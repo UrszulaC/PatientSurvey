@@ -17,6 +17,12 @@ RUN wget https://github.com/prometheus/node_exporter/releases/download/v1.6.1/no
     tar xvfz node_exporter-* -C /usr/local/bin/ --strip-components=1 && \
     rm node_exporter-*.tar.gz && \
     chmod +x /usr/local/bin/node_exporter
+    
+# Install Microsoft ODBC Driver 17 for SQL Server
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql17
 
 WORKDIR /app
 ENV PYTHONPATH=/app
