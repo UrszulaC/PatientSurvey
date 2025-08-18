@@ -22,4 +22,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Run both services (node_exporter in background, app in foreground)
 EXPOSE 9100
 
-CMD ["sh", "-c", "/usr/local/bin/node_exporter --web.listen-address=:9100 & python3 /app/main.py"]
+CMD ["sh", "-c", "/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100 & python3 /app/main.py"]
