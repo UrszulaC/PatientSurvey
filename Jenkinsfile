@@ -414,16 +414,15 @@ pipeline {
                             echo "📊 Deploying Prometheus..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                             
-                            # Generate dynamic config
+                            # Create config with placeholder targets
                             cat > prometheus-config.yml <<EOF
                             global:
                               scrape_interval: 15s
                               evaluation_interval: 15s
-        
                             scrape_configs:
                               - job_name: 'app-metrics'
                                 static_configs:
-                                  - targets: ['${APP_IP}:8000']
+                                  - targets: ['PLACEHOLDER_IP:8000']
                             EOF
         
                             az container create \
@@ -458,22 +457,51 @@ pipeline {
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
         
-                            # ===== SAVE ENDPOINTS =====
-                            PROMETHEUS_IP=$(az container show -g MyPatientSurveyRG -n "$PROMETHEUS_NAME" --query "ipAddress.ip" -o tsv)
-                            GRAFANA_IP=$(az container show -g MyPatientSurveyRG -n "$GRAFANA_NAME" --query "ipAddress.ip" -o tsv)
+                            # ===== GET AND VERIFY ENDPOINTS =====
+                            echo "🔗 Getting monitoring endpoints..."
+                            PROMETHEUS_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$PROMETHEUS_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+                            GRAFANA_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$GRAFANA_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
         
-                            cat > monitoring.env <<EOF
+                            # Verify endpoints were obtained
+                            if [ -z "$PROMETHEUS_IP" ] || [ -z "$GRAFANA_IP" ]; then
+                                echo "❌ ERROR: Failed to get one or more IP addresses"
+                                echo "Prometheus IP: $PROMETHEUS_IP"
+                                echo "Grafana IP: $GRAFANA_IP"
+                                exit 1
+                            fi
+        
+                            # ===== CREATE MONITORING.ENV WITH VERIFICATION =====
+                            echo "📝 Creating monitoring.env with verification..."
+                            cat <<EOF > monitoring.env
+                            # Auto-generated monitoring endpoints
                             PROMETHEUS_URL=http://$PROMETHEUS_IP:9090
                             GRAFANA_URL=http://$GRAFANA_IP:3000
                             GRAFANA_CREDS=admin:$GRAFANA_PASSWORD
                             EOF
+        
+                            # Verify file was created and contains data
+                            if [ ! -f monitoring.env ] || [ ! -s monitoring.env ]; then
+                                echo "❌ ERROR: monitoring.env file not created properly"
+                                exit 1
+                            fi
+        
+                            echo "=== monitoring.env CONTENTS ==="
+                            cat monitoring.env
+                            echo "=============================="
                             '''
                         }
                     }
                 }
             }
         }
-        
         
         stage('Deploy Application') {
             steps {
@@ -575,57 +603,81 @@ pipeline {
             }
         }
         stage('Configure Monitoring') {
-            steps {
-                script {
-                    def monitoringEnv = readFile('monitoring.env').trim()
-                    def envVars = [:]
-                    monitoringEnv.split('\n').each { line ->
-                        def parts = line.split('=', 2)
-                        if (parts.size() == 2) {
-                            envVars[parts[0].trim()] = parts[1].trim()
+                steps {
+                    script {
+                        // Verify monitoring.env exists before reading
+                        if (!fileExists('monitoring.env')) {
+                            error("monitoring.env file not found! Check previous stage logs.")
+                        }
+            
+                        // Read with better error handling
+                        try {
+                            def monitoringEnv = readFile('monitoring.env').trim()
+                            echo "Raw monitoring.env content:\n${monitoringEnv}"
+                            
+                            def envVars = [:]
+                            monitoringEnv.eachLine { line ->
+                                if (line.trim() && !line.startsWith("#")) {
+                                    def parts = line.split('=', 2)
+                                    if (parts.size() == 2) {
+                                        envVars[parts[0].trim()] = parts[1].trim()
+                                    }
+                                }
+                            }
+            
+                            // Verify required variables with better messaging
+                            def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
+                            def missingVars = requiredVars.findAll { !envVars[it] }
+                            
+                            if (missingVars) {
+                                error("""
+                                Missing required monitoring variables: ${missingVars.join(', ')}
+                                Current variables available: ${envVars.keySet().join(', ')}
+                                monitoring.env content:
+                                ${monitoringEnv}
+                                """)
+                            }
+            
+                            // Update Prometheus config
+                            sh """
+                                # Debug output
+                                echo "Using Prometheus URL: ${envVars['PROMETHEUS_URL']}"
+                                echo "Using App IP: ${envVars['APP_IP']}"
+                                
+                                # Get Prometheus IP
+                                PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | awk -F[/:] '{print \$4}')
+                                
+                                # Create config with actual IP
+                                cat <<EOF > prometheus-config.yml
+                                global:
+                                  scrape_interval: 15s
+                                  evaluation_interval: 15s
+                                scrape_configs:
+                                  - job_name: 'app-metrics'
+                                    static_configs:
+                                      - targets: ['${envVars['APP_IP']}:8000']
+                                EOF
+            
+                                # Reload Prometheus with timeout and retries
+                                MAX_RETRIES=3
+                                for i in \$(seq 1 \$MAX_RETRIES); do
+                                    echo "Reload attempt \$i/\$MAX_RETRIES"
+                                    if curl -m 10 -X POST --data-binary @prometheus-config.yml \
+                                       "http://\${PROMETHEUS_IP}:9090/-/reload"; then
+                                        echo "✅ Prometheus config reloaded successfully"
+                                        break
+                                    else
+                                        echo "⚠️ Attempt \$i failed"
+                                        sleep 5
+                                    fi
+                                done
+                            """
+                        } catch (Exception e) {
+                            error("Failed to configure monitoring: ${e.getMessage()}")
                         }
                     }
-        
-                    // Verify required variables
-                    def requiredVars = ['PROMETHEUS_URL', 'GRAFANA_URL', 'APP_IP']
-                    def missingVars = requiredVars.findAll { !envVars[it] }
-                    
-                    if (missingVars) {
-                        error("Missing required monitoring environment variables: ${missingVars.join(', ')}")
-                    }
-        
-                    // Update Prometheus config
-                    sh """
-                        # Get Prometheus IP
-                        PROMETHEUS_IP=\$(echo "${envVars['PROMETHEUS_URL']}" | sed 's|http://||;s|:9090||')
-                        
-                        # Create updated config
-                        cat <<EOF > prometheus-config.yml
-                        global:
-                          scrape_interval: 15s
-                          evaluation_interval: 15s
-        
-                        scrape_configs:
-                          - job_name: 'app-metrics'
-                            static_configs:
-                              - targets: ['${envVars['APP_IP']}:8000']
-                        EOF
-        
-                        # Reload Prometheus with retries
-                        MAX_RETRIES=3
-                        for i in \$(seq 1 \$MAX_RETRIES); do
-                            if curl -X POST --max-time 10 --data-binary @prometheus-config.yml http://\${PROMETHEUS_IP}:9090/-/reload; then
-                                echo "✅ Prometheus config reloaded successfully"
-                                break
-                            else
-                                echo "⚠️ Attempt \$i failed to reload Prometheus"
-                                sleep 5
-                            fi
-                        done
-                    """
                 }
             }
-        }
         
             
             stage('Display Monitoring URLs') {
