@@ -4,57 +4,51 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def get_db_connection(database_name=None):
+def get_db_connection():
     """
-    Establishes a pyodbc connection to the SQL Server.
-    If database_name is provided, connects directly to that database.
-    Otherwise, connects without specifying a database (e.g., to master)
-    which is useful for DDL operations like CREATE/DROP DATABASE.
+    Establishes a pyodbc connection to the configured SQL Server database.
+    Only connects to the application database defined in Config.DB_NAME.
     """
     try:
-        conn_string = Config.DB_CONNECTION_STRING
-        if database_name:
-            conn_string += f"DATABASE={database_name};"
+        # Always connect directly to the app database
+        conn_string = Config.DB_CONNECTION_STRING + f"DATABASE={Config.DB_NAME};"
 
         # pyodbc connections default to autocommit=False.
         # We will manage commits explicitly in the decorated functions.
         connection = pyodbc.connect(conn_string)
+        logger.info(f"Connected to database {Config.DB_NAME}")
         return connection
     except pyodbc.Error as ex:
         sqlstate = ex.args[0]
         logger.error(f"Database connection error: {sqlstate} - {ex}")
-        raise
+        # Don’t raise here — allow app to keep running (metrics stay available)
+        return None
 
 def with_db_connection(func):
     """
     Decorator to manage database connections for functions.
     It passes a database connection object to the decorated function.
     Handles connection opening, closing, and error rollback/commit.
+    If the database is unavailable, the function will receive None and can handle it gracefully.
     """
     def wrapper(*args, **kwargs):
         conn = None
         try:
-            # If the function needs to connect to the test database for DDL,
-            # it should pass database_name=Config.DB_TEST_NAME or None for master
-            # The `create_survey_tables` function will handle database switching.
-            # For other functions, we typically connect to the main app database.
-            db_name_for_func = kwargs.pop('db_name', Config.DB_NAME)
-            conn = get_db_connection(database_name=db_name_for_func)
-
-            # Set row_factory for dictionary-like access if needed
-            # For pyodbc, you can't set row_factory on the connection, but on the cursor
-            # The decorated function will create its own cursor.
+            conn = get_db_connection()
+            if conn is None:
+                logger.warning("Database unavailable — skipping DB operation.")
+                return None
 
             result = func(conn, *args, **kwargs)
-            conn.commit() # Commit changes if no exception
+            conn.commit()  # Commit changes if no exception
             return result
         except Exception as e:
             if conn:
-                conn.rollback() # Rollback on exception
+                conn.rollback()  # Rollback on exception
             logger.error(f"Database operation failed: {e}")
-            raise # Re-raise the exception after rollback
+            raise  # Re-raise the exception after rollback
         finally:
             if conn:
-                conn.close() # Ensure connection is closed
+                conn.close()  # Ensure connection is closed
     return wrapper
 
