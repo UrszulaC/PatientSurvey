@@ -407,8 +407,8 @@ pipeline {
                             --description "Allow Prometheus scraping from anywhere"
 
                         az network nsg rule create \
-                            --resource-group MyPatientSurveyRG \
-                            --nsg-name monitoring-nsg \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME"\
                             --name AllowAppMetrics \
                             --priority 320 \
                             --direction Inbound \
@@ -422,8 +422,8 @@ pipeline {
 
 
                         az network nsg rule create \
-                          --resource-group MyPatientSurveyRG \
-                          --nsg-name MyPatientSurveyRG-nsg \
+                          --resource-group "$RG_NAME" \
+                          --nsg-name "$NSG_NAME" \
                           --name AllowPrometheus \
                           --priority 310 \
                           --direction Inbound \
