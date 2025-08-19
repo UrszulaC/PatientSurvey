@@ -405,6 +405,20 @@ pipeline {
                             --destination-address-prefix '*' \
                             --destination-port-range 9100 \
                             --description "Allow Prometheus scraping from anywhere"
+
+                        az network nsg rule create \
+                            --resource-group MyPatientSurveyRG \
+                            --nsg-name monitoring-nsg \
+                            --name AllowAppMetrics \
+                            --priority 320 \
+                            --direction Inbound \
+                            --access Allow \
+                            --protocol Tcp \
+                            --source-address-prefix Internet \
+                            --source-port-range '*' \
+                            --destination-address-prefix '*' \
+                            --destination-port-range 8002 \
+                            --description "Allow Prometheus to scrape application metrics"
         
                         echo "✅ Network security configured"
                         '''
@@ -571,7 +585,7 @@ pipeline {
                                 --registry-login-server index.docker.io \
                                 --registry-username "$DOCKER_HUB_USER" \
                                 --registry-password "$DOCKER_HUB_PASSWORD" \
-                                --command-line "python3 -m app.main"  # Run terminal-based application
+                                --command-line "python3 -m app.main --host 0.0.0.0 --port 9100"
         
                             # ===== GET APPLICATION IP =====
                             echo "🔄 Getting application IP..."
