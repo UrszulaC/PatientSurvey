@@ -417,7 +417,7 @@ pipeline {
                             --source-address-prefix Internet \
                             --source-port-range '*' \
                             --destination-address-prefix '*' \
-                            --destination-port-range 8002 \
+                            --destination-port-range 8001 \
                             --description "Allow Prometheus to scrape application metrics"
         
                         echo "✅ Network security configured"
@@ -585,7 +585,7 @@ pipeline {
                                 --registry-login-server index.docker.io \
                                 --registry-username "$DOCKER_HUB_USER" \
                                 --registry-password "$DOCKER_HUB_PASSWORD" \
-                                --command-line "python3 -m app.main --host 0.0.0.0 --port 9100"
+                                --command-line "python3 -m app.main --host 0.0.0.0 --port 8001"
         
                             # ===== GET APPLICATION IP =====
                             echo "🔄 Getting application IP..."
