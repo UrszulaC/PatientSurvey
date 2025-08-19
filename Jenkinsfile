@@ -591,7 +591,6 @@ pipeline {
                             echo "🔄 Getting application IP..."
                             MAX_RETRIES=10
                             RETRY_DELAY=10
-                            APP_IP=""
                             
                             for ((i=1; i<=$MAX_RETRIES; i++)); do
                                 APP_IP=$(az container show \
@@ -608,14 +607,17 @@ pipeline {
                                     sleep $RETRY_DELAY
                                 fi
                             done
-        
+                            
                             if [ -z "$APP_IP" ]; then
                                 echo "❌ ERROR: Failed to get IP address after $MAX_RETRIES attempts"
                                 exit 1
                             fi
-        
+                            
                             # Update monitoring.env with application IP
-                            echo "APP_IP=$APP_IP" >> monitoring.env
+                            grep -v '^APP_IP=' monitoring.env > monitoring.env.tmp
+                            echo "APP_IP=$APP_IP" >> monitoring.env.tmp
+                            mv monitoring.env.tmp monitoring.env
+
                             '''
                         }
                     }
