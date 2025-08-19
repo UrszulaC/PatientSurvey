@@ -10,7 +10,7 @@ scrape_configs:
 
   - job_name: 'patient-survey-app'
     static_configs:
-      - targets: ['${APP_DNS}:8002']  
+      - targets: ['${APP_IP}:8002']  
 
   - job_name: 'myapp-node'
     static_configs:
