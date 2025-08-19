@@ -368,6 +368,7 @@ pipeline {
         
                         NSG_NAME="monitoring-nsg"
                         RG_NAME="MyPatientSurveyRG"
+                        NIC_NAME="survey-vmVMNic"
         
                         # Check if NSG exists
                         if ! az network nsg show -g "$RG_NAME" -n "$NSG_NAME" &>/dev/null; then
@@ -406,12 +407,35 @@ pipeline {
                             --destination-port-range 9100 \
                             --description "Allow Prometheus scraping from anywhere"
         
+                        echo "➕ Adding App Metrics rule (port 8002)..."
+                        az network nsg rule create \
+                            --resource-group "$RG_NAME" \
+                            --nsg-name "$NSG_NAME" \
+                            --name AllowAppMetrics \
+                            --priority 320 \
+                            --direction Inbound \
+                            --access Allow \
+                            --protocol Tcp \
+                            --source-address-prefix Internet \
+                            --source-port-range '*' \
+                            --destination-address-prefix '*' \
+                            --destination-port-range 8002 \
+                            --description "Allow Prometheus scraping app metrics"
+        
+                        # Associate NSG with NIC (idempotent)
+                        echo "🔗 Associating NSG $NSG_NAME with NIC $NIC_NAME..."
+                        az network nic update \
+                            --resource-group "$RG_NAME" \
+                            --name "$NIC_NAME" \
+                            --network-security-group "$NSG_NAME"
+        
                         echo "✅ Network security configured"
                         '''
                     }
                 }
             }
         }
+
         
         stage('Deploy Monitoring Stack') {
             steps {
@@ -480,23 +504,24 @@ pipeline {
        
                             # ===== GET MONITORING ENDPOINTS =====
                             echo "🔗 Getting monitoring endpoints..."
-                            PROMETHEUS_IP=$(az container show \
+                            PROMETHEUS_HOST=$(az container show \
                                 -g MyPatientSurveyRG \
                                 -n "$PROMETHEUS_NAME" \
-                                --query "ipAddress.ip" \
+                                --query "ipAddress.fqdn" \
                                 -o tsv)
-                            GRAFANA_IP=$(az container show \
+                            GRAFANA_HOST=$(az container show \
                                 -g MyPatientSurveyRG \
                                 -n "$GRAFANA_NAME" \
-                                --query "ipAddress.ip" \
+                                --query "ipAddress.fqdn" \
                                 -o tsv)
        
                             # ===== WRITE MONITORING ENV FILE =====
                             echo "📝 Writing monitoring environment variables..."
                             cat > monitoring.env <<EOF
-                            PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
-                            GRAFANA_URL=http://${GRAFANA_IP}:3000
+                            PROMETHEUS_URL=http://${PROMETHEUS_HOST}:9090
+                            GRAFANA_URL=http://${GRAFANA_HOST}:3000
                             GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+                            APP_HOST=${APP_DNS}.uksouth.azurecontainer.io
                             EOF
        
                             echo "=== monitoring.env contents ==="
@@ -552,6 +577,8 @@ pipeline {
                             # ===== DEPLOY APPLICATION =====
                             echo "🚀 Deploying application container..."
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                            APP_DNS="patientsurvey-app-${BUILD_NUMBER}-uksouth"  # DNS name
+                            
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name $ACI_NAME \
@@ -559,10 +586,11 @@ pipeline {
                                 --os-type Linux \
                                 --cpu 1 \
                                 --memory 2 \
-                                --ports 9100 \
+                                --ports 9100 8001 8002 \
                                 --restart-policy Always \
                                 --location uksouth \
                                 --ip-address Public \
+                                --dns-name-label $APP_DNS \
                                 --environment-variables \
                                     DB_HOST=${DB_HOST} \
                                     DB_USER=${DB_USER} \
@@ -571,7 +599,7 @@ pipeline {
                                 --registry-login-server index.docker.io \
                                 --registry-username "$DOCKER_HUB_USER" \
                                 --registry-password "$DOCKER_HUB_PASSWORD" \
-                                --command-line "python3 -m app.main"  # Run terminal-based application
+                                --command-line "python3 -m app.main"
         
                             # ===== GET APPLICATION IP =====
                             echo "🔄 Getting application IP..."
@@ -662,8 +690,8 @@ pipeline {
                         echo "========== MONITORING LINKS =========="
                         echo "Prometheus Dashboard: $PROMETHEUS_URL"
                         echo "Grafana Dashboard: $GRAFANA_URL"
-                        echo "Node Metrics: http://$APP_IP:9100/metrics"
-                        echo "Patient Survey App Metrics: http://$APP_IP:8001/metrics"
+                        echo "Node Metrics: http://${APP_HOST}:9100/metrics"
+                        echo "Patient Survey App Metrics: http://${APP_HOST}:8001/metrics"
                         echo "====================================="
                     '''
                 }
