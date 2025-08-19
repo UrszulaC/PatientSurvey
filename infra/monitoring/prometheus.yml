@@ -10,11 +10,11 @@ scrape_configs:
 
   - job_name: 'patient-survey-app'
     static_configs:
-      - targets: ['172.167.120.70:8002']  
+      - targets: ['${APP_DNS}:8002']  
 
   - job_name: 'myapp-node'
     static_configs:
-      - targets: ['172.167.120.70:9100']  
+      - targets: ['${NODE_DNS}:9100']  
     metric_relabel_configs:
       - source_labels: [__name__]
         regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
