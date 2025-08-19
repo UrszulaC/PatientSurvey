@@ -467,13 +467,8 @@ pipeline {
                             fi
                             
                             # Replace placeholders in prometheus.yml with actual DNS names
-                            # Example placeholders: DYNAMIC_APP_IP, DYNAMIC_NODE_IP
-                            sed -i "s/DYNAMIC_APP_IP/${APP_DNS}.uksouth.azurecontainer.io/g" "$CONFIG_FILE"
-                            
-                            # If you have node exporters with DNS labels, replace them as well
-                            # e.g., NODE1_DNS, NODE2_DNS...
-                            sed -i "s/DYNAMIC_NODE1_IP/node1-app.uksouth.azurecontainer.io/g" "$CONFIG_FILE"
-                            sed -i "s/DYNAMIC_NODE2_IP/node2-app.uksouth.azurecontainer.io/g" "$CONFIG_FILE"
+                            sed -i "s|\${APP_DNS}|${APP_DNS}.uksouth.azurecontainer.io|g" "$CONFIG_FILE"
+                            sed -i "s|\${NODE_DNS}|${NODE_DNS}.uksouth.azurecontainer.io|g" "$CONFIG_FILE"
                             
                             CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
                             
