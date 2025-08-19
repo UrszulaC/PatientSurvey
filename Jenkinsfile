@@ -407,8 +407,8 @@ pipeline {
                             --description "Allow Prometheus scraping from anywhere"
 
                         az network nsg rule create \
-                            --resource-group "$RG_NAME" \
-                            --nsg-name "$NSG_NAME"\
+                            --resource-group MyPatientSurveyRG \
+                            --nsg-name monitoring-nsg \
                             --name AllowAppMetrics \
                             --priority 320 \
                             --direction Inbound \
@@ -419,22 +419,6 @@ pipeline {
                             --destination-address-prefix '*' \
                             --destination-port-range 8001 \
                             --description "Allow Prometheus to scrape application metrics"
-
-
-                        az network nsg rule create \
-                          --resource-group "$RG_NAME" \
-                          --nsg-name "$NSG_NAME" \
-                          --name AllowPrometheus \
-                          --priority 310 \
-                          --direction Inbound \
-                          --access Allow \
-                          --protocol Tcp \
-                          --source-address-prefix Internet \
-                          --source-port-ranges '*' \
-                          --destination-address-prefix '*' \
-                          --destination-port-ranges 9090 \
-                          --description "Allow Prometheus UI and API access from the Internet"
-
         
                         echo "✅ Network security configured"
                         '''
@@ -712,5 +696,6 @@ pipeline {
         }
     }
 }
+
 
 
