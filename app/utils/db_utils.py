@@ -1,4 +1,4 @@
- import pyodbc
+import pyodbc
 from app.config import Config
 import logging
 
