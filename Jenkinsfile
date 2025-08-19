@@ -599,7 +599,7 @@ pipeline {
                                 --registry-login-server index.docker.io \
                                 --registry-username "$DOCKER_HUB_USER" \
                                 --registry-password "$DOCKER_HUB_PASSWORD" \
-                                --command-line "python3 -m app.main"
+                                --command-line "python3 -m app.main --host 0.0.0.0 --port 8001"
         
                             # ===== GET APPLICATION IP =====
                             echo "🔄 Getting application IP..."
