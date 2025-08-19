@@ -460,16 +460,23 @@ pipeline {
                             echo "📊 Deploying Prometheus..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                             CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-       
+                            
                             if [ ! -f "$CONFIG_FILE" ]; then
                                 echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
                                 exit 1
                             fi
-       
-                            # Use placeholder IP initially
-                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
+                            
+                            # Replace placeholders in prometheus.yml with actual DNS names
+                            # Example placeholders: DYNAMIC_APP_IP, DYNAMIC_NODE_IP
+                            sed -i "s/DYNAMIC_APP_IP/${APP_DNS}.uksouth.azurecontainer.io/g" "$CONFIG_FILE"
+                            
+                            # If you have node exporters with DNS labels, replace them as well
+                            # e.g., NODE1_DNS, NODE2_DNS...
+                            sed -i "s/DYNAMIC_NODE1_IP/node1-app.uksouth.azurecontainer.io/g" "$CONFIG_FILE"
+                            sed -i "s/DYNAMIC_NODE2_IP/node2-app.uksouth.azurecontainer.io/g" "$CONFIG_FILE"
+                            
                             CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
-       
+                            
                             az container create \
                              --resource-group MyPatientSurveyRG \
                              --name "$PROMETHEUS_NAME" \
@@ -482,11 +489,11 @@ pipeline {
                              --dns-name-label "prometheus-survey" \
                              --location uksouth \
                              --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-       
+
                             # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
                             GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-       
+                            
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
@@ -500,20 +507,10 @@ pipeline {
                                 --location uksouth \
                                 --environment-variables \
                                     GF_SECURITY_ADMIN_USER=admin \
-                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-       
-                            # ===== GET MONITORING ENDPOINTS =====
-                            echo "🔗 Getting monitoring endpoints..."
-                            PROMETHEUS_HOST=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$PROMETHEUS_NAME" \
-                                --query "ipAddress.fqdn" \
-                                -o tsv)
-                            GRAFANA_HOST=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$GRAFANA_NAME" \
-                                --query "ipAddress.fqdn" \
-                                -o tsv)
+                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
+                                    GF_SERVER_ROOT_URL="http://${PROMETHEUS_HOST}:9090"
+
+                            
        
                             # ===== WRITE MONITORING ENV FILE =====
                             echo "📝 Writing monitoring environment variables..."
