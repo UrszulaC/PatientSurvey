@@ -680,22 +680,24 @@ pipeline {
                 }
             }
 
-            
             stage('Display Monitoring URLs') {
                 steps {
-                    sh '''#!/bin/bash
-                        # Load variables from monitoring.env
-                        source monitoring.env
-                        
-                        echo "========== MONITORING LINKS =========="
-                        echo "Prometheus Dashboard: $PROMETHEUS_URL"
-                        echo "Grafana Dashboard: $GRAFANA_URL"
-                        echo "Node Metrics: http://${APP_HOST}:9100/metrics"
-                        echo "Patient Survey App Metrics: http://${APP_HOST}:8001/metrics"
-                        echo "====================================="
-                    '''
+                    withCredentials([string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')]) {
+                        sh '''#!/bin/bash
+                            # Load variables from monitoring.env
+                            source monitoring.env
+                            
+                            echo "========== MONITORING LINKS =========="
+                            echo "Prometheus Dashboard: $PROMETHEUS_URL"
+                            echo "Grafana Dashboard: $GRAFANA_URL (credentials hidden)"
+                            echo "Node Metrics: http://$APP_IP:9100/metrics"
+                            echo "Patient Survey App Metrics: http://$APP_IP:8001/metrics"
+                            echo "====================================="
+                        '''
+                    }
                 }
             }
+            
         
     }
     post {
