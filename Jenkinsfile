@@ -368,7 +368,6 @@ pipeline {
         
                         NSG_NAME="monitoring-nsg"
                         RG_NAME="MyPatientSurveyRG"
-                        NIC_NAME="survey-vmVMNic"
         
                         # Check if NSG exists
                         if ! az network nsg show -g "$RG_NAME" -n "$NSG_NAME" &>/dev/null; then
@@ -407,35 +406,12 @@ pipeline {
                             --destination-port-range 9100 \
                             --description "Allow Prometheus scraping from anywhere"
         
-                        echo "➕ Adding App Metrics rule (port 8002)..."
-                        az network nsg rule create \
-                            --resource-group "$RG_NAME" \
-                            --nsg-name "$NSG_NAME" \
-                            --name AllowAppMetrics \
-                            --priority 320 \
-                            --direction Inbound \
-                            --access Allow \
-                            --protocol Tcp \
-                            --source-address-prefix Internet \
-                            --source-port-range '*' \
-                            --destination-address-prefix '*' \
-                            --destination-port-range 8002 \
-                            --description "Allow Prometheus scraping app metrics"
-        
-                        # Associate NSG with NIC (idempotent)
-                        echo "🔗 Associating NSG $NSG_NAME with NIC $NIC_NAME..."
-                        az network nic update \
-                            --resource-group "$RG_NAME" \
-                            --name "$NIC_NAME" \
-                            --network-security-group "$NSG_NAME"
-        
                         echo "✅ Network security configured"
                         '''
                     }
                 }
             }
         }
-
         
         stage('Deploy Monitoring Stack') {
             steps {
@@ -460,18 +436,16 @@ pipeline {
                             echo "📊 Deploying Prometheus..."
                             PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
                             CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-                            
+       
                             if [ ! -f "$CONFIG_FILE" ]; then
                                 echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
                                 exit 1
                             fi
-                            
-                            # Replace placeholders in prometheus.yml with actual DNS names
-                            sed -i "s|\${APP_DNS}|${APP_DNS}.uksouth.azurecontainer.io|g" "$CONFIG_FILE"
-                            sed -i "s|\${NODE_DNS}|${NODE_DNS}.uksouth.azurecontainer.io|g" "$CONFIG_FILE"
-                            
+       
+                            # Use placeholder IP initially
+                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
                             CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
-                            
+       
                             az container create \
                              --resource-group MyPatientSurveyRG \
                              --name "$PROMETHEUS_NAME" \
@@ -484,11 +458,11 @@ pipeline {
                              --dns-name-label "prometheus-survey" \
                              --location uksouth \
                              --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-
+       
                             # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
                             GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-                            
+       
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
@@ -502,18 +476,27 @@ pipeline {
                                 --location uksouth \
                                 --environment-variables \
                                     GF_SECURITY_ADMIN_USER=admin \
-                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD" \
-                                    GF_SERVER_ROOT_URL="http://${PROMETHEUS_HOST}:9090"
-
-                            
+                                    GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
+       
+                            # ===== GET MONITORING ENDPOINTS =====
+                            echo "🔗 Getting monitoring endpoints..."
+                            PROMETHEUS_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$PROMETHEUS_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
+                            GRAFANA_IP=$(az container show \
+                                -g MyPatientSurveyRG \
+                                -n "$GRAFANA_NAME" \
+                                --query "ipAddress.ip" \
+                                -o tsv)
        
                             # ===== WRITE MONITORING ENV FILE =====
                             echo "📝 Writing monitoring environment variables..."
                             cat > monitoring.env <<EOF
-                            PROMETHEUS_URL=http://${PROMETHEUS_HOST}:9090
-                            GRAFANA_URL=http://${GRAFANA_HOST}:3000
+                            PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
+                            GRAFANA_URL=http://${GRAFANA_IP}:3000
                             GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
-                            APP_HOST=${APP_DNS}.uksouth.azurecontainer.io
                             EOF
        
                             echo "=== monitoring.env contents ==="
@@ -569,8 +552,6 @@ pipeline {
                             # ===== DEPLOY APPLICATION =====
                             echo "🚀 Deploying application container..."
                             ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
-                            APP_DNS="patientsurvey-app-${BUILD_NUMBER}-uksouth"  # DNS name
-                            
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name $ACI_NAME \
@@ -578,11 +559,10 @@ pipeline {
                                 --os-type Linux \
                                 --cpu 1 \
                                 --memory 2 \
-                                --ports 9100 8001 8002 \
+                                --ports 9100 \
                                 --restart-policy Always \
                                 --location uksouth \
                                 --ip-address Public \
-                                --dns-name-label $APP_DNS \
                                 --environment-variables \
                                     DB_HOST=${DB_HOST} \
                                     DB_USER=${DB_USER} \
@@ -591,7 +571,7 @@ pipeline {
                                 --registry-login-server index.docker.io \
                                 --registry-username "$DOCKER_HUB_USER" \
                                 --registry-password "$DOCKER_HUB_PASSWORD" \
-                                --command-line "python3 -m app.main --host 0.0.0.0 --port 8001"
+                                --command-line "python3 -m app.main"  # Run terminal-based application
         
                             # ===== GET APPLICATION IP =====
                             echo "🔄 Getting application IP..."
@@ -672,6 +652,7 @@ pipeline {
                 }
             }
 
+            
             stage('Display Monitoring URLs') {
                 steps {
                     withCredentials([string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')]) {
@@ -681,7 +662,7 @@ pipeline {
                             
                             echo "========== MONITORING LINKS =========="
                             echo "Prometheus Dashboard: $PROMETHEUS_URL"
-                            echo "Grafana Dashboard: $GRAFANA_URL (credentials hidden)"
+                            echo "Grafana Dashboard: $GRAFANA_URL"
                             echo "Node Metrics: http://$APP_IP:9100/metrics"
                             echo "Patient Survey App Metrics: http://$APP_IP:8001/metrics"
                             echo "====================================="
@@ -689,7 +670,6 @@ pipeline {
                     }
                 }
             }
-            
         
     }
     post {
@@ -700,4 +680,6 @@ pipeline {
         }
     }
 }
+
+
 
