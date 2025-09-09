@@ -44,8 +44,20 @@ resource "azurerm_container_group" "survey_app" {
     }
   }
 
+  container {
+    name  = "node-exporter"
+    image = "prom/node-exporter:latest"
+    cpu   = "0.1"
+    memory = "0.2"
+
+    ports {
+      port     = 9100   # Node exporter metrics port
+      protocol = "TCP"
+    }
+  }
+
   tags = {
-    purpose = "EPA Patient Survey App"
+    purpose = "EPA Patient Survey App + Node Exporter"
   }
 }
 
@@ -56,5 +68,3 @@ output "survey_app_fqdn" {
 output "survey_app_public_ip" {
   value = azurerm_container_group.survey_app.ip_address
 }
-
-
