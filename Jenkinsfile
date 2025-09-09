@@ -44,6 +44,10 @@ pipeline {
                 #!/usr/bin/env bash
                 set -e
         
+                # Fix Grafana GPG key
+                curl -fsSL https://apt.grafana.com/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/grafana.gpg
+                echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+        
                 sudo apt-get update
                 sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
         
@@ -59,6 +63,7 @@ pipeline {
                 '''
             }
         }
+
 
 
 
