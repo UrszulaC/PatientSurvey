@@ -57,13 +57,22 @@ pipeline {
                 https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
                 | sudo tee /etc/apt/sources.list.d/mssql-release.list
                 
-                # Update and install ODBC driver
+                # --- Fix for Grafana GPG key ---
+                curl -fsSL https://apt.grafana.com/gpg.key -o grafana.asc
+                sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/grafana.gpg
+                echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
+                    | sudo tee /etc/apt/sources.list.d/grafana.list
+                
+                # Update again after adding repos
                 sudo apt-get update
+                
+                # Install ODBC driver
                 yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
                 
                 # Upgrade pip and install Python dependencies
                 pip3 install --upgrade pip
                 pip3 install -r requirements.txt
+
                 '''
             }
         }
