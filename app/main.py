@@ -19,50 +19,44 @@ survey_failures = Counter('patient_survey_failures_total', 'Total failed survey 
 active_surveys = Counter('active_surveys_total', 'Number of active surveys initialized')
 question_count = Counter('survey_questions_total', 'Total number of questions initialized')
 
-# Start Prometheus metrics server
-start_http_server(8001)
-logger.info("Prometheus metrics available on port 8001")
 
 # This function needs to handle its own connection for creating/dropping databases
 # Decorator connects to a specific database.
 # It will take `conn` as an argument, and `main()` will pass it.
 def create_survey_tables(conn):
-    """Create all necessary tables for surveys"""
+    """Create all necessary tables for surveys safely (if not exist)"""
     try:
         cursor = conn.cursor()
 
-        # SQL Server specific syntax for dropping tables in correct order
-        # No SET FOREIGN_KEY_CHECKS in SQL Server. Drop tables directly.
-        # Use IF OBJECT_ID to check existence before dropping
-        cursor.execute("IF OBJECT_ID('answers', 'U') IS NOT NULL DROP TABLE answers")
-        cursor.execute("IF OBJECT_ID('responses', 'U') IS NOT NULL DROP TABLE responses")
-        cursor.execute("IF OBJECT_ID('questions', 'U') IS NOT NULL DROP TABLE questions")
-        cursor.execute("IF OBJECT_ID('surveys', 'U') IS NOT NULL DROP TABLE surveys")
-
-        # Create tables with SQL Server syntax
+        # Create surveys table
         cursor.execute("""
+            IF OBJECT_ID('surveys', 'U') IS NULL
             CREATE TABLE surveys (
-                survey_id INT IDENTITY(1,1) PRIMARY KEY, -- SQL Server AUTO_INCREMENT
-                title NVARCHAR(255) NOT NULL,            -- NVARCHAR for VARCHAR
-                description NVARCHAR(MAX),               -- TEXT equivalent
-                created_at DATETIME DEFAULT GETDATE(),   -- SQL Server CURRENT_TIMESTAMP
-                is_active BIT DEFAULT 1                  -- SQL Server BOOLEAN
+                survey_id INT IDENTITY(1,1) PRIMARY KEY,
+                title NVARCHAR(255) NOT NULL,
+                description NVARCHAR(MAX),
+                created_at DATETIME DEFAULT GETDATE(),
+                is_active BIT DEFAULT 1
             )
         """)
 
+        # Create questions table
         cursor.execute("""
+            IF OBJECT_ID('questions', 'U') IS NULL
             CREATE TABLE questions (
                 question_id INT IDENTITY(1,1) PRIMARY KEY,
                 survey_id INT NOT NULL,
                 question_text NVARCHAR(MAX) NOT NULL,
-                question_type NVARCHAR(50) NOT NULL,     -- ENUM equivalent (VARCHAR with CHECK constraint if needed)
+                question_type NVARCHAR(50) NOT NULL,
                 is_required BIT DEFAULT 0,
-                options NVARCHAR(MAX),                   -- JSON equivalent
+                options NVARCHAR(MAX),
                 FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
             )
         """)
 
+        # Create responses table
         cursor.execute("""
+            IF OBJECT_ID('responses', 'U') IS NULL
             CREATE TABLE responses (
                 response_id INT IDENTITY(1,1) PRIMARY KEY,
                 survey_id INT NOT NULL,
@@ -71,67 +65,36 @@ def create_survey_tables(conn):
             )
         """)
 
+        # Create answers table
         cursor.execute("""
+            IF OBJECT_ID('answers', 'U') IS NULL
             CREATE TABLE answers (
                 answer_id INT IDENTITY(1,1) PRIMARY KEY,
                 response_id INT NOT NULL,
                 question_id INT NOT NULL,
                 answer_value NVARCHAR(MAX),
                 FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE,
-                -- CRITICAL FIX: Explicitly set ON DELETE NO ACTION to resolve cascade path ambiguity
                 FOREIGN KEY (question_id) REFERENCES questions(question_id) ON DELETE NO ACTION
             )
         """)
 
-        # REMOVED CRITICAL FIX: Grant permissions to the DB_USER on the newly created database
-        # This is removed because the DB_USER (adminuser) is the server admin and implicitly
-        # becomes the dbo of the newly created database, making these explicit grants redundant
-        # and causing the "login already has an account with the user name 'dbo'" error.
-        # cursor.execute(f"IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '{Config.DB_USER}') CREATE USER [{Config.DB_USER}] FOR LOGIN [{Config.DB_USER}]")
-        # cursor.execute(f"ALTER ROLE db_owner ADD MEMBER [{Config.DB_USER}]") # Grant db_owner for simplicity during debug
-
-
-        survey_id = None # Initialize survey_id
-
-        # Check if default survey exists
+        # Insert default survey if it doesn't exist
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-        existing_survey_row = cursor.fetchone() # Fetch the row if it exists
-
-        if existing_survey_row:
-            survey_id = existing_survey_row[0] # Use existing ID
-            logger.info("Default survey already exists.")
-        else:
-            # Insert default survey
-            logger.info("Attempting to insert default survey...")
+        survey = cursor.fetchone()
+        if not survey:
             cursor.execute("""
                 INSERT INTO surveys (title, description, is_active)
-                VALUES (?, ?, ?) -- Use ? for pyodbc parameters
+                VALUES (?, ?, ?)
             """, ('Patient Experience Survey', 'Survey to collect feedback', True))
-            
-            # Check if the insert actually happened
-            if cursor.rowcount == 0:
-                raise Exception("Insert into surveys table failed: No rows were inserted. Check for hidden constraints or transaction issues.")
+            conn.commit()
+            survey_id_row = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()
+            survey_id = int(survey_id_row[0])
+        else:
+            survey_id = survey[0]
 
-            # Get last inserted ID for pyodbc (SCOPE_IDENTITY() or @@IDENTITY)
-            cursor.execute("SELECT SCOPE_IDENTITY()")
-            new_survey_id_row = cursor.fetchone()
-            
-            print(f"DEBUG: new_survey_id_row from SCOPE_IDENTITY(): {new_survey_id_row}")
-            
-            if new_survey_id_row is None or new_survey_id_row[0] is None: # Check for None row or None value
-                # Fallback to @@IDENTITY if SCOPE_IDENTITY is None
-                logger.warning("SCOPE_IDENTITY returned None. Attempting to use @@IDENTITY as a fallback.")
-                cursor.execute("SELECT @@IDENTITY")
-                new_survey_id_row = cursor.fetchone()
-                print(f"DEBUG: new_survey_id_row from @@IDENTITY(): {new_survey_id_row}")
-                if new_survey_id_row is None or new_survey_id_row[0] is None:
-                    raise Exception("Failed to retrieve any identity after inserting survey. Insert might have failed or returned no ID.")
-            
-            survey_id = int(new_survey_id_row[0]) # Convert to int
-            active_surveys.inc()
-            logger.info(f"Default survey created with ID: {survey_id}")
-
-            # Insert questions only if the survey was just created
+        # Insert default questions only if they do not exist
+        cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = ?", (survey_id,))
+        if cursor.fetchone()[0] == 0:
             questions = [
                 {'text': 'Date of visit?', 'type': 'text', 'required': True},
                 {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
@@ -145,32 +108,26 @@ def create_survey_tables(conn):
                 {'text': 'Overall satisfaction (1-5)', 'type': 'multiple_choice', 'required': True,
                  'options': ['1', '2', '3', '4', '5']}
             ]
-
             for q in questions:
                 cursor.execute("""
                     INSERT INTO questions (survey_id, question_text, question_type, is_required, options)
-                    VALUES (?, ?, ?, ?, ?) -- Use ? for pyodbc parameters
+                    VALUES (?, ?, ?, ?, ?)
                 """, (
                     survey_id,
                     q['text'],
                     q['type'],
-                    q.get('required', False), # Boolean True/False maps to BIT 1/0
+                    q.get('required', False),
                     json.dumps(q['options']) if 'options' in q else None
                 ))
-            question_count.inc(len(questions))
 
-        # Ensure survey_id is set before proceeding
-        if survey_id is None:
-            raise Exception("Failed to determine survey_id for Patient Experience Survey.")
+        conn.commit()
+        logger.info("Database tables initialized safely.")
 
-        conn.commit() # Explicit commit for DDL and DML
-        logger.info("Database tables initialized successfully")
-
-    except pyodbc.Error as e: # Catch pyodbc specific errors
-        survey_failures.inc()
+    except Exception as e:
         conn.rollback()
         logger.error(f"Database initialization failed: {e}")
         raise
+
     except Exception as e: # Catch other general errors
         survey_failures.inc()
         conn.rollback()
@@ -337,10 +294,7 @@ def main():
         # Dropping and creating the main application database first
         # This requires connecting to master database
         cursor_ddl = conn_for_ddl.cursor()
-        # cursor_ddl.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_NAME}') DROP DATABASE {Config.DB_NAME}")
-        # cursor_ddl.execute(f"CREATE DATABASE {Config.DB_NAME}")
-        cursor_ddl = conn_for_ddl.cursor()
-
+       
         # 1. Parameterized check for database existence (safe)
         cursor_ddl.execute(
             "SELECT name FROM sys.databases WHERE name = ?", 
@@ -348,19 +302,16 @@ def main():
         )
         db_exists = cursor_ddl.fetchone()
         
-        # 2. Conditional DROP with proper escaping
-        if db_exists:
-            # Escape database name for DDL (SQL Server specific)
-            safe_db_name = f"[{Config.DB_NAME}]"  # Square brackets escape special chars
-            cursor_ddl.execute(f"DROP DATABASE {safe_db_name}")  # nosec B608: Justified DDL
+        # Only create DB if it does not exist
+        if not db_exists:
+            cursor_ddl.execute(f"CREATE DATABASE [{Config.DB_NAME}]")
+        # else: do nothing, keep existing DB
         
-        # 3. Safe CREATE using escaped name
-        cursor_ddl.execute(f"CREATE DATABASE [{Config.DB_NAME}]")
-        
-        # No explicit commit needed here because autocommit is True
+        # Close the cursor and connection
         cursor_ddl.close()
-        conn_for_ddl.close() # Close the DDL connection
+        conn_for_ddl.close()
 
+        
         # Now, creating tables within the newly created Config.DB_NAME database
         # This connection will be passed to create_survey_tables
         conn_for_tables = get_db_connection(database_name=Config.DB_NAME)
