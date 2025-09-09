@@ -53,7 +53,7 @@ pipeline {
                 echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
                   | sudo tee /etc/apt/sources.list.d/mssql-release.list
         
-                # Grafana repo key (expired key fix)
+                # Grafana repo key (fix expired key)
                 curl -fsSL https://apt.grafana.com/gpg.key -o grafana.key
                 sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/grafana.gpg grafana.key
                 echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
@@ -67,6 +67,7 @@ pipeline {
                 '''
             }
         }
+
 
         stage('Install Terraform') {
             steps {
