@@ -8,4 +8,9 @@ variable "db_password" {
   type        = string
   sensitive   = true
 }
+variable "grafana_password" {
+  type        = string
+  description = "Admin password for Grafana"
+  sensitive   = true
+}
 
