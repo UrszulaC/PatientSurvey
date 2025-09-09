@@ -44,24 +44,24 @@ pipeline {
                 #!/usr/bin/env bash
                 set -e
         
-                echo "=== Update base system ==="
+                echo "=== Update system ==="
                 sudo apt-get update
                 sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
         
-                echo "=== Fix Microsoft GPG key ==="
+                echo "=== Fix Microsoft repo key ==="
                 curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o microsoft.asc
                 sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg microsoft.asc
                 echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] \
                 https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
                 | sudo tee /etc/apt/sources.list.d/mssql-release.list
         
-                echo "=== Fix Grafana GPG key ==="
+                echo "=== Fix Grafana repo key ==="
                 curl -fsSL https://apt.grafana.com/gpg.key -o grafana.asc
                 sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/grafana.gpg grafana.asc
                 echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
                 | sudo tee /etc/apt/sources.list.d/grafana.list
         
-                echo "=== Update apt with new repos ==="
+                echo "=== Update apt again ==="
                 sudo apt-get update
         
                 echo "=== Install SQL ODBC driver ==="
@@ -73,6 +73,7 @@ pipeline {
                 '''
             }
         }
+
 
 
         stage('Install Terraform') {
