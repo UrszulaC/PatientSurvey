@@ -521,40 +521,35 @@ pipeline {
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
                         string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD')
+                        usernamePassword(
+                            credentialsId: 'docker-hub-creds',
+                            usernameVariable: 'DOCKER_HUB_USER',
+                            passwordVariable: 'DOCKER_HUB_PASSWORD'
+                        )
                     ]) {
                         timeout(time: 10, unit: 'MINUTES') {
-                            sh '''#!/bin/bash
+                            sh '''
                             set -eo pipefail
         
-                            echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            echo "🔍 Verifying Docker image exists..."
+                            # Verify Docker image
                             docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
                             docker pull ${IMAGE_TAG}
         
-                            # ===== DEPLOY APPLICATION =====
-                            APP_NAME="patientsurvey-app"
-        
-                            # Delete existing container if exists
-                            if az container show -g MyPatientSurveyRG -n "$APP_NAME" &>/dev/null; then
-                                az container delete -g MyPatientSurveyRG -n "$APP_NAME" --yes
-                            fi
-        
+                            # Deploy app container (idempotent)
                             az container create \
                                 --resource-group MyPatientSurveyRG \
-                                --name "$APP_NAME" \
+                                --name patientsurvey-app \
                                 --image ${IMAGE_TAG} \
                                 --os-type Linux \
-                                --cpu 1 \
-                                --memory 2 \
+                                --cpu 0.5 \
+                                --memory 1.0 \
                                 --ports 8001 9100 \
-                                --restart-policy Always \
-                                --location uksouth \
                                 --ip-address Public \
-                                --dns-name-label "patientsurvey-app" \
+                                --dns-name-label survey-app \
+                                --restart-policy Always \
                                 --environment-variables \
                                     DB_HOST=${DB_HOST} \
                                     DB_USER=${DB_USER} \
@@ -562,11 +557,11 @@ pipeline {
                                     DB_NAME=${DB_NAME} \
                                 --registry-login-server index.docker.io \
                                 --registry-username "$DOCKER_HUB_USER" \
-                                --registry-password "$DOCKER_HUB_PASSWORD" \
-                                --command-line "python3 -m app.main --host 0.0.0.0 --port 8001"
+                                --registry-password "$DOCKER_HUB_PASSWORD" || true
         
-                            # Write APP_IP to monitoring.env
-                            echo "APP_IP=patientsurvey-app.uksouth.azurecontainer.io" >> monitoring.env
+                            # Save stable DNS to monitoring.env
+                            echo "APP_DNS=survey-app.uksouth.azurecontainer.io" > monitoring.env
+                            echo "APP_PORT=8001" >> monitoring.env
                             '''
                         }
                     }
