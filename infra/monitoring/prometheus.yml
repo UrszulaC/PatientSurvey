@@ -14,25 +14,3 @@ scrape_configs:
       - source_labels: [__name__]
         regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
         action: keep
-
-  - job_name: 'aci-node-exporter'
-    azure_sd_configs:
-      - environment: AzurePublicCloud
-        subscription_id: '${AZURE_SUBSCRIPTION_ID}'
-        tenant_id: '${AZURE_TENANT_ID}'
-        client_id: '${AZURE_CLIENT_ID}'
-        client_secret: '${AZURE_CLIENT_SECRET}'
-        refresh_interval: 60s
-        port: 9100
-    relabel_configs:
-      - source_labels: [__meta_azure_machine_name]
-        target_label: aci_name
-      - source_labels: [__meta_azure_resource_group]
-        target_label: resource_group
-      - action: keep
-        regex: '.*:9100'
-        source_labels: [__address__]
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
-        action: keep
