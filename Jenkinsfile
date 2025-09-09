@@ -45,7 +45,7 @@ pipeline {
                 set -e
                 sudo apt-get update
                 sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
-                curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+                curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
                 echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
                     | sudo tee /etc/apt/sources.list.d/mssql-release.list
                 sudo apt-get update
