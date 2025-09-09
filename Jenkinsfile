@@ -38,44 +38,44 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+       stage('Install Dependencies') {
             steps {
                 sh '''
                 #!/usr/bin/env bash
                 set -e
-                
+        
                 # Update packages
                 sudo apt-get update
                 sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
-                
-                # --- Fix for Microsoft GPG key ---
+        
+                # --- Fix Microsoft GPG key ---
                 curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o microsoft.asc
                 sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg microsoft.asc
-                
-                # Add Microsoft repo
+        
                 echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] \
                 https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
                 | sudo tee /etc/apt/sources.list.d/mssql-release.list
-                
-                # --- Fix for Grafana GPG key ---
+        
+                # --- Fix Grafana GPG key ---
                 curl -fsSL https://apt.grafana.com/gpg.key -o grafana.asc
-                sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/grafana.gpg
+                sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/grafana.gpg grafana.asc
+        
                 echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
-                    | sudo tee /etc/apt/sources.list.d/grafana.list
-                
-                # Update again after adding repos
+                | sudo tee /etc/apt/sources.list.d/grafana.list
+        
+                # Update apt again with fixed repos
                 sudo apt-get update
-                
+        
                 # Install ODBC driver
                 yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
-                
-                # Upgrade pip and install Python dependencies
+        
+                # Install Python deps
                 pip3 install --upgrade pip
                 pip3 install -r requirements.txt
-
                 '''
             }
         }
+
 
         stage('Install Terraform') {
             steps {
