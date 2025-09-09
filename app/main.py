@@ -124,15 +124,11 @@ def create_survey_tables(conn):
         logger.info("Database tables initialized safely.")
 
     except Exception as e:
+        survey_failures.inc()
         conn.rollback()
         logger.error(f"Database initialization failed: {e}")
         raise
 
-    except Exception as e: # Catch other general errors
-        survey_failures.inc()
-        conn.rollback()
-        logger.error(f"General initialization failed: {e}")
-        raise
 
 
 def conduct_survey(conn): # Now explicitly accepts conn
