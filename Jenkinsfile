@@ -426,7 +426,6 @@ pipeline {
                 }
             }
         }
-        
         stage('Deploy Monitoring Stack') {
             steps {
                 script {
@@ -440,43 +439,47 @@ pipeline {
                         timeout(time: 15, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
-       
-                            # ===== AUTHENTICATION =====
+        
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
-       
+        
                             # ===== DEPLOY PROMETHEUS =====
                             echo "📊 Deploying Prometheus..."
-                            PROMETHEUS_NAME="prometheus-${BUILD_NUMBER}"
+                            PROMETHEUS_NAME="prometheus"
                             CONFIG_FILE="$WORKSPACE/infra/monitoring/prometheus.yml"
-       
+        
                             if [ ! -f "$CONFIG_FILE" ]; then
                                 echo "❌ Error: prometheus.yml not found at $CONFIG_FILE"
                                 exit 1
                             fi
-       
-                            # Use placeholder IP initially
-                            sed -i "s/DYNAMIC_APP_IP/PLACEHOLDER_IP/g" "$CONFIG_FILE"
-                            CONFIG_BASE64=$(base64 -w0 "$CONFIG_FILE")
-       
+        
+                            # Delete existing container if exists
+                            if az container show -g MyPatientSurveyRG -n "$PROMETHEUS_NAME" &>/dev/null; then
+                                az container delete -g MyPatientSurveyRG -n "$PROMETHEUS_NAME" --yes
+                            fi
+        
                             az container create \
-                             --resource-group MyPatientSurveyRG \
-                             --name "$PROMETHEUS_NAME" \
-                             --image prom/prometheus:v2.47.0 \
-                             --os-type Linux \
-                             --cpu 0.5 \
-                             --memory 1.5 \
-                             --ports 9090 \
-                             --ip-address Public \
-                             --dns-name-label "prometheus-survey" \
-                             --location uksouth \
-                             --command-line "/bin/sh -c 'echo \"$CONFIG_BASE64\" | base64 -d > /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
-       
+                                --resource-group MyPatientSurveyRG \
+                                --name "$PROMETHEUS_NAME" \
+                                --image prom/prometheus:v2.47.0 \
+                                --os-type Linux \
+                                --cpu 0.5 \
+                                --memory 1.5 \
+                                --ports 9090 \
+                                --ip-address Public \
+                                --dns-name-label "prometheus-survey" \
+                                --location uksouth \
+                                --command-line "/bin/sh -c 'exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle'"
+        
                             # ===== DEPLOY GRAFANA =====
                             echo "📈 Deploying Grafana..."
-                            GRAFANA_NAME="grafana-${BUILD_NUMBER}"
-       
+                            GRAFANA_NAME="grafana"
+        
+                            if az container show -g MyPatientSurveyRG -n "$GRAFANA_NAME" &>/dev/null; then
+                                az container delete -g MyPatientSurveyRG -n "$GRAFANA_NAME" --yes
+                            fi
+        
                             az container create \
                                 --resource-group MyPatientSurveyRG \
                                 --name "$GRAFANA_NAME" \
@@ -491,31 +494,18 @@ pipeline {
                                 --environment-variables \
                                     GF_SECURITY_ADMIN_USER=admin \
                                     GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_PASSWORD"
-       
-                            # ===== GET MONITORING ENDPOINTS =====
-                            echo "🔗 Getting monitoring endpoints..."
-                            PROMETHEUS_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$PROMETHEUS_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-                            GRAFANA_IP=$(az container show \
-                                -g MyPatientSurveyRG \
-                                -n "$GRAFANA_NAME" \
-                                --query "ipAddress.ip" \
-                                -o tsv)
-       
+        
+                            echo "✅ Monitoring stack deployed"
+        
                             # ===== WRITE MONITORING ENV FILE =====
                             echo "📝 Writing monitoring environment variables..."
                             cat > monitoring.env <<EOF
-                            PROMETHEUS_URL=http://${PROMETHEUS_IP}:9090
-                            GRAFANA_URL=http://${GRAFANA_IP}:3000
-                            GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
-                            EOF
-       
-                            echo "=== monitoring.env contents ==="
+        PROMETHEUS_URL=http://prometheus-survey.uksouth.azurecontainer.io:9090
+        GRAFANA_URL=http://grafana-survey.uksouth.azurecontainer.io:3000
+        GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}
+        EOF
+        
                             cat monitoring.env
-                            echo "=============================="
                             '''
                         }
                     }
@@ -531,52 +521,40 @@ pipeline {
                         string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
                         string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        usernamePassword(
-                            credentialsId: 'docker-hub-creds',
-                            usernameVariable: 'DOCKER_HUB_USER',
-                            passwordVariable: 'DOCKER_HUB_PASSWORD'
-                        )
+                        usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD')
                     ]) {
                         timeout(time: 10, unit: 'MINUTES') {
                             sh '''#!/bin/bash
                             set -eo pipefail
         
-                            # ===== AUTHENTICATION =====
                             echo "🔑 Authenticating to Azure..."
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            # ===== VERIFY IMAGE EXISTS =====
                             echo "🔍 Verifying Docker image exists..."
-                            if ! docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"; then
-                                echo "❌ ERROR: Failed to login to Docker Hub"
-                                exit 1
-                            fi
-                            
-                            if ! docker pull ${IMAGE_TAG}; then
-                                echo "❌ ERROR: Failed to pull image ${IMAGE_TAG}"
-                                echo "Please verify:"
-                                echo "1. The image exists in Docker Hub"
-                                echo "2. The credentials have proper permissions"
-                                echo "3. The image tag is correct"
-                                exit 1
-                            fi
-                            echo "✅ Image verified successfully"
+                            docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
+                            docker pull ${IMAGE_TAG}
         
                             # ===== DEPLOY APPLICATION =====
-                            echo "🚀 Deploying application container..."
-                            ACI_NAME="patientsurvey-app-${BUILD_NUMBER}"
+                            APP_NAME="patientsurvey-app"
+        
+                            # Delete existing container if exists
+                            if az container show -g MyPatientSurveyRG -n "$APP_NAME" &>/dev/null; then
+                                az container delete -g MyPatientSurveyRG -n "$APP_NAME" --yes
+                            fi
+        
                             az container create \
                                 --resource-group MyPatientSurveyRG \
-                                --name $ACI_NAME \
+                                --name "$APP_NAME" \
                                 --image ${IMAGE_TAG} \
                                 --os-type Linux \
                                 --cpu 1 \
                                 --memory 2 \
-                                --ports 9100 \
+                                --ports 8001 9100 \
                                 --restart-policy Always \
                                 --location uksouth \
                                 --ip-address Public \
+                                --dns-name-label "patientsurvey-app" \
                                 --environment-variables \
                                     DB_HOST=${DB_HOST} \
                                     DB_USER=${DB_USER} \
@@ -587,43 +565,15 @@ pipeline {
                                 --registry-password "$DOCKER_HUB_PASSWORD" \
                                 --command-line "python3 -m app.main --host 0.0.0.0 --port 8001"
         
-                            # ===== GET APPLICATION IP =====
-                            echo "🔄 Getting application IP..."
-                            MAX_RETRIES=10
-                            RETRY_DELAY=10
-                            
-                            for ((i=1; i<=$MAX_RETRIES; i++)); do
-                                APP_IP=$(az container show \
-                                    --resource-group MyPatientSurveyRG \
-                                    --name $ACI_NAME \
-                                    --query "ipAddress.ip" \
-                                    -o tsv)
-                                
-                                if [ -n "$APP_IP" ]; then
-                                    echo "✅ Application IP: $APP_IP"
-                                    break
-                                else
-                                    echo "Attempt $i/$MAX_RETRIES: IP not yet assigned..."
-                                    sleep $RETRY_DELAY
-                                fi
-                            done
-                            
-                            if [ -z "$APP_IP" ]; then
-                                echo "❌ ERROR: Failed to get IP address after $MAX_RETRIES attempts"
-                                exit 1
-                            fi
-                            
-                            # Update monitoring.env with application IP
-                            grep -v '^APP_IP=' monitoring.env > monitoring.env.tmp
-                            echo "APP_IP=$APP_IP" >> monitoring.env.tmp
-                            mv monitoring.env.tmp monitoring.env
-
+                            # Write APP_IP to monitoring.env
+                            echo "APP_IP=patientsurvey-app.uksouth.azurecontainer.io" >> monitoring.env
                             '''
                         }
                     }
                 }
             }
         }
+
         
             stage('Configure Monitoring') {
                 steps {
