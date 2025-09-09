@@ -283,7 +283,7 @@ pipeline {
                         [(key.trim()): val.trim()]
                     }
         
-                    sh """
+                    sh '''
                     set -eo pipefail
         
                     # Generate Prometheus config for the ACI
@@ -311,7 +311,7 @@ pipeline {
                     curl -X POST --data-binary @prometheus-config.yml http://$PROMETHEUS_IP:9090/-/reload || echo "⚠️ Prometheus reload may need manual restart"
         
                     echo "✅ Prometheus configuration updated for ACI"
-                    """
+                    '''
                 }
             }
         }
