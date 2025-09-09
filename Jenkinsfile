@@ -133,6 +133,51 @@ pipeline {
                 }
             }
         }
+        stage('Cleanup Old Containers') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                    ]) {
+                        sh '''#!/bin/bash
+                        set -e
+        
+                        echo "🔑 Authenticating to Azure..."
+                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                        echo "🧹 Cleaning up old containers..."
+                        # List all containers except current build
+                        CONTAINERS=$(az container list \
+                            --resource-group "$RESOURCE_GROUP" \
+                            --query "[?name!='patientsurvey-app-${BUILD_NUMBER}' && name!='prometheus-${BUILD_NUMBER}' && name!='grafana-${BUILD_NUMBER}'].name" \
+                            -o tsv)
+        
+                        if [ -n "$CONTAINERS" ]; then
+                            echo "🗑️ Found containers to delete:"
+                            echo "$CONTAINERS"
+        
+                            for CONTAINER in $CONTAINERS; do
+                                echo "➖ Deleting $CONTAINER..."
+                                az container delete \
+                                    --resource-group "$RESOURCE_GROUP" \
+                                    --name "$CONTAINER" \
+                                    --yes
+                                echo "✅ $CONTAINER deleted"
+                            done
+                        else
+                            echo "ℹ️ No old containers found to delete"
+                        fi
+        
+                        echo "✅ Container cleanup complete"
+                        '''
+                    }
+                }
+            }
+        }
 
         stage('Create .env File') {
             steps {
