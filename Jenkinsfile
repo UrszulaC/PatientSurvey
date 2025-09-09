@@ -276,32 +276,46 @@ pipeline {
 
         stage('Configure Monitoring') {
             steps {
-                sh '''
-                    source monitoring.env
+                script {
+                    // Read monitoring environment variables
+                    def envVars = readFile('monitoring.env').trim().split('\n').collectEntries { line ->
+                        def (key, val) = line.split('=', 2)
+                        [(key.trim()): val.trim()]
+                    }
+        
+                    sh """
+                    set -eo pipefail
+        
+                    # Generate Prometheus config for the ACI
                     cat <<EOF > prometheus-config.yml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-
-scrape_configs:
-  - job_name: 'patient-survey-app'
-    static_configs:
-      - targets: ['survey-app.uksouth.azurecontainer.io:8001']
-
-  - job_name: 'myapp-node'
-    static_configs:
-      - targets: ['survey-app.uksouth.azurecontainer.io:9100']
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
-        action: keep
-EOF
-
-                    PROMETHEUS_IP=$(echo $PROMETHEUS_URL | sed 's|http://||;s|:9090||')
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+        
+        scrape_configs:
+          - job_name: 'patient-survey-app'
+            static_configs:
+              - targets: ['${envVars['APP_DNS']}:8001']
+        
+          - job_name: 'myapp-node'
+            static_configs:
+              - targets: ['${envVars['APP_DNS']}:9100']
+            metric_relabel_configs:
+              - source_labels: [__name__]
+                regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
+                action: keep
+        EOF
+        
+                    # Reload Prometheus
+                    PROMETHEUS_IP=$(echo ${envVars['PROMETHEUS_URL']} | sed 's|http://||;s|:9090||')
                     curl -X POST --data-binary @prometheus-config.yml http://$PROMETHEUS_IP:9090/-/reload || echo "⚠️ Prometheus reload may need manual restart"
-                '''
+        
+                    echo "✅ Prometheus configuration updated for ACI"
+                    """
+                }
             }
         }
+
 
         stage('Display Monitoring URLs') {
             steps {
