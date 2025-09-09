@@ -10,11 +10,11 @@ scrape_configs:
 
   - job_name: 'patient-survey-app'
     static_configs:
-      - targets: ['10.0.0.4:8001']  
+      - targets: ['patientsurvey-app.uksouth.azurecontainer.io:8001']  # <- use stable DNS
 
   - job_name: 'myapp-node'
     static_configs:
-      - targets: ['10.0.0.4:9100']  
+      - targets: ['patientsurvey-app.uksouth.azurecontainer.io:9100']  # <- use stable DNS
     metric_relabel_configs:
       - source_labels: [__name__]
         regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
