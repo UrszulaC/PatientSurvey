@@ -95,7 +95,7 @@ pipeline {
                             string(credentialsId: 'azure_subscription_id', variable: 'AZURE_SUBSCRIPTION_ID_VAR'),
                             string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASSWORD')
                         ]) {
-                            sh """
+                            sh '''
                                 export ARM_CLIENT_ID="${AZURE_CLIENT_ID}"
                                 export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
                                 export ARM_TENANT_ID="${AZURE_TENANT_ID}"
@@ -127,7 +127,7 @@ pipeline {
                                 echo "DB_HOST=$DB_HOST" >> $WORKSPACE/monitoring.env
                                 export DB_USER=${DB_USER_TF}
                                 export DB_PASSWORD=${DB_PASSWORD_TF}
-                            """
+                            '''
                         }
                     }
                 }
