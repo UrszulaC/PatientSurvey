@@ -43,23 +43,25 @@ pipeline {
                 sh '''
                 #!/usr/bin/env bash
                 set -e
+                
+                # Update packages
                 sudo apt-get update
                 sudo apt-get install -y apt-transport-https curl gnupg2 debian-archive-keyring python3-pip python3-venv
-                # Download Microsoft key first
-                curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o microsoft.asc
                 
-                # Convert to gpg and save as root non-interactively
+                # --- Fix for Microsoft GPG key ---
+                curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o microsoft.asc
                 sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg microsoft.asc
                 
-                # Add repo
+                # Add Microsoft repo
                 echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] \
                 https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
                 | sudo tee /etc/apt/sources.list.d/mssql-release.list
                 
-                # Update and install
+                # Update and install ODBC driver
                 sudo apt-get update
                 yes | sudo apt-get install -y msodbcsql17 unixodbc-dev
-
+                
+                # Upgrade pip and install Python dependencies
                 pip3 install --upgrade pip
                 pip3 install -r requirements.txt
                 '''
