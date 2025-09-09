@@ -38,19 +38,17 @@ pipeline {
             }
         }
 
-       stage('Install Dependencies') {
+        stage('Install Dependencies') {
             steps {
                 sh '''
                 #!/usr/bin/env bash
                 set -e
         
-                # Fix Grafana GPG key - remove existing and add properly
+                # Remove problematic Grafana repo first to avoid signature errors
                 sudo rm -f /etc/apt/sources.list.d/grafana.list
-                curl -fsSL https://apt.grafana.com/gpg.key | sudo gpg --dearmor --batch --yes -o /usr/share/keyrings/grafana.gpg
-                echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
-                  | sudo tee /etc/apt/sources.list.d/grafana.list
+                sudo rm -f /usr/share/keyrings/grafana.gpg
         
-                # Microsoft SQL ODBC Driver repo - fix GPG command
+                # Microsoft SQL ODBC Driver repo - FIXED with --batch --yes
                 curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
                   | sudo gpg --dearmor --batch --yes -o /usr/share/keyrings/microsoft-prod.gpg
                 echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
@@ -64,12 +62,25 @@ pipeline {
                 pip3 install -r requirements.txt
                 '''
             }
+        } 
+        stage('Setup Grafana') {
+            steps {
+                sh '''
+                #!/usr/bin/env bash
+                set -e
+                # Clean up any existing Grafana config
+                sudo rm -f /etc/apt/sources.list.d/grafana.list
+                sudo rm -f /usr/share/keyrings/grafana.gpg
+                
+                # Download and add Grafana key with batch mode
+                curl -fsSL https://apt.grafana.com/gpg.key | sudo gpg --dearmor --batch --yes -o /usr/share/keyrings/grafana.gpg
+                echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
+                  | sudo tee /etc/apt/sources.list.d/grafana.list
+                
+                sudo apt-get update
+                '''
+            }
         }
-
-
-
-
-
         stage('Install Terraform') {
             steps {
                 sh '''
