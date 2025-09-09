@@ -553,20 +553,14 @@ pipeline {
         stage('Configure Monitoring') {
             steps {
                 script {
-                    // Read monitoring.env
-                    def envFile = readFile('monitoring.env').trim()
-                    def envVars = [:]
-                    envFile.split('\n').each { line ->
-                        def parts = line.split('=', 2)
-                        if (parts.size() == 2) {
-                            envVars[parts[0].trim()] = parts[1].trim()
-                        }
+                    def envVars = readFile('monitoring.env').trim().split('\n').collectEntries { line ->
+                        def (key, val) = line.split('=', 2)
+                        [(key.trim()): val.trim()]
                     }
         
                     sh """
                     set -eo pipefail
         
-                    # Generate Prometheus config dynamically
                     cat <<EOF > prometheus-config.yml
         global:
           scrape_interval: 15s
@@ -575,24 +569,25 @@ pipeline {
         scrape_configs:
           - job_name: 'patient-survey-app'
             static_configs:
-              - targets: ['${envVars['APP_DNS']}:${envVars['APP_PORT']}']
+              - targets: ['${envVars['APP_DNS']}:8001']
         
           - job_name: 'myapp-node'
             static_configs:
-              - targets: ['${envVars['APP_DNS']}:${envVars['NODE_PORT']}']
+              - targets: ['${envVars['APP_DNS']}:9100']
             metric_relabel_configs:
               - source_labels: [__name__]
                 regex: '(node_cpu.*|node_memory.*|node_filesystem.*)'
                 action: keep
         EOF
         
-                    # Reload Prometheus if running
-                    PROMETHEUS_IP=\$(az container show -g MyPatientSurveyRG -n prometheus --query "ipAddress.ip" -o tsv)
-                    curl -X POST --data-binary @prometheus-config.yml http://\${PROMETHEUS_IP}:9090/-/reload || echo "⚠️ Prometheus reload failed (may require manual restart)"
+                    # Reload Prometheus
+                    PROMETHEUS_IP=$(echo ${envVars['PROMETHEUS_URL']} | sed 's|http://||;s|:9090||')
+                    curl -X POST --data-binary @prometheus-config.yml http://$PROMETHEUS_IP:9090/-/reload || echo "⚠️ Prometheus reload may need manual restart"
                     """
                 }
             }
         }
+
 
        stage('Display Monitoring URLs') {
             steps {
