@@ -101,8 +101,9 @@ pipeline {
                 set -e
                 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
                 chmod +x kubectl
-                mv kubectl $WORKSPACE/bin/kubectl
-                export PATH=$WORKSPACE/bin:$PATH
+                mkdir -p "$WORKSPACE/bin"
+                mv kubectl "$WORKSPACE/bin/kubectl"
+                export PATH="$WORKSPACE/bin:$PATH"
                 kubectl version --client --output=yaml
                 '''
             }
