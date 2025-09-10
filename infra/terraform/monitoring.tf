@@ -18,20 +18,24 @@ resource "azurerm_container_group" "prometheus" {
       port     = 9090
       protocol = "TCP"
     }
+
+    # Volume mount for Prometheus configuration (optional)
+    volume {
+      name      = "prometheus-config"
+      mount_path = "/etc/prometheus"
+      read_only = true
+      empty_dir = true
+    }
   }
 
-  # Only create if doesn't exist - use data source to check
-  count = length(data.azurerm_container_group.existing_prometheus[*]) > 0 ? 0 : 1
-}
-
-# Data source to check if Prometheus already exists
-data "azurerm_container_group" "existing_prometheus" {
-  name                = "prometheus-cg"
-  resource_group_name = data.azurerm_resource_group.existing.name
+  # CRITICAL: Prevent any changes to existing resources
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 output "prometheus_url" {
-  value = length(data.azurerm_container_group.existing_prometheus[*]) > 0 ? "http://${data.azurerm_container_group.existing_prometheus.fqdn}:9090" : "http://${azurerm_container_group.prometheus[0].fqdn}:9090"
+  value = "http://${azurerm_container_group.prometheus.fqdn}:9090"
 }
 
 # ===== Grafana Container =====
@@ -55,23 +59,38 @@ resource "azurerm_container_group" "grafana" {
       protocol = "TCP"
     }
 
-    # Use ONLY secure_environment_variables for sensitive data
+    # Use secure environment variables for sensitive data
     secure_environment_variables = {
       GF_SECURITY_ADMIN_USER     = "admin"
       GF_SECURITY_ADMIN_PASSWORD = var.grafana_password
     }
+
+    # Volume mount for Grafana data persistence (optional)
+    volume {
+      name      = "grafana-storage"
+      mount_path = "/var/lib/grafana"
+      read_only = false
+      empty_dir = true
+    }
   }
 
-  # Only create if doesn't exist - use data source to check
-  count = length(data.azurerm_container_group.existing_grafana[*]) > 0 ? 0 : 1
-}
-
-# Data source to check if Grafana already exists
-data "azurerm_container_group" "existing_grafana" {
-  name                = "grafana-cg"
-  resource_group_name = data.azurerm_resource_group.existing.name
+  # CRITICAL: Prevent any changes to existing resources
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 output "grafana_url" {
-  value = length(data.azurerm_container_group.existing_grafana[*]) > 0 ? "http://${data.azurerm_container_group.existing_grafana.fqdn}:3000" : "http://${azurerm_container_group.grafana[0].fqdn}:3000"
+  value = "http://${azurerm_container_group.grafana.fqdn}:3000"
+}
+
+# ===== Optional: Data sources if you need to reference existing resources =====
+data "azurerm_container_group" "existing_prometheus" {
+  name                = "prometheus-cg"
+  resource_group_name = data.azurerm_resource_group.existing.name
+}
+
+data "azurerm_container_group" "existing_grafana" {
+  name                = "grafana-cg"
+  resource_group_name = data.azurerm_resource_group.existing.name
 }
