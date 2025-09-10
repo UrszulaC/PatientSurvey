@@ -194,7 +194,7 @@ pipeline {
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
         
-                                # Try to import existing monitoring containers
+                                # Try to import existing monitoring containers (safe if already deployed)
                                 terraform import azurerm_container_group.prometheus /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg || echo "Prometheus not found - may need to create"
                                 terraform import azurerm_container_group.grafana /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg || echo "Grafana not found - may need to create"
         
@@ -202,11 +202,14 @@ pipeline {
                                 terraform plan -out=monitoring_plan.out \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
                                     -target="azurerm_container_group.prometheus" \
-                                    -target="azurerm_container_group.grafana"
+                                    -target="azurerm_container_group.grafana" \
+                                    -target="azurerm_storage_account.monitoring" \
+                                    -target="azurerm_storage_share.prometheus" \
+                                    -target="azurerm_storage_share.grafana"
         
                                 terraform apply -auto-approve monitoring_plan.out
         
-                                # Save monitoring URLs to the same file
+                                # Save stable monitoring URLs from outputs
                                 echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}" >> $WORKSPACE/monitoring.env
@@ -216,6 +219,7 @@ pipeline {
                 }
             }
         }
+
         stage('Cleanup Old Containers') {
             steps {
                 script {
