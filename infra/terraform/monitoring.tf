@@ -1,8 +1,13 @@
+# Get existing resource group
+data "azurerm_resource_group" "existing" {
+  name = "MyPatientSurveyRG"
+}
+
 # ===== PROMETHEUS =====
 resource "azurerm_container_group" "prometheus" {
   name                = "prometheus-cg"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.existing.name
+  location            = data.azurerm_resource_group.existing.location
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
@@ -20,13 +25,12 @@ resource "azurerm_container_group" "prometheus" {
     }
 
     volume {
-      name      = "prometheus-data"
-      mount_path = "/prometheus"
-      read_only = false
-      empty_dir = false
+      name                 = "prometheus-data"
+      mount_path           = "/prometheus"
+      read_only            = false
       storage_account_name = azurerm_storage_account.monitoring.name
       storage_account_key  = azurerm_storage_account.monitoring.primary_access_key
-      share_name          = azurerm_storage_share.prometheus.name
+      share_name           = azurerm_storage_share.prometheus.name
     }
   }
 
@@ -41,8 +45,8 @@ resource "azurerm_container_group" "prometheus" {
 # ===== GRAFANA =====
 resource "azurerm_container_group" "grafana" {
   name                = "grafana-cg"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.existing.name
+  location            = data.azurerm_resource_group.existing.location
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
@@ -60,20 +64,17 @@ resource "azurerm_container_group" "grafana" {
     }
 
     volume {
-      name      = "grafana-data"
-      mount_path = "/var/lib/grafana"
-      read_only = false
-      empty_dir = false
+      name                 = "grafana-data"
+      mount_path           = "/var/lib/grafana"
+      read_only            = false
       storage_account_name = azurerm_storage_account.monitoring.name
       storage_account_key  = azurerm_storage_account.monitoring.primary_access_key
-      share_name          = azurerm_storage_share.grafana.name
+      share_name           = azurerm_storage_share.grafana.name
     }
 
     secure_environment_variables = {
       GF_SECURITY_ADMIN_USER     = "admin"
       GF_SECURITY_ADMIN_PASSWORD = var.grafana_password
-      GF_DATABASE_TYPE           = "sqlite3"
-      GF_DATABASE_PATH           = "/var/lib/grafana/grafana.db"
     }
   }
 
@@ -88,8 +89,8 @@ resource "azurerm_container_group" "grafana" {
 # ===== PERSISTENT STORAGE =====
 resource "azurerm_storage_account" "monitoring" {
   name                     = "monitoring${replace(substr(uuid(), 0, 8), "-", "")}"
-  resource_group_name      = azurerm_resource_group.main.name
-  location                 = azurerm_resource_group.main.location
+  resource_group_name      = data.azurerm_resource_group.existing.name
+  location                 = data.azurerm_resource_group.existing.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
 }
