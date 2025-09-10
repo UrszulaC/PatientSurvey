@@ -21,6 +21,15 @@ resource "azurerm_container_group" "prometheus" {
 
     # Mount configuration via environment variable or volume if needed
   }
+
+  # CRITICAL: Prevent recreation of DNS and IP properties
+  lifecycle {
+    ignore_changes = [
+      dns_name_label,
+      ip_address_type,
+      fqdn
+    ]
+  }
 }
 
 output "prometheus_url" {
@@ -52,6 +61,20 @@ resource "azurerm_container_group" "grafana" {
       GF_SECURITY_ADMIN_USER     = "admin"
       GF_SECURITY_ADMIN_PASSWORD = var.grafana_password
     }
+
+    # Secure sensitive environment variables
+    secure_environment_variables = {
+      GF_SECURITY_ADMIN_PASSWORD = var.grafana_password
+    }
+  }
+
+  # CRITICAL: Prevent recreation of DNS and IP properties
+  lifecycle {
+    ignore_changes = [
+      dns_name_label,
+      ip_address_type,
+      fqdn
+    ]
   }
 }
 
