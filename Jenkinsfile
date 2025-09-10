@@ -136,14 +136,13 @@ pipeline {
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
         
-                                # Import existing network security group if it exists
+                                # Import existing NSG if present
                                 terraform import azurerm_network_security_group.monitoring_nsg /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg || echo "NSG may not exist yet - will create if needed"
         
-                                # Plan and apply ONLY app infrastructure (exclude monitoring containers)
+                                # Plan and apply ONLY app infrastructure (no monitoring resources)
                                 terraform plan -out=app_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
-                                    -var="grafana_password=${TF_VAR_grafana_password}" \
                                     -target="azurerm_resource_group.main" \
                                     -target="azurerm_mssql_server.main" \
                                     -target="azurerm_mssql_database.main" \
@@ -151,14 +150,11 @@ pipeline {
                                     -target="azurerm_network_security_group.monitoring_nsg" \
                                     -target="azurerm_network_security_rule.grafana_rule" \
                                     -target="azurerm_network_security_rule.prometheus_rule" \
-                                    -target="azurerm_network_security_rule.app_metrics_rule" \
-                                    -target="azurerm_storage_account.monitoring" \
-                                    -target="azurerm_storage_share.prometheus" \
-                                    -target="azurerm_storage_share.grafana"
+                                    -target="azurerm_network_security_rule.app_metrics_rule"
         
                                 terraform apply -auto-approve app_plan.out
         
-                                # Save only DB host (monitoring URLs come from separate stage)
+                                # Save DB connection info
                                 export DB_HOST=$(terraform output -raw sql_server_fqdn)
                                 echo "DB_HOST=$DB_HOST" > $WORKSPACE/monitoring.env
                                 export DB_USER=${DB_USER_TF}
@@ -171,6 +167,7 @@ pipeline {
                 }
             }
         }
+
         stage('Deploy Monitoring Infrastructure') {
             steps {
                 script {
