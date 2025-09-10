@@ -1,8 +1,3 @@
-# Get existing resource group
-data "azurerm_resource_group" "existing" {
-  name = "MyPatientSurveyRG"
-}
-
 # ===== PROMETHEUS =====
 resource "azurerm_container_group" "prometheus" {
   name                = "prometheus-cg"
@@ -11,7 +6,7 @@ resource "azurerm_container_group" "prometheus" {
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
-  dns_name_label      = "prometheus-survey"
+  dns_name_label      = "prometheus-survey" # stable DNS
 
   container {
     name   = "prometheus"
@@ -33,13 +28,6 @@ resource "azurerm_container_group" "prometheus" {
       share_name           = azurerm_storage_share.prometheus.name
     }
   }
-
-  lifecycle {
-    ignore_changes = [
-      dns_name_label,
-      ip_address_type
-    ]
-  }
 }
 
 # ===== GRAFANA =====
@@ -50,7 +38,7 @@ resource "azurerm_container_group" "grafana" {
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
-  dns_name_label      = "grafana-survey"
+  dns_name_label      = "grafana-survey" # stable DNS
 
   container {
     name   = "grafana"
@@ -77,13 +65,6 @@ resource "azurerm_container_group" "grafana" {
       GF_SECURITY_ADMIN_PASSWORD = var.grafana_password
     }
   }
-
-  lifecycle {
-    ignore_changes = [
-      dns_name_label,
-      ip_address_type
-    ]
-  }
 }
 
 # ===== PERSISTENT STORAGE =====
@@ -107,10 +88,11 @@ resource "azurerm_storage_share" "grafana" {
   quota                = 50
 }
 
+# ===== OUTPUTS =====
 output "prometheus_url" {
-  value = "http://${azurerm_container_group.prometheus.fqdn}:9090"
+  value = "http://prometheus-survey.${data.azurerm_resource_group.existing.location}.azurecontainer.io:9090"
 }
 
 output "grafana_url" {
-  value = "http://${azurerm_container_group.grafana.fqdn}:3000"
+  value = "http://grafana-survey.${data.azurerm_resource_group.existing.location}.azurecontainer.io:3000"
 }
