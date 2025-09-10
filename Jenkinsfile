@@ -198,6 +198,8 @@ pipeline {
                                 # Plan and apply ONLY monitoring infrastructure
                                 terraform plan -out=monitoring_plan.out \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
+                                    -var="db_user=dummy" \
+                                    -var="db_password=dummy" \
                                     -target="azurerm_container_group.prometheus" \
                                     -target="azurerm_container_group.grafana" \
                                     -target="azurerm_storage_account.monitoring" \
@@ -216,6 +218,7 @@ pipeline {
                 }
             }
         }
+
 
         stage('Cleanup Old Containers') {
             steps {
