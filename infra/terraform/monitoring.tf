@@ -1,8 +1,8 @@
-# ===== Prometheus Container =====
+# ===== PROMETHEUS =====
 resource "azurerm_container_group" "prometheus" {
   name                = "prometheus-cg"
-  resource_group_name = data.azurerm_resource_group.existing.name
-  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
@@ -19,30 +19,30 @@ resource "azurerm_container_group" "prometheus" {
       protocol = "TCP"
     }
 
-    # Volume mount for Prometheus configuration (optional)
     volume {
-      name      = "prometheus-config"
-      mount_path = "/etc/prometheus"
-      read_only = true
-      empty_dir = true
+      name      = "prometheus-data"
+      mount_path = "/prometheus"
+      read_only = false
+      empty_dir = false
+      storage_account_name = azurerm_storage_account.monitoring.name
+      storage_account_key  = azurerm_storage_account.monitoring.primary_access_key
+      share_name          = azurerm_storage_share.prometheus.name
     }
   }
 
-  # CRITICAL: Prevent any changes to existing resources
   lifecycle {
-    ignore_changes = all
+    ignore_changes = [
+      dns_name_label,
+      ip_address_type
+    ]
   }
 }
 
-output "prometheus_url" {
-  value = "http://${azurerm_container_group.prometheus.fqdn}:9090"
-}
-
-# ===== Grafana Container =====
+# ===== GRAFANA =====
 resource "azurerm_container_group" "grafana" {
   name                = "grafana-cg"
-  resource_group_name = data.azurerm_resource_group.existing.name
-  location            = data.azurerm_resource_group.existing.location
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
@@ -59,38 +59,57 @@ resource "azurerm_container_group" "grafana" {
       protocol = "TCP"
     }
 
-    # Use secure environment variables for sensitive data
+    volume {
+      name      = "grafana-data"
+      mount_path = "/var/lib/grafana"
+      read_only = false
+      empty_dir = false
+      storage_account_name = azurerm_storage_account.monitoring.name
+      storage_account_key  = azurerm_storage_account.monitoring.primary_access_key
+      share_name          = azurerm_storage_share.grafana.name
+    }
+
     secure_environment_variables = {
       GF_SECURITY_ADMIN_USER     = "admin"
       GF_SECURITY_ADMIN_PASSWORD = var.grafana_password
-    }
-
-    # Volume mount for Grafana data persistence (optional)
-    volume {
-      name      = "grafana-storage"
-      mount_path = "/var/lib/grafana"
-      read_only = false
-      empty_dir = true
+      GF_DATABASE_TYPE           = "sqlite3"
+      GF_DATABASE_PATH           = "/var/lib/grafana/grafana.db"
     }
   }
 
-  # CRITICAL: Prevent any changes to existing resources
   lifecycle {
-    ignore_changes = all
+    ignore_changes = [
+      dns_name_label,
+      ip_address_type
+    ]
   }
+}
+
+# ===== PERSISTENT STORAGE =====
+resource "azurerm_storage_account" "monitoring" {
+  name                     = "monitoring${replace(substr(uuid(), 0, 8), "-", "")}"
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
+
+resource "azurerm_storage_share" "prometheus" {
+  name                 = "prometheus-data"
+  storage_account_name = azurerm_storage_account.monitoring.name
+  quota                = 50
+}
+
+resource "azurerm_storage_share" "grafana" {
+  name                 = "grafana-data"
+  storage_account_name = azurerm_storage_account.monitoring.name
+  quota                = 50
+}
+
+output "prometheus_url" {
+  value = "http://${azurerm_container_group.prometheus.fqdn}:9090"
 }
 
 output "grafana_url" {
   value = "http://${azurerm_container_group.grafana.fqdn}:3000"
-}
-
-# ===== Optional: Data sources if you need to reference existing resources =====
-data "azurerm_container_group" "existing_prometheus" {
-  name                = "prometheus-cg"
-  resource_group_name = data.azurerm_resource_group.existing.name
-}
-
-data "azurerm_container_group" "existing_grafana" {
-  name                = "grafana-cg"
-  resource_group_name = data.azurerm_resource_group.existing.name
 }
