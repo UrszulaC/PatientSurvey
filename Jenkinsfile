@@ -37,18 +37,17 @@ pipeline {
                 checkout scm
             }
         }
-
         stage('Install Dependencies') {
             steps {
                 sh '''
                 #!/usr/bin/env bash
                 set -e
         
-                # Remove problematic Grafana repo first to avoid signature errors
-                sudo rm -f /etc/apt/sources.list.d/grafana.list
-                sudo rm -f /usr/share/keyrings/grafana.gpg
-        
-                # Microsoft SQL ODBC Driver repo - FIXED with --batch --yes
+                # Clean up problematic Grafana repo to avoid signature errors
+                sudo rm -f /etc/apt/sources.list.d/grafana.list 2>/dev/null || true
+                sudo rm -f /usr/share/keyrings/grafana.gpg 2>/dev/null || true
+                
+                # Microsoft SQL ODBC Driver repo with proper batch mode
                 curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
                   | sudo gpg --dearmor --batch --yes -o /usr/share/keyrings/microsoft-prod.gpg
                 echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
@@ -62,7 +61,8 @@ pipeline {
                 pip3 install -r requirements.txt
                 '''
             }
-        } 
+        }
+        
         stage('Setup Grafana') {
             steps {
                 sh '''
@@ -108,7 +108,6 @@ pipeline {
                 '''
             }
         }
-
         stage('Deploy Infrastructure (Terraform)') {
             steps {
                 script {
@@ -126,28 +125,35 @@ pipeline {
                                 export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
                                 export ARM_TENANT_ID="${AZURE_TENANT_ID}"
                                 export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
-
+        
                                 export TF_VAR_db_user="${DB_USER_TF}"
                                 export TF_VAR_db_password="${DB_PASSWORD_TF}"
                                 export TF_VAR_grafana_password="${GRAFANA_PASSWORD}"
-
+        
                                 terraform init -backend-config="resource_group_name=MyPatientSurveyRG" \
                                                -backend-config="storage_account_name=mypatientsurveytfstate" \
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
-
+        
+                                # Import existing resources to maintain stable IPs/DNS
+                                terraform import azurerm_network_security_group.monitoring_nsg /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg || echo "NSG may already be imported or not exist"
+                                
+                                terraform import azurerm_container_group.prometheus /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg || echo "Prometheus container may already be imported or not exist"
+                                
+                                terraform import azurerm_container_group.grafana /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg || echo "Grafana container may already be imported or not exist"
+        
                                 terraform plan -out=tfplan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
                                     -var="grafana_password=${TF_VAR_grafana_password}"
-
+        
                                 terraform apply -auto-approve tfplan.out
-
+        
                                 # Save Terraform outputs to monitoring.env
                                 echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" > $WORKSPACE/monitoring.env
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
-                                echo "GRAFANA_CREDS=admin:$GRAFANA_PASSWORD" >> $WORKSPACE/monitoring.env
-
+                                echo "GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}" >> $WORKSPACE/monitoring.env
+        
                                 # Save DB host
                                 export DB_HOST=$(terraform output -raw sql_server_fqdn)
                                 echo "DB_HOST=$DB_HOST" >> $WORKSPACE/monitoring.env
