@@ -43,6 +43,30 @@ resource "azurerm_container_group" "survey_app" {
       DB_PASSWORD = var.db_password
     }
   }
+  variable "db_user" {}
+  variable "db_password" {}
+  
+  resource "azurerm_mssql_server" "sql_server" {
+    name                         = "survey-sql"
+    resource_group_name          = data.azurerm_resource_group.existing.name
+    location                     = data.azurerm_resource_group.existing.location
+    version                      = "12.0"
+    administrator_login          = var.db_user
+    administrator_login_password = var.db_password
+  }
+  
+  resource "azurerm_mssql_database" "main" {
+    name      = "patient_survey_db"
+    server_id = azurerm_mssql_server.sql_server.id
+    sku_name  = "Basic"
+  }
+  
+  resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
+    name             = "AllowAzureServices"
+    server_id        = azurerm_mssql_server.sql_server.id
+    start_ip_address = "0.0.0.0"
+    end_ip_address   = "0.0.0.0"
+  }
 
   container {
     name  = "node-exporter"
