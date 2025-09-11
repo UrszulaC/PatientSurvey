@@ -470,6 +470,5 @@ pipeline {
             cleanWs()
         }
     }
-    }
-}
+  }
 }
