@@ -188,24 +188,27 @@ pipeline {
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
         
-                                # Idempotent import for monitoring resources
+                                # Define monitoring resources and their Azure resource types
                                 declare -A monitoring_resources=(
-                                  ["container_group.prometheus"]="prometheus-cg"
-                                  ["container_group.grafana"]="grafana-cg"
-                                  ["storage_account.monitoring"]="monitoring"
-                                  ["storage_share.prometheus"]="prometheus-data"
-                                  ["storage_share.grafana"]="grafana-data"
+                                  ["container_group.prometheus"]="containerGroups/prometheus-cg"
+                                  ["container_group.grafana"]="containerGroups/grafana-cg"
+                                  ["storage_account.monitoring"]="storageAccounts/monitoring"
+                                  ["storage_share.prometheus"]="fileServices/default/shares/prometheus-data"
+                                  ["storage_share.grafana"]="fileServices/default/shares/grafana-data"
                                 )
         
+                                # Import any resource missing from state
                                 for key in "${!monitoring_resources[@]}"; do
                                   if ! terraform state list | grep -q "azurerm_${key}"; then
+                                    echo "Importing ${key}..."
                                     terraform import -var="grafana_password=${TF_VAR_grafana_password}" \
                                                      azurerm_${key} \
-                                                     /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/${monitoring_resources[$key]} 2>/dev/null || \
-                                    echo "${key} not found or already exists"
+                                                     /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.${monitoring_resources[$key]} \
+                                                     2>/dev/null || echo "${key} not found or already exists"
                                   fi
                                 done
         
+                                # Plan & apply monitoring resources only
                                 terraform plan -out=monitoring_plan.out \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
                                     -target="azurerm_container_group.prometheus" \
@@ -216,6 +219,7 @@ pipeline {
         
                                 terraform apply -auto-approve monitoring_plan.out
         
+                                # Save stable URLs and credentials
                                 echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}" >> $WORKSPACE/monitoring.env
@@ -225,7 +229,6 @@ pipeline {
                 }
             }
         }
-
 
         stage('Cleanup Old Containers') {
             steps {
