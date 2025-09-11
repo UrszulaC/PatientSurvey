@@ -10,47 +10,19 @@ terraform {
 provider "azurerm" {
   features {}
 }
-# Existing resource group
+
 data "azurerm_resource_group" "existing" {
   name = "MyPatientSurveyRG"
 }
 
-# SQL Server
-resource "azurerm_mssql_server" "sql_server" {
-  name                         = "survey-sql"
-  resource_group_name           = data.azurerm_resource_group.existing.name
-  location                     = data.azurerm_resource_group.existing.location
-  version                      = "12.0"
-  administrator_login           = var.db_user
-  administrator_login_password  = var.db_password
-}
-
-# Database
-resource "azurerm_mssql_database" "main" {
-  name                = "patient_survey_db"
-  server_id           = azurerm_mssql_server.sql_server.id
-  sku_name            = "S0"
-  max_size_gb         = 10
-}
-
-# Firewall rule
-resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
-  name                = "AllowAzureServices"
-  server_id           = azurerm_mssql_server.sql_server.id
-  start_ip_address    = "0.0.0.0"
-  end_ip_address      = "0.0.0.0"
-}
-
-# Survey app container group
 resource "azurerm_container_group" "survey_app" {
   name                = "survey-app-cg"
   resource_group_name = data.azurerm_resource_group.existing.name
   location            = data.azurerm_resource_group.existing.location
   os_type             = "Linux"
   restart_policy      = "Always"
-
-  ip_address_type = "Public"
-  dns_name_label  = "survey-app"
+  ip_address_type     = "Public"
+  dns_name_label      = "survey-app"
 
   container {
     name  = "survey-app"
@@ -65,7 +37,7 @@ resource "azurerm_container_group" "survey_app" {
 
     environment_variables = {
       DB_HOST     = azurerm_mssql_server.sql_server.fully_qualified_domain_name
-      DB_NAME     = azurerm_mssql_database.main.name
+      DB_NAME     = "patient_survey_db"
       DB_USER     = var.db_user
       DB_PASSWORD = var.db_password
     }
@@ -95,4 +67,3 @@ output "survey_app_fqdn" {
 output "survey_app_public_ip" {
   value = azurerm_container_group.survey_app.ip_address
 }
-
