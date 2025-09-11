@@ -136,38 +136,35 @@ pipeline {
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
         
-                                # Import existing NSG if present
-                                terraform import azurerm_network_security_group.monitoring_nsg /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg || echo "NSG may not exist yet - will create if needed"
+                                # Idempotent import for database resources
+                                for res in mssql_server.main mssql_database.main mssql_firewall_rule.allow_azure_services; do
+                                  if ! terraform state list | grep -q "azurerm_${res}"; then
+                                    terraform import -var="db_user=${TF_VAR_db_user}" \
+                                                     -var="db_password=${TF_VAR_db_password}" \
+                                                     azurerm_${res} /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql
+                                  fi
+                                done
         
-                                # Plan and apply ONLY app infrastructure (no monitoring resources)
                                 terraform plan -out=app_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
                                     -target="azurerm_resource_group.main" \
                                     -target="azurerm_mssql_server.main" \
                                     -target="azurerm_mssql_database.main" \
-                                    -target="azurerm_mssql_firewall_rule.allow_azure_services" \
-                                    -target="azurerm_network_security_group.monitoring_nsg" \
-                                    -target="azurerm_network_security_rule.grafana_rule" \
-                                    -target="azurerm_network_security_rule.prometheus_rule" \
-                                    -target="azurerm_network_security_rule.app_metrics_rule"
+                                    -target="azurerm_mssql_firewall_rule.allow_azure_services"
         
                                 terraform apply -auto-approve app_plan.out
         
-                                # Save DB connection info
-                                export DB_HOST=$(terraform output -raw sql_server_fqdn)
-                                echo "DB_HOST=$DB_HOST" > $WORKSPACE/monitoring.env
-                                export DB_USER=${DB_USER_TF}
-                                export DB_PASSWORD=${DB_PASSWORD_TF}
-                                echo "DB_USER=$DB_USER" >> $WORKSPACE/monitoring.env
-                                echo "DB_PASSWORD=$DB_PASSWORD" >> $WORKSPACE/monitoring.env
+                                echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
+                                echo "DB_USER=${DB_USER_TF}" >> $WORKSPACE/monitoring.env
+                                echo "DB_PASSWORD=${DB_PASSWORD_TF}" >> $WORKSPACE/monitoring.env
                             '''
                         }
                     }
                 }
             }
         }
-
+        
         stage('Deploy Monitoring Infrastructure') {
             steps {
                 script {
@@ -191,15 +188,26 @@ pipeline {
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
         
-                                # Try to import existing monitoring containers (safe if already deployed)
-                                terraform import azurerm_container_group.prometheus /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg || echo "Prometheus not found - may need to create"
-                                terraform import azurerm_container_group.grafana /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg || echo "Grafana not found - may need to create"
+                                # Idempotent import for monitoring resources
+                                declare -A monitoring_resources=(
+                                  ["container_group.prometheus"]="prometheus-cg"
+                                  ["container_group.grafana"]="grafana-cg"
+                                  ["storage_account.monitoring"]="monitoring"
+                                  ["storage_share.prometheus"]="prometheus-data"
+                                  ["storage_share.grafana"]="grafana-data"
+                                )
         
-                                # Plan and apply ONLY monitoring infrastructure
+                                for key in "${!monitoring_resources[@]}"; do
+                                  if ! terraform state list | grep -q "azurerm_${key}"; then
+                                    terraform import -var="grafana_password=${TF_VAR_grafana_password}" \
+                                                     azurerm_${key} \
+                                                     /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/${monitoring_resources[$key]} 2>/dev/null || \
+                                    echo "${key} not found or already exists"
+                                  fi
+                                done
+        
                                 terraform plan -out=monitoring_plan.out \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
-                                    -var="db_user=dummy" \
-                                    -var="db_password=dummy" \
                                     -target="azurerm_container_group.prometheus" \
                                     -target="azurerm_container_group.grafana" \
                                     -target="azurerm_storage_account.monitoring" \
@@ -208,7 +216,6 @@ pipeline {
         
                                 terraform apply -auto-approve monitoring_plan.out
         
-                                # Save stable monitoring URLs from outputs
                                 echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}" >> $WORKSPACE/monitoring.env
