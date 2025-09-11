@@ -139,10 +139,6 @@ pipeline {
                                 terraform plan -out=app_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
-                                    -target="azurerm_resource_group.main" \
-                                    -target="azurerm_mssql_server.sql_server" \
-                                    -target="azurerm_mssql_database.main" \
-                                    -target="azurerm_mssql_firewall_rule.allow_azure_services" \
                                     -target="azurerm_container_group.survey_app"
         
                                 terraform apply -auto-approve app_plan.out
