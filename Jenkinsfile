@@ -126,35 +126,51 @@ pipeline {
                                 export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
                                 export ARM_TENANT_ID="${AZURE_TENANT_ID}"
                                 export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
-        
+
                                 export TF_VAR_db_user="${DB_USER_TF}"
                                 export TF_VAR_db_password="${DB_PASSWORD_TF}"
                                 export TF_VAR_grafana_password="${GRAFANA_PASSWORD}"
-        
+
                                 terraform init -backend-config="resource_group_name=MyPatientSurveyRG" \
                                                -backend-config="storage_account_name=mypatientsurveytfstate" \
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
-        
-                                # Idempotent import for database resources
-                                for res in mssql_server.main mssql_database.main mssql_firewall_rule.allow_azure_services; do
-                                  if ! terraform state list | grep -q "azurerm_${res}"; then
-                                    terraform import -var="db_user=${TF_VAR_db_user}" \
-                                                     -var="db_password=${TF_VAR_db_password}" \
-                                                     azurerm_${res} /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql
+
+                                # Import SQL Server resources if missing
+                                declare -A sql_resources=(
+                                  ["sql_server"]="azurerm_mssql_server.sql_server"
+                                  ["database"]="azurerm_mssql_database.main"
+                                  ["firewall"]="azurerm_mssql_firewall_rule.allow_azure_services"
+                                )
+
+                                for key in "${!sql_resources[@]}"; do
+                                  if ! terraform state list | grep -q "${sql_resources[$key]}"; then
+                                    echo "Importing ${sql_resources[$key]}..."
+                                    case $key in
+                                      sql_server)
+                                        terraform import ${sql_resources[$key]} /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql
+                                        ;;
+                                      database)
+                                        terraform import ${sql_resources[$key]} /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql/databases/patient_survey_db
+                                        ;;
+                                      firewall)
+                                        terraform import ${sql_resources[$key]} /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql/firewallRules/AllowAzureServices
+                                        ;;
+                                    esac
                                   fi
                                 done
-        
+
                                 terraform plan -out=app_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
                                     -target="azurerm_resource_group.main" \
-                                    -target="azurerm_mssql_server.main" \
+                                    -target="azurerm_mssql_server.sql_server" \
                                     -target="azurerm_mssql_database.main" \
-                                    -target="azurerm_mssql_firewall_rule.allow_azure_services"
-        
+                                    -target="azurerm_mssql_firewall_rule.allow_azure_services" \
+                                    -target="azurerm_container_group.survey_app"
+
                                 terraform apply -auto-approve app_plan.out
-        
+
                                 echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
                                 echo "DB_USER=${DB_USER_TF}" >> $WORKSPACE/monitoring.env
                                 echo "DB_PASSWORD=${DB_PASSWORD_TF}" >> $WORKSPACE/monitoring.env
@@ -164,7 +180,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Deploy Monitoring Infrastructure') {
             steps {
                 script {
@@ -182,13 +198,13 @@ pipeline {
                                 export ARM_TENANT_ID="${AZURE_TENANT_ID}"
                                 export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
                                 export TF_VAR_grafana_password="${GRAFANA_PASSWORD}"
-        
+
                                 terraform init -backend-config="resource_group_name=MyPatientSurveyRG" \
                                                -backend-config="storage_account_name=mypatientsurveytfstate" \
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
-        
-                                # Define monitoring resources and their Azure resource types
+
+                                # Define monitoring resources and Azure resource types
                                 declare -A monitoring_resources=(
                                   ["container_group.prometheus"]="containerGroups/prometheus-cg"
                                   ["container_group.grafana"]="containerGroups/grafana-cg"
@@ -196,19 +212,17 @@ pipeline {
                                   ["storage_share.prometheus"]="fileServices/default/shares/prometheus-data"
                                   ["storage_share.grafana"]="fileServices/default/shares/grafana-data"
                                 )
-        
-                                # Import any resource missing from state
+
                                 for key in "${!monitoring_resources[@]}"; do
                                   if ! terraform state list | grep -q "azurerm_${key}"; then
                                     echo "Importing ${key}..."
                                     terraform import -var="grafana_password=${TF_VAR_grafana_password}" \
                                                      azurerm_${key} \
-                                                     /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.${monitoring_resources[$key]} \
-                                                     2>/dev/null || echo "${key} not found or already exists"
+                                                     /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.${monitoring_resources[$key]} 2>/dev/null || \
+                                    echo "${key} not found or already exists"
                                   fi
                                 done
-        
-                                # Plan & apply monitoring resources only
+
                                 terraform plan -out=monitoring_plan.out \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
                                     -target="azurerm_container_group.prometheus" \
@@ -216,10 +230,9 @@ pipeline {
                                     -target="azurerm_storage_account.monitoring" \
                                     -target="azurerm_storage_share.prometheus" \
                                     -target="azurerm_storage_share.grafana"
-        
+
                                 terraform apply -auto-approve monitoring_plan.out
-        
-                                # Save stable URLs and credentials
+
                                 echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_CREDS=admin:${GRAFANA_PASSWORD}" >> $WORKSPACE/monitoring.env
