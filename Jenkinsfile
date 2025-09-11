@@ -464,5 +464,4 @@ pipeline {
             cleanWs()
         }
     }
-  }
 }
