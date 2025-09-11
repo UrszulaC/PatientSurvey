@@ -108,8 +108,7 @@ pipeline {
                 '''
             }
         }
-        
-        stage('Deploy App Infrastructure') {
+       stage('Deploy App Infrastructure') {
             steps {
                 script {
                     dir('infra/terraform') {
@@ -126,32 +125,17 @@ pipeline {
                                 export ARM_CLIENT_SECRET="${AZURE_CLIENT_SECRET}"
                                 export ARM_TENANT_ID="${AZURE_TENANT_ID}"
                                 export ARM_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID_VAR}"
-
+        
                                 export TF_VAR_db_user="${DB_USER_TF}"
                                 export TF_VAR_db_password="${DB_PASSWORD_TF}"
                                 export TF_VAR_grafana_password="${GRAFANA_PASSWORD}"
-
+        
                                 terraform init -backend-config="resource_group_name=MyPatientSurveyRG" \
                                                -backend-config="storage_account_name=mypatientsurveytfstate" \
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
-
-                                # Import SQL Server resources if missing
-                                if ! terraform state list | grep -q azurerm_mssql_server.sql_server; then
-                                  echo "Importing SQL Server..."
-                                  terraform import azurerm_mssql_server.sql_server /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql
-                                fi
-
-                                if ! terraform state list | grep -q azurerm_mssql_database.main; then
-                                  echo "Importing database..."
-                                  terraform import azurerm_mssql_database.main /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql/databases/patient_survey_db
-                                fi
-
-                                if ! terraform state list | grep -q azurerm_mssql_firewall_rule.allow_azure_services; then
-                                  echo "Importing firewall rule..."
-                                  terraform import azurerm_mssql_firewall_rule.allow_azure_services /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql/firewallRules/AllowAzureServices
-                                fi
-
+        
+                                echo "Creating SQL Server, database, and firewall (if missing)"
                                 terraform plan -out=app_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
@@ -160,9 +144,9 @@ pipeline {
                                     -target="azurerm_mssql_database.main" \
                                     -target="azurerm_mssql_firewall_rule.allow_azure_services" \
                                     -target="azurerm_container_group.survey_app"
-
+        
                                 terraform apply -auto-approve app_plan.out
-
+        
                                 echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
                                 echo "DB_USER=${DB_USER_TF}" >> $WORKSPACE/monitoring.env
                                 echo "DB_PASSWORD=${DB_PASSWORD_TF}" >> $WORKSPACE/monitoring.env
@@ -172,6 +156,8 @@ pipeline {
                 }
             }
         }
+ 
+        
 
         stage('Deploy Monitoring Infrastructure') {
             steps {
