@@ -137,28 +137,20 @@ pipeline {
                                                -backend-config="key=patient_survey.tfstate"
 
                                 # Import SQL Server resources if missing
-                                declare -A sql_resources=(
-                                  ["sql_server"]="azurerm_mssql_server.sql_server"
-                                  ["database"]="azurerm_mssql_database.main"
-                                  ["firewall"]="azurerm_mssql_firewall_rule.allow_azure_services"
-                                )
+                                if ! terraform state list | grep -q azurerm_mssql_server.sql_server; then
+                                  echo "Importing SQL Server..."
+                                  terraform import azurerm_mssql_server.sql_server /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql
+                                fi
 
-                                for key in "${!sql_resources[@]}"; do
-                                  if ! terraform state list | grep -q "${sql_resources[$key]}"; then
-                                    echo "Importing ${sql_resources[$key]}..."
-                                    case $key in
-                                      sql_server)
-                                        terraform import ${sql_resources[$key]} /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql
-                                        ;;
-                                      database)
-                                        terraform import ${sql_resources[$key]} /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql/databases/patient_survey_db
-                                        ;;
-                                      firewall)
-                                        terraform import ${sql_resources[$key]} /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql/firewallRules/AllowAzureServices
-                                        ;;
-                                    esac
-                                  fi
-                                done
+                                if ! terraform state list | grep -q azurerm_mssql_database.main; then
+                                  echo "Importing database..."
+                                  terraform import azurerm_mssql_database.main /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql/databases/patient_survey_db
+                                fi
+
+                                if ! terraform state list | grep -q azurerm_mssql_firewall_rule.allow_azure_services; then
+                                  echo "Importing firewall rule..."
+                                  terraform import azurerm_mssql_firewall_rule.allow_azure_services /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Sql/servers/survey-sql/firewallRules/AllowAzureServices
+                                fi
 
                                 terraform plan -out=app_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
@@ -204,24 +196,29 @@ pipeline {
                                                -backend-config="container_name=tfstate" \
                                                -backend-config="key=patient_survey.tfstate"
 
-                                # Define monitoring resources and Azure resource types
-                                declare -A monitoring_resources=(
-                                  ["container_group.prometheus"]="containerGroups/prometheus-cg"
-                                  ["container_group.grafana"]="containerGroups/grafana-cg"
-                                  ["storage_account.monitoring"]="storageAccounts/monitoring"
-                                  ["storage_share.prometheus"]="fileServices/default/shares/prometheus-data"
-                                  ["storage_share.grafana"]="fileServices/default/shares/grafana-data"
-                                )
+                                # Import Prometheus & Grafana container groups if missing
+                                if ! terraform state list | grep -q azurerm_container_group.prometheus; then
+                                  echo "Importing Prometheus container group..."
+                                  terraform import azurerm_container_group.prometheus /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg || echo "Prometheus not found, will create"
+                                fi
 
-                                for key in "${!monitoring_resources[@]}"; do
-                                  if ! terraform state list | grep -q "azurerm_${key}"; then
-                                    echo "Importing ${key}..."
-                                    terraform import -var="grafana_password=${TF_VAR_grafana_password}" \
-                                                     azurerm_${key} \
-                                                     /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.${monitoring_resources[$key]} 2>/dev/null || \
-                                    echo "${key} not found or already exists"
-                                  fi
-                                done
+                                if ! terraform state list | grep -q azurerm_container_group.grafana; then
+                                  echo "Importing Grafana container group..."
+                                  terraform import azurerm_container_group.grafana /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg || echo "Grafana not found, will create"
+                                fi
+
+                                # Import storage account and shares if missing
+                                if ! terraform state list | grep -q azurerm_storage_account.monitoring; then
+                                  terraform import azurerm_storage_account.monitoring /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Storage/storageAccounts/monitoring || echo "Storage account not found, will create"
+                                fi
+
+                                if ! terraform state list | grep -q azurerm_storage_share.prometheus; then
+                                  terraform import azurerm_storage_share.prometheus /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Storage/storageAccounts/monitoring/fileServices/default/shares/prometheus-data || echo "Prometheus share not found, will create"
+                                fi
+
+                                if ! terraform state list | grep -q azurerm_storage_share.grafana; then
+                                  terraform import azurerm_storage_share.grafana /subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/MyPatientSurveyRG/providers/Microsoft.Storage/storageAccounts/monitoring/fileServices/default/shares/grafana-data || echo "Grafana share not found, will create"
+                                fi
 
                                 terraform plan -out=monitoring_plan.out \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
@@ -242,7 +239,6 @@ pipeline {
                 }
             }
         }
-
         stage('Cleanup Old Containers') {
             steps {
                 script {
