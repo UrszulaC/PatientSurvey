@@ -117,32 +117,36 @@ pipeline {
                                 # Import Network resources
                                 import_if_missing "azurerm_network_security_group.monitoring_nsg" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg"
                                 
-                                # Import Storage resources - these need special handling
+                                # Import Storage Account
                                 import_if_missing "azurerm_storage_account.monitoring" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
                                 
-                                # For storage shares, we need to use a different format
-                                echo "Attempting to import storage shares..."
-                                
-                                # Try importing storage shares with proper format
+                                # Import Storage Shares - CORRECT FORMAT
+                                # Format: {resourceGroupName}/{storageAccountName}/{shareName}
                                 if ! grep -q "azurerm_storage_share.prometheus" existing_state.txt; then
-                                    echo "Importing prometheus storage share..."
+                                    echo "Importing prometheus storage share with correct format..."
                                     if terraform import azurerm_storage_share.prometheus "${RESOURCE_GROUP}/mypatientsurveymonitor/prometheus-data" 2>/dev/null; then
                                         echo "✅ Successfully imported prometheus storage share"
                                     else
-                                        echo "⚠️  Could not import prometheus storage share (may need manual import)"
+                                        echo "❌ Failed to import prometheus storage share. Manual import may be needed."
+                                        echo "Run: terraform import azurerm_storage_share.prometheus '${RESOURCE_GROUP}/mypatientsurveymonitor/prometheus-data'"
                                     fi
+                                else
+                                    echo "✅ azurerm_storage_share.prometheus already in state"
                                 fi
                                 
                                 if ! grep -q "azurerm_storage_share.grafana" existing_state.txt; then
-                                    echo "Importing grafana storage share..."
+                                    echo "Importing grafana storage share with correct format..."
                                     if terraform import azurerm_storage_share.grafana "${RESOURCE_GROUP}/mypatientsurveymonitor/grafana-data" 2>/dev/null; then
                                         echo "✅ Successfully imported grafana storage share"
                                     else
-                                        echo "⚠️  Could not import grafana storage share (may need manual import)"
+                                        echo "❌ Failed to import grafana storage share. Manual import may be needed."
+                                        echo "Run: terraform import azurerm_storage_share.grafana '${RESOURCE_GROUP}/mypatientsurveymonitor/grafana-data'"
                                     fi
+                                else
+                                    echo "✅ azurerm_storage_share.grafana already in state"
                                 fi
         
-                                # Try to import container groups if they exist
+                                # Try to import container groups if they exist (for stable URLs)
                                 import_if_missing "azurerm_container_group.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-container"
                                 import_if_missing "azurerm_container_group.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-container"
         
