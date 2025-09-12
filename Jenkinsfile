@@ -121,8 +121,9 @@ pipeline {
                                 import_if_missing "azurerm_storage_account.monitoring" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
                                 
                                 # Import Storage Shares
-                                import_if_missing "azurerm_storage_share.prometheus" "${RESOURCE_GROUP}/mypatientsurveymonitor/prometheus-data"
-                                import_if_missing "azurerm_storage_share.grafana" "${RESOURCE_GROUP}/mypatientsurveymonitor/grafana-data"
+                                import_if_missing "azurerm_storage_share.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/prometheus-data"    
+                                import_if_missing "azurerm_storage_share.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/grafana-data"
+
         
                                 # Try to import container groups if they exist
                                 import_if_missing "azurerm_container_group.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg"
