@@ -97,9 +97,9 @@ pipeline {
                                     local resource_name="$1"
                                     local azure_resource_id="$2"
                                     
-                                    if ! grep -q "$resource_name" existing_state.txt; then
+                                    if ! grep -xq "$resource_name" existing_state.txt; then
                                         echo "Attempting to import $resource_name..."
-                                        if terraform import "$resource_name" "$azure_resource_id" 2>/dev/null; then
+                                        if terraform import -var="resource_group_name=MyPatientSurveyRG" -var="location=uksouth" "$resource_name" "$azure_resource_id" 2>/dev/null; then
                                             echo "✅ Successfully imported $resource_name"
                                         else
                                             echo "⚠️  Import failed for $resource_name (resource may not exist or ID format may be different)"
@@ -120,35 +120,13 @@ pipeline {
                                 # Import Storage Account
                                 import_if_missing "azurerm_storage_account.monitoring" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
                                 
-                                # Import Storage Shares - CORRECT FORMAT
-                                # Format: {resourceGroupName}/{storageAccountName}/{shareName}
-                                if ! grep -xq "azurerm_storage_share.prometheus" existing_state.txt; then
-                                    echo "Importing prometheus storage share with correct format..."
-                                    if terraform import azurerm_storage_share.prometheus "${RESOURCE_GROUP}/mypatientsurveymonitor/prometheus-data" 2>/dev/null; then
-                                        echo "✅ Successfully imported prometheus storage share"
-                                    else
-                                        echo "❌ Failed to import prometheus storage share. Manual import may be needed."
-                                        echo "Run: terraform import azurerm_storage_share.prometheus '${RESOURCE_GROUP}/mypatientsurveymonitor/prometheus-data'"
-                                    fi
-                                else
-                                    echo "✅ azurerm_storage_share.prometheus already in state"
-                                fi
-                                
-                                if ! grep -xq "azurerm_storage_share.grafana" existing_state.txt; then
-                                    echo "Importing grafana storage share with correct format..."
-                                    if terraform import azurerm_storage_share.grafana "${RESOURCE_GROUP}/mypatientsurveymonitor/grafana-data" 2>/dev/null; then
-                                        echo "✅ Successfully imported grafana storage share"
-                                    else
-                                        echo "❌ Failed to import grafana storage share. Manual import may be needed."
-                                        echo "Run: terraform import azurerm_storage_share.grafana '${RESOURCE_GROUP}/mypatientsurveymonitor/grafana-data'"
-                                    fi
-                                else
-                                    echo "✅ azurerm_storage_share.grafana already in state"
-                                fi
+                                # Import Storage Shares
+                                import_if_missing "azurerm_storage_share.prometheus" "${RESOURCE_GROUP}/mypatientsurveymonitor/prometheus-data"
+                                import_if_missing "azurerm_storage_share.grafana" "${RESOURCE_GROUP}/mypatientsurveymonitor/grafana-data"
         
-                                # Try to import container groups if they exist (for stable URLs)
-                                import_if_missing "azurerm_container_group.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-container"
-                                import_if_missing "azurerm_container_group.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-container"
+                                # Try to import container groups if they exist
+                                import_if_missing "azurerm_container_group.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg"
+                                import_if_missing "azurerm_container_group.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg"
         
                                 echo "✅ Terraform initialization and resource import completed"
                             '''
@@ -157,6 +135,7 @@ pipeline {
                 }
             }
         }
+
 
         stage('Deploy Complete Infrastructure') {
             steps {
@@ -181,16 +160,18 @@ pipeline {
                                 export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
-
-                                # Apply complete infrastructure
+        
+                                # Explicitly pass RG + location
                                 terraform plan -out=complete_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
-                                    -var="grafana_password=${TF_VAR_grafana_password}"
-
+                                    -var="grafana_password=${TF_VAR_grafana_password}" \
+                                    -var="resource_group_name=MyPatientSurveyRG" \
+                                    -var="location=uksouth"
+        
                                 terraform apply -auto-approve complete_plan.out
-
-                                # Export all outputs to monitoring.env
+        
+                                # Export outputs to monitoring.env
                                 echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
                                 echo "DB_USER=${TF_VAR_db_user}" >> $WORKSPACE/monitoring.env
                                 echo "DB_PASSWORD=${TF_VAR_db_password}" >> $WORKSPACE/monitoring.env
@@ -204,6 +185,7 @@ pipeline {
                 }
             }
         }
+
 
         stage('Create .env File') {
             steps {
