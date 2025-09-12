@@ -5,6 +5,9 @@ pipeline {
         IMAGE_TAG = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
         DOCKER_REGISTRY = "index.docker.io"
         RESOURCE_GROUP = 'MyPatientSurveyRG' 
+        TF_STATE_STORAGE = 'mypatientsurveytfstate'
+        TF_STATE_CONTAINER = 'tfstate'
+        TF_STATE_KEY = 'patient_survey.tfstate'
     }
 
     options {
@@ -16,7 +19,11 @@ pipeline {
             steps { cleanWs() }
         }
 
-        stage('Checkout Code') { steps { checkout scm } }
+        stage('Checkout Code') { 
+            steps { 
+                checkout scm 
+            } 
+        }
 
         stage('Install Dependencies') {
             steps {
@@ -30,20 +37,25 @@ pipeline {
             }
         }
 
-        stage('Install Terraform') {
+        stage('Install Terraform and Azure CLI') {
             steps {
                 sh '''
                 set -e
+                # Install Terraform
                 wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
                 echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
                 sudo apt-get update
                 sudo apt-get install -y terraform
                 terraform version
+                
+                # Install Azure CLI
+                curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+                az version
                 '''
             }
         }
 
-        stage('Deploy App Infrastructure') {
+        stage('Initialize Terraform and Import Existing Resources') {
             steps {
                 script {
                     dir('infra/terraform') {
@@ -67,22 +79,38 @@ pipeline {
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
 
-                                terraform init -backend-config="resource_group_name=MyPatientSurveyRG" \
-                                               -backend-config="storage_account_name=mypatientsurveytfstate" \
-                                               -backend-config="container_name=tfstate" \
-                                               -backend-config="key=patient_survey.tfstate"
+                                # Initialize Terraform with backend
+                                terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
+                                               -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
+                                               -backend-config="container_name=${TF_STATE_CONTAINER}" \
+                                               -backend-config="key=${TF_STATE_KEY}"
 
-                                terraform plan -out=app_plan.out \
-                                    -var="db_user=${TF_VAR_db_user}" \
-                                    -var="db_password=${TF_VAR_db_password}" \
-                                    -var="grafana_password=${TF_VAR_grafana_password}"
+                                # Login to Azure for resource import
+                                az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                                az account set --subscription "$ARM_SUBSCRIPTION_ID_VAR"
 
-                                terraform apply -auto-approve app_plan.out
+                                # Import existing resources if they're not in state
+                                terraform state list > existing_state.txt || true
+                                
+                                # Function to import resource if not in state
+                                import_if_missing() {
+                                    local resource_name="$1"
+                                    local azure_resource_id="$2"
+                                    
+                                    if ! grep -q "$resource_name" existing_state.txt; then
+                                        echo "Importing $resource_name..."
+                                        terraform import "$resource_name" "$azure_resource_id" || echo "Import failed for $resource_name (may not exist yet)"
+                                    else
+                                        echo "$resource_name already in state"
+                                    fi
+                                }
 
-                                echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
-                                echo "DB_USER=${TF_VAR_db_user}" >> $WORKSPACE/monitoring.env
-                                echo "DB_PASSWORD=${TF_VAR_db_password}" >> $WORKSPACE/monitoring.env
-                                echo "✅ App infrastructure applied successfully"
+                                # Import existing resources
+                                import_if_missing "azurerm_mssql_server.sql_server" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql"
+                                import_if_missing "azurerm_network_security_group.monitoring_nsg" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg"
+                                import_if_missing "azurerm_storage_account.monitoring" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
+
+                                echo "✅ Terraform initialization and resource import completed"
                             '''
                         }
                     }
@@ -90,17 +118,17 @@ pipeline {
             }
         }
 
-        stage('Deploy Monitoring Infrastructure') {
+        stage('Deploy Complete Infrastructure') {
             steps {
                 script {
                     dir('infra/terraform') {
                         withCredentials([
+                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
                             string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
                             string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                             string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
-                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
-                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password')
+                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password')
                         ]) {
                             sh '''
                                 set -e
@@ -108,23 +136,28 @@ pipeline {
                                 export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
                                 export ARM_TENANT_ID="${ARM_TENANT_ID}"
                                 export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
+                                
+                                export TF_VAR_client_id="${ARM_CLIENT_ID}"
+                                export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
+                                export TF_VAR_tenant_id="${ARM_TENANT_ID}"
+                                export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
 
-                                terraform init -backend-config="resource_group_name=MyPatientSurveyRG" \
-                                               -backend-config="storage_account_name=mypatientsurveytfstate" \
-                                               -backend-config="container_name=tfstate" \
-                                               -backend-config="key=patient_survey.tfstate"
-
-                                terraform plan -out=monitoring_plan.out \
+                                # Apply complete infrastructure
+                                terraform plan -out=complete_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
                                     -var="grafana_password=${TF_VAR_grafana_password}"
 
-                                terraform apply -auto-approve monitoring_plan.out
+                                terraform apply -auto-approve complete_plan.out
 
+                                # Export all outputs to monitoring.env
+                                echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
+                                echo "DB_USER=${TF_VAR_db_user}" >> $WORKSPACE/monitoring.env
+                                echo "DB_PASSWORD=${TF_VAR_db_password}" >> $WORKSPACE/monitoring.env
                                 echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_CREDS=admin:${TF_VAR_grafana_password}" >> $WORKSPACE/monitoring.env
-                                echo "✅ Monitoring infrastructure applied successfully"
+                                echo "✅ Complete infrastructure applied successfully"
                             '''
                         }
                     }
@@ -147,7 +180,7 @@ pipeline {
         stage('Run Tests') {
             steps {
                 sh '''
-                    mkdir -p tests-results
+                    mkdir -p test-results
                     touch tests/__init__.py
                     python3 -m xmlrunner discover -s tests -o test-results --failfast --verbose
                 '''
@@ -183,6 +216,12 @@ pipeline {
                         docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
 
+                        # Check if container exists and update it, or create new
+                        if az container show --resource-group $RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
+                            echo "Updating existing container..."
+                            az container delete --resource-group $RESOURCE_GROUP --name patientsurvey-app --yes
+                        fi
+
                         az container create \
                             --resource-group $RESOURCE_GROUP \
                             --name patientsurvey-app \
@@ -201,7 +240,7 @@ pipeline {
                                 DB_NAME=$DB_NAME \
                             --registry-login-server index.docker.io \
                             --registry-username "$DOCKER_HUB_USER" \
-                            --registry-password "$DOCKER_HUB_PASSWORD" || true
+                            --registry-password "$DOCKER_HUB_PASSWORD"
                         '''
                     }
                 }
@@ -216,6 +255,7 @@ pipeline {
                     echo "Node Metrics: http://survey-app.uksouth.azurecontainer.io:9100/metrics"
                     echo "Prometheus Dashboard: $PROMETHEUS_URL"
                     echo "Grafana Dashboard: $GRAFANA_URL"
+                    echo "Grafana Credentials: $GRAFANA_CREDS"
                 '''
             }
         }
