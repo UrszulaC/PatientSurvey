@@ -1,8 +1,8 @@
 # ===== PROMETHEUS =====
 resource "azurerm_container_group" "prometheus" {
   name                = "prometheus-cg"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
+  resource_group_name = var.resource_group_name
+  location            = var.location
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
@@ -33,8 +33,8 @@ resource "azurerm_container_group" "prometheus" {
 # ===== GRAFANA =====
 resource "azurerm_container_group" "grafana" {
   name                = "grafana-cg"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
+  resource_group_name = var.resource_group_name
+  location            = var.location
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
@@ -70,22 +70,22 @@ resource "azurerm_container_group" "grafana" {
 # ===== PERSISTENT STORAGE =====
 resource "azurerm_storage_account" "monitoring" {
   name                     = "mypatientsurveymonitor"
-  resource_group_name      = azurerm_resource_group.main.name
-  location                 = azurerm_resource_group.main.location
+  resource_group_name      = var.resource_group_name
+  location                 = var.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
 }
 
 resource "azurerm_storage_share" "prometheus" {
-  name                 = "prometheus-data"
-  storage_account_id   = azurerm_storage_account.monitoring.id  # Fixed: Use storage_account_id instead of storage_account_name
-  quota                = 50
+  name               = "prometheus-data"
+  storage_account_id = azurerm_storage_account.monitoring.id
+  quota              = 50
 }
 
 resource "azurerm_storage_share" "grafana" {
-  name                 = "grafana-data"
-  storage_account_id   = azurerm_storage_account.monitoring.id  # Fixed: Use storage_account_id instead of storage_account_name
-  quota                = 50
+  name               = "grafana-data"
+  storage_account_id = azurerm_storage_account.monitoring.id
+  quota              = 50
 }
 
 # ===== OUTPUTS =====
@@ -95,4 +95,15 @@ output "prometheus_url" {
 
 output "grafana_url" {
   value = "http://${azurerm_container_group.grafana.fqdn}:3000"
+}
+
+# ===== VARIABLES =====
+variable "resource_group_name" {
+  description = "Existing resource group name"
+  default     = "MyPatientSurveyRG"
+}
+
+variable "location" {
+  description = "Azure region for resources"
+  default     = "uksouth"
 }
