@@ -122,7 +122,7 @@ pipeline {
                                 
                                 # Import Storage Shares - CORRECT FORMAT
                                 # Format: {resourceGroupName}/{storageAccountName}/{shareName}
-                                if ! grep -q "azurerm_storage_share.prometheus" existing_state.txt; then
+                                if ! grep -xq "azurerm_storage_share.prometheus" existing_state.txt; then
                                     echo "Importing prometheus storage share with correct format..."
                                     if terraform import azurerm_storage_share.prometheus "${RESOURCE_GROUP}/mypatientsurveymonitor/prometheus-data" 2>/dev/null; then
                                         echo "✅ Successfully imported prometheus storage share"
@@ -134,7 +134,7 @@ pipeline {
                                     echo "✅ azurerm_storage_share.prometheus already in state"
                                 fi
                                 
-                                if ! grep -q "azurerm_storage_share.grafana" existing_state.txt; then
+                                if ! grep -xq "azurerm_storage_share.grafana" existing_state.txt; then
                                     echo "Importing grafana storage share with correct format..."
                                     if terraform import azurerm_storage_share.grafana "${RESOURCE_GROUP}/mypatientsurveymonitor/grafana-data" 2>/dev/null; then
                                         echo "✅ Successfully imported grafana storage share"
