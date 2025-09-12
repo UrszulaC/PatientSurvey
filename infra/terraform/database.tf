@@ -12,7 +12,6 @@ resource "azurerm_mssql_server" "sql_server" {
   administrator_login          = var.db_user
   administrator_login_password = var.db_password
   minimum_tls_version          = "1.2" # K16: Good security practice
-
   public_network_access_enabled = true
 }
 
