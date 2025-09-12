@@ -5,7 +5,7 @@ resource "random_integer" "sql_suffix" {
   max = 9999
 }
 resource "azurerm_mssql_server" "sql_server" {
-  name                         = "patientsurveysql${random_integer.sql_suffix.result}" # Unique name
+  name                         = "patientsurveysql"
   resource_group_name          = data.azurerm_resource_group.existing.name
   location                     = data.azurerm_resource_group.existing.location
   version                      = "12.0" 
@@ -64,7 +64,7 @@ resource "azurerm_network_security_group" "monitoring_nsg" {
 }
 # Output the SQL Server FQDN for your application to use
 output "sql_server_fqdn" {
-  value       = azurerm_mssql_server.sql_server.fully_qualified_domain_name # <--- NEW: Use fully_qualified_domain_name
+  value       = azurerm_mssql_server.sql_server.fully_qualified_domain_name
   description = "The FQDN of the Azure SQL Server."
 }
 
