@@ -78,18 +78,18 @@ pipeline {
                                 export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
-
+        
                                 # Initialize Terraform with backend
                                 terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
                                                -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
                                                -backend-config="container_name=${TF_STATE_CONTAINER}" \
                                                -backend-config="key=${TF_STATE_KEY}"
-
+        
                                 # Login to Azure for resource import
                                 az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                                 az account set --subscription "$ARM_SUBSCRIPTION_ID_VAR"
-
-                                # Import existing resources if they're not in state
+        
+                                # Get current state
                                 terraform state list > existing_state.txt || true
                                 
                                 # Function to import resource if not in state
@@ -98,18 +98,54 @@ pipeline {
                                     local azure_resource_id="$2"
                                     
                                     if ! grep -q "$resource_name" existing_state.txt; then
-                                        echo "Importing $resource_name..."
-                                        terraform import "$resource_name" "$azure_resource_id" || echo "Import failed for $resource_name (may not exist yet)"
+                                        echo "Attempting to import $resource_name..."
+                                        if terraform import "$resource_name" "$azure_resource_id" 2>/dev/null; then
+                                            echo "✅ Successfully imported $resource_name"
+                                        else
+                                            echo "⚠️  Import failed for $resource_name (resource may not exist or ID format may be different)"
+                                        fi
                                     else
-                                        echo "$resource_name already in state"
+                                        echo "✅ $resource_name already in state"
                                     fi
                                 }
-
-                                # Import existing resources
+        
+                                # Import SQL resources
                                 import_if_missing "azurerm_mssql_server.sql_server" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql"
+                                import_if_missing "azurerm_mssql_database.sql_database" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/databases/patient_survey_db"
+                                import_if_missing "azurerm_mssql_firewall_rule.allow_azure_services" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/firewallRules/AllowAzureServices"
+                                
+                                # Import Network resources
                                 import_if_missing "azurerm_network_security_group.monitoring_nsg" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg"
+                                
+                                # Import Storage resources - these need special handling
                                 import_if_missing "azurerm_storage_account.monitoring" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
-
+                                
+                                # For storage shares, we need to use a different format
+                                echo "Attempting to import storage shares..."
+                                
+                                # Try importing storage shares with proper format
+                                if ! grep -q "azurerm_storage_share.prometheus" existing_state.txt; then
+                                    echo "Importing prometheus storage share..."
+                                    if terraform import azurerm_storage_share.prometheus "${RESOURCE_GROUP}/mypatientsurveymonitor/prometheus-data" 2>/dev/null; then
+                                        echo "✅ Successfully imported prometheus storage share"
+                                    else
+                                        echo "⚠️  Could not import prometheus storage share (may need manual import)"
+                                    fi
+                                fi
+                                
+                                if ! grep -q "azurerm_storage_share.grafana" existing_state.txt; then
+                                    echo "Importing grafana storage share..."
+                                    if terraform import azurerm_storage_share.grafana "${RESOURCE_GROUP}/mypatientsurveymonitor/grafana-data" 2>/dev/null; then
+                                        echo "✅ Successfully imported grafana storage share"
+                                    else
+                                        echo "⚠️  Could not import grafana storage share (may need manual import)"
+                                    fi
+                                fi
+        
+                                # Try to import container groups if they exist
+                                import_if_missing "azurerm_container_group.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-container"
+                                import_if_missing "azurerm_container_group.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-container"
+        
                                 echo "✅ Terraform initialization and resource import completed"
                             '''
                         }
