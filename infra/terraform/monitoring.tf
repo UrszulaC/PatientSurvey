@@ -69,7 +69,7 @@ resource "azurerm_container_group" "grafana" {
 
 # ===== PERSISTENT STORAGE =====
 resource "azurerm_storage_account" "monitoring" {
-  name                     = "monitoring${replace(substr(uuid(), 0, 8), "-", "")}"
+  name                     = "mypatientsurveymonitor"
   resource_group_name      = data.azurerm_resource_group.existing.name
   location                 = data.azurerm_resource_group.existing.location
   account_tier             = "Standard"
