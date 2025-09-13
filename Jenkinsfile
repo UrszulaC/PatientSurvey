@@ -235,21 +235,29 @@ pipeline {
                         usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD')
                     ]) {
                         sh """bash -c '
-                        set -e  # exit on any error
+                        set -e
+        
+                        # Load environment variables
                         source monitoring.env
         
+                        # Login to Azure
                         az login --service-principal -u "\$ARM_CLIENT_ID" -p "\$ARM_CLIENT_SECRET" --tenant "\$ARM_TENANT_ID"
                         az account set --subscription "\$ARM_SUBSCRIPTION_ID"
         
+                        # Docker login
                         docker login -u "\$DOCKER_HUB_USER" -p "\$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
         
-                        # Check if container exists and delete it if so
-                        if az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
-                            echo "Updating existing container..."
+                        # Check if survey-app container exists
+                        if az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app &>/dev/null; then
+                            echo "Updating existing survey-app container..."
+                            # Stop and delete existing container
                             az container delete --resource-group \$RESOURCE_GROUP --name patientsurvey-app --yes
+                        else
+                            echo "Creating new survey-app container..."
                         fi
         
+                        # Create or recreate survey-app container
                         az container create \
                             --resource-group \$RESOURCE_GROUP \
                             --name patientsurvey-app \
@@ -269,11 +277,14 @@ pipeline {
                             --registry-login-server index.docker.io \
                             --registry-username "\$DOCKER_HUB_USER" \
                             --registry-password "\$DOCKER_HUB_PASSWORD"
+        
+                        echo "✅ survey-app deployed successfully"
                         '"""
                     }
                 }
             }
         }
+
 
 
         stage('Display Monitoring URLs') {
