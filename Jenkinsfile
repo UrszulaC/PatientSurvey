@@ -125,8 +125,9 @@ pipeline {
                                 -var="location=uksouth" \
                                 -var="docker_user=${TF_VAR_docker_user}" \
                                 -var="docker_password=${TF_VAR_docker_password}"
-
+                            
                             terraform apply -auto-approve complete_plan.out
+
 
                             # Export outputs to monitoring.env
                             echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
