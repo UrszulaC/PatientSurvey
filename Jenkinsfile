@@ -149,13 +149,14 @@ pipeline {
             steps {
                 script {
                     dir('infra/terraform') {
-                        withCredentials([
+                       withCredentials([
                             usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
                             string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
                             string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                             string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
-                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password')
+                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
+                            usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
                         ]) {
                             sh '''
                                 set -e
@@ -168,8 +169,8 @@ pipeline {
                                 export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
-        
-                                # Explicitly pass RG + location
+                        
+                                # Explicitly pass RG + location + Docker creds
                                 terraform plan -out=complete_plan.out \
                                     -var="prometheus_image_tag=${BUILD_NUMBER}" \
                                     -var="db_user=${TF_VAR_db_user}" \
@@ -180,7 +181,7 @@ pipeline {
                                     -var="resource_group_name=MyPatientSurveyRG" \
                                     -var="location=uksouth"
                                 terraform apply -auto-approve complete_plan.out
-        
+                        
                                 # Export outputs to monitoring.env
                                 echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
                                 echo "DB_USER=${TF_VAR_db_user}" >> $WORKSPACE/monitoring.env
@@ -191,6 +192,7 @@ pipeline {
                                 echo "✅ Complete infrastructure applied successfully"
                             '''
                         }
+ 
                     }
                 }
             }
