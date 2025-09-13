@@ -6,19 +6,19 @@ resource "azurerm_container_group" "prometheus" {
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
-  dns_name_label      = "prometheus-survey" # stable DNS
-  
+  dns_name_label      = "prometheus-survey"
+
   container {
     name   = "prometheus"
     image  = "urszulach/prometheus-custom:${var.prometheus_image_tag}"
     cpu    = "0.5"
     memory = "1.5"
-  
+
     ports {
       port     = 9090
       protocol = "TCP"
     }
-  
+
     volume {
       name                 = "prometheus-data"
       mount_path           = "/prometheus"
@@ -28,8 +28,15 @@ resource "azurerm_container_group" "prometheus" {
       share_name           = azurerm_storage_share.prometheus.name
     }
   }
+
+  # Credentials for private Docker image
+  image_registry_credential {
+    server   = "index.docker.io"
+    username = var.docker_user
+    password = var.docker_password
+  }
 }
-  
+
 # ===== GRAFANA =====
 resource "azurerm_container_group" "grafana" {
   name                = "grafana-cg"
@@ -38,7 +45,7 @@ resource "azurerm_container_group" "grafana" {
   os_type             = "Linux"
   restart_policy      = "Always"
   ip_address_type     = "Public"
-  dns_name_label      = "grafana-survey" # stable DNS
+  dns_name_label      = "grafana-survey"
 
   container {
     name   = "grafana"
@@ -107,7 +114,20 @@ variable "location" {
   description = "Azure region for resources"
   default     = "uksouth"
 }
+
 variable "prometheus_image_tag" {
   description = "Prometheus Docker image tag"
   default     = "latest"
 }
+
+variable "docker_user" {
+  description = "Docker Hub username for private images"
+  type        = string
+}
+
+variable "docker_password" {
+  description = "Docker Hub password for private images"
+  type        = string
+  sensitive   = true
+}
+
