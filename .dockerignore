@@ -1,0 +1,19 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+myenv/
+
+# Git
+.git
+.gitignore
+
+# Others
+*.log
+*.tmp
