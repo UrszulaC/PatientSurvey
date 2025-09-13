@@ -235,33 +235,29 @@ pipeline {
                     ]) {
                         sh """bash -c '
                         set -e
+                        # Load env vars
+                        export $(grep -v "^#" monitoring.env | xargs)
         
-                        # Load environment variables
-                        source monitoring.env
-        
-                        # Login to Azure and Docker
                         az login --service-principal -u "\$ARM_CLIENT_ID" -p "\$ARM_CLIENT_SECRET" --tenant "\$ARM_TENANT_ID"
                         az account set --subscription "\$ARM_SUBSCRIPTION_ID"
-                        docker login -u "\$DOCKER_HUB_USER" -p "\$DOCKER_HUB_PASSWORD"
         
-                        # Pull the latest Docker image
+                        docker login -u "\$DOCKER_HUB_USER" -p "\$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
         
-                        # Deploy or update container
-                        if az container show --resource-group $RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
-                            echo "Container exists. Updating image..."
+                        # Check if container exists
+                        if az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
+                            echo "Container exists — updating image..."
                             az container update \
-                                --resource-group $RESOURCE_GROUP \
+                                --resource-group \$RESOURCE_GROUP \
                                 --name patientsurvey-app \
-                                --image urszulach/epa-feedback-app:458
-                            az container restart --resource-group $RESOURCE_GROUP --name patientsurvey-app
-                            echo "✅ Container updated successfully"
+                                --image ${IMAGE_TAG} \
+                                --restart-policy Always
                         else
                             echo "Creating new container..."
                             az container create \
-                                --resource-group $RESOURCE_GROUP \
+                                --resource-group \$RESOURCE_GROUP \
                                 --name patientsurvey-app \
-                                --image urszulach/epa-feedback-app:458 \
+                                --image ${IMAGE_TAG} \
                                 --os-type Linux \
                                 --cpu 0.5 \
                                 --memory 1.0 \
@@ -270,23 +266,20 @@ pipeline {
                                 --dns-name-label survey-app \
                                 --restart-policy Always \
                                 --environment-variables \
-                                    DB_HOST=$DB_HOST \
-                                    DB_USER=$DB_USER \
-                                    DB_PASSWORD=$DB_PASSWORD \
-                                    DB_NAME=$DB_NAME \
+                                    DB_HOST=\$DB_HOST \
+                                    DB_USER=\$DB_USER \
+                                    DB_PASSWORD=\$DB_PASSWORD \
+                                    DB_NAME=\$DB_NAME \
                                 --registry-login-server index.docker.io \
-                                --registry-username "$DOCKER_HUB_USER" \
-                                --registry-password "$DOCKER_HUB_PASSWORD"
-                            echo "✅ Container created successfully"
+                                --registry-username "\$DOCKER_HUB_USER" \
+                                --registry-password "\$DOCKER_HUB_PASSWORD"
                         fi
-
                         '"""
                     }
                 }
             }
         }
 
-           
         stage('Display Monitoring URLs') {
             steps {
                 sh '''
