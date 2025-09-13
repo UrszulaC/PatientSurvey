@@ -305,14 +305,14 @@ pipeline {
             steps {
                 sh '''
                     set -e
-                    # Load environment variables from workspace (handle spaces)
-                    . "$WORKSPACE/monitoring.env"
+                    # Load environment variables
+                    export $(grep -v "^#" monitoring.env | xargs)
         
                     echo "Patient Survey App Metrics: http://survey-app.uksouth.azurecontainer.io:8001/metrics"
                     echo "Node Metrics: http://survey-app.uksouth.azurecontainer.io:9100/metrics"
                     echo "Prometheus Dashboard: $PROMETHEUS_URL"
                     echo "Grafana Dashboard: $GRAFANA_URL"
-                    echo "Grafana Credentials: $GRAFANA_CREDS"
+                    echo "⚠️ Grafana credentials are hidden for security"
                 '''
             }
         }
