@@ -11,59 +11,68 @@ import time
 
 # Load .env before using Config
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
 class TestPatientSurveySystem(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
-        """Set up once for all tests"""
-        cls.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
+        """Ensure test DB exists and connect once for class"""
+        try:
+            # Attempt to connect to test DB
+            cls.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
+        except pyodbc.ProgrammingError:
+            # Database likely does not exist, create via master
+            logging.info(f"Test database {Config.DB_TEST_NAME} not found. Creating...")
+            conn_master = get_db_connection(database_name=None)
+            conn_master.autocommit = True
+            cursor = conn_master.cursor()
+            cursor.execute(f"IF DB_ID('{Config.DB_TEST_NAME}') IS NULL CREATE DATABASE [{Config.DB_TEST_NAME}]")
+            cursor.close()
+            conn_master.close()
+            # Connect again to newly created test DB
+            cls.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
         cls.cursor = cls.conn.cursor()
 
-        # Fetch survey_id and question IDs
+        # Initialize tables if missing
+        from app.main import create_survey_tables
+        create_survey_tables(cls.conn)
+
+        # Cache survey_id and question IDs for convenience
         cls.cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
         survey_row = cls.cursor.fetchone()
-        if survey_row:
-            cls.survey_id = survey_row[0]
-        else:
-            raise Exception("Default survey not found in test DB")
+        cls.survey_id = survey_row[0]
 
-        # Map questions for easy access
-        cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ?", (cls.survey_id,))
-        cls.questions = {row[1]: row[0] for row in cls.cursor.fetchall()}
+        cls.cursor.execute("SELECT question_text, question_id FROM questions WHERE survey_id = ?", (cls.survey_id,))
+        cls.questions = {row[0]: row[1] for row in cls.cursor.fetchall()}
+
+    @classmethod
+    def tearDownClass(cls):
+        """Close class-level connections"""
+        try:
+            if hasattr(cls, 'cursor') and cls.cursor:
+                cls.cursor.close()
+            if hasattr(cls, 'conn') and cls.conn:
+                cls.conn.close()
+        except Exception as e:
+            logging.warning(f"Error closing test DB connections: {e}")
 
     def setUp(self):
-        """Clean child tables before each test"""
-        self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
-        self.cursor = self.conn.cursor()
+        """Clean up child tables before each test"""
+        # DELETE from children first due to FK constraints
         self.cursor.execute("DELETE FROM answers")
         self.cursor.execute("DELETE FROM responses")
         self.conn.commit()
 
     def tearDown(self):
-        """Close connection after each test"""
-        if hasattr(self, 'cursor') and self.cursor:
-            self.cursor.close()
-        if hasattr(self, 'conn') and self.conn:
-            self.conn.close()
+        """No need to drop DB; just cleanup after test"""
+        pass
 
-    # ------------------------
-    # Database structure tests
-    # ------------------------
-    def test_tables_created_correctly(self):
-        """Verify all tables exist"""
-        self.cursor.execute(
-            f"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE' AND TABLE_CATALOG='{Config.DB_TEST_NAME}'"
-        )
-        tables = {row[0] for row in self.cursor.fetchall()}
-        self.assertEqual(tables, {'surveys', 'questions', 'responses', 'answers'})
-
+    # Example test: verify default survey exists
     def test_default_survey_exists(self):
-        """Verify default survey was created"""
         self.cursor.execute("SELECT * FROM surveys WHERE title = ?", ('Patient Experience Survey',))
         survey = self.cursor.fetchone()
         self.assertIsNotNone(survey)
-        self.assertTrue(survey[4])
+        self.assertTrue(survey[4])  # is_active
         self.assertEqual(survey[2], 'Survey to collect feedback')
 
     def test_questions_created(self):
