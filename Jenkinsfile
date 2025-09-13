@@ -280,7 +280,10 @@ pipeline {
         stage('Display Monitoring URLs') {
             steps {
                 sh '''
-                    source monitoring.env
+                    set -e
+                    # Load environment variables
+                    . monitoring.env
+        
                     echo "Patient Survey App Metrics: http://survey-app.uksouth.azurecontainer.io:8001/metrics"
                     echo "Node Metrics: http://survey-app.uksouth.azurecontainer.io:9100/metrics"
                     echo "Prometheus Dashboard: $PROMETHEUS_URL"
