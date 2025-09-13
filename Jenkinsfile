@@ -171,14 +171,14 @@ pipeline {
         
                                 # Explicitly pass RG + location
                                 terraform plan -out=complete_plan.out \
-                                  -var="prometheus_image_tag=${BUILD_NUMBER}" \
-                                  -var="db_user=${TF_VAR_db_user}" \
-                                  -var="db_password=${TF_VAR_db_password}" \
-                                  -var="grafana_password=${TF_VAR_grafana_password}" \
-                                  -var="resource_group_name=MyPatientSurveyRG" \
-                                  -var="location=uksouth"
-
-        
+                                    -var="prometheus_image_tag=${BUILD_NUMBER}" \
+                                    -var="db_user=${TF_VAR_db_user}" \
+                                    -var="db_password=${TF_VAR_db_password}" \
+                                    -var="grafana_password=${TF_VAR_grafana_password}" \
+                                    -var="docker_user=${TF_VAR_docker_user}" \
+                                    -var="docker_password=${TF_VAR_docker_password}" \
+                                    -var="resource_group_name=MyPatientSurveyRG" \
+                                    -var="location=uksouth"
                                 terraform apply -auto-approve complete_plan.out
         
                                 # Export outputs to monitoring.env
