@@ -235,7 +235,7 @@ pipeline {
                     ]) {
                         sh '''
                         set -e
-                        # Load environment variables
+                        # Load env vars
                         export $(grep -v "^#" monitoring.env | xargs)
         
                         az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
@@ -244,19 +244,19 @@ pipeline {
                         docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
         
-                        # Update existing container if it exists, otherwise create new
-                        if az container show --resource-group $RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
+                        # Check if container exists
+                        if az container show --resource-group $RESOURCE_GROUP --name survey-app-cg --query name -o tsv 2>/dev/null; then
                             echo "Container exists — updating image..."
                             az container update \
                                 --resource-group $RESOURCE_GROUP \
-                                --name patientsurvey-app \
+                                --name survey-app-cg \
                                 --image ${IMAGE_TAG} \
                                 --restart-policy Always
                         else
                             echo "Creating new container..."
                             az container create \
                                 --resource-group $RESOURCE_GROUP \
-                                --name patientsurvey-app \
+                                --name survey-app-cg \
                                 --image ${IMAGE_TAG} \
                                 --os-type Linux \
                                 --cpu 0.5 \
@@ -279,6 +279,7 @@ pipeline {
                 }
             }
         }
+
 
         stage('Display Monitoring URLs') {
             steps {
