@@ -136,22 +136,18 @@ pipeline {
                 }
             }
         }
-        stage('Build & Push Prometheus Image') {
+        stage('Build Prometheus Image') {
             steps {
                 script {
-                    dir('monitoring/prometheus') {
-                        withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-                                def prometheusImage = "urszulach/prometheus-custom:${env.BUILD_NUMBER}"
-                                docker.build(prometheusImage, '.').push()
-                                // Store image tag in env file for Terraform to use
-                                sh "echo PROMETHEUS_IMAGE=${prometheusImage} >> $WORKSPACE/monitoring.env"
-                            }
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
+                            docker.build("urszulach/prometheus-custom:${env.BUILD_NUMBER}", 'monitoring').push()
                         }
                     }
                 }
             }
         }
+
         stage('Deploy Complete Infrastructure') {
             steps {
                 script {
