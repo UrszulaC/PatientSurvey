@@ -223,6 +223,7 @@ pipeline {
                 }
             }
         }
+        
         stage('Deploy Application') {
             steps {
                 script {
@@ -244,44 +245,37 @@ pipeline {
                         docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
         
-                    
                         # Check if container exists
                         if az container show --resource-group $RESOURCE_GROUP --name survey-app-cg --query name -o tsv 2>/dev/null; then
-                            echo "Container exists — updating image..."
-                            az container update \
-                                --resource-group $RESOURCE_GROUP \
-                                --name survey-app-cg \
-                                --image ${IMAGE_TAG} \
-                                --restart-policy Always
-                        else
-                            echo "Creating new container..."
-                            az container create \
-                                --resource-group $RESOURCE_GROUP \
-                                --name survey-app-cg \
-                                --image ${IMAGE_TAG} \
-                                --os-type Linux \
-                                --cpu 0.5 \
-                                --memory 1.0 \
-                                --ports 8001 9100 \
-                                --ip-address Public \
-                                --dns-name-label survey-app \
-                                --restart-policy Always \
-                                --environment-variables \
-                                    DB_HOST=$DB_HOST \
-                                    DB_USER=$DB_USER \
-                                    DB_PASSWORD=$DB_PASSWORD \
-                                    DB_NAME=$DB_NAME \
-                                --registry-login-server index.docker.io \
-                                --registry-username "$DOCKER_HUB_USER" \
-                                --registry-password "$DOCKER_HUB_PASSWORD"
+                            echo "Container exists — deleting..."
+                            az container delete --resource-group $RESOURCE_GROUP --name survey-app-cg --yes
                         fi
-
+        
+                        echo "Creating new container..."
+                        az container create \
+                            --resource-group $RESOURCE_GROUP \
+                            --name survey-app-cg \
+                            --image ${IMAGE_TAG} \
+                            --os-type Linux \
+                            --cpu 0.5 \
+                            --memory 1.0 \
+                            --ports 8001 9100 \
+                            --ip-address Public \
+                            --dns-name-label survey-app \
+                            --restart-policy Always \
+                            --environment-variables \
+                                DB_HOST=$DB_HOST \
+                                DB_USER=$DB_USER \
+                                DB_PASSWORD=$DB_PASSWORD \
+                                DB_NAME=$DB_NAME \
+                            --registry-login-server index.docker.io \
+                            --registry-username "$DOCKER_HUB_USER" \
+                            --registry-password "$DOCKER_HUB_PASSWORD"
                         '''
                     }
                 }
             }
         }
-
 
         stage('Display Monitoring URLs') {
             steps {
