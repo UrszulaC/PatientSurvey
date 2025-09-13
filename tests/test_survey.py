@@ -160,22 +160,59 @@ class TestPatientSurveySystem(unittest.TestCase):
             mock_print.assert_called_with("\nNo responses found in the database.")
 
     def test_view_multiple_responses(self):
-        """Test view_responses with multiple survey entries"""
-        # Insert two responses
-        for i in range(2):
-            self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,))
-            self.cursor.execute("SELECT SCOPE_IDENTITY()")
-            response_id = int(self.cursor.fetchone()[0])
-            # Add a single sample answer per response
-            self.cursor.execute("INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
-                                (response_id, self.questions['Date of visit?'], f'2023-01-0{i+1}'))
-        self.conn.commit()
+    """Test view_responses with multiple survey entries"""
+    # Create first test response
+    self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,))
+    self.cursor.execute("SELECT SCOPE_IDENTITY()")
+    row = self.cursor.fetchone()
+    if row is None or row[0] is None:
+        # Fallback to @@IDENTITY
+        self.cursor.execute("SELECT @@IDENTITY")
+        row = self.cursor.fetchone()
+        if row is None or row[0] is None:
+            raise Exception("Failed to retrieve response_id for first insert")
+    response1 = int(row[0])
 
-        from app.main import view_responses
-        with patch('builtins.print') as mock_print:
-            view_responses(self.conn)
-            output = "\n".join(str(c) for c in mock_print.call_args_list)
-            self.assertIn("Response ID:", output)
+    # Create second test response
+    self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,))
+    self.cursor.execute("SELECT SCOPE_IDENTITY()")
+    row = self.cursor.fetchone()
+    if row is None or row[0] is None:
+        # Fallback to @@IDENTITY
+        self.cursor.execute("SELECT @@IDENTITY")
+        row = self.cursor.fetchone()
+        if row is None or row[0] is None:
+            raise Exception("Failed to retrieve response_id for second insert")
+    response2 = int(row[0])
+
+    # Add sample answers
+    sample_answers = [
+        (response1, self.questions['Date of visit?'], '2023-01-01'),
+        (response1, self.questions['Which site did you visit?'], 'Princess Alexandra Hospital'),
+        (response2, self.questions['Date of visit?'], '2023-01-02'),
+        (response2, self.questions['Which site did you visit?'], 'Herts & Essex Hospital')
+    ]
+
+    for answer in sample_answers:
+        self.cursor.execute("""
+            INSERT INTO answers (response_id, question_id, answer_value)
+            VALUES (?, ?, ?)
+        """, answer)
+
+    self.conn.commit()
+
+    # Test the view_responses function
+    from app.main import view_responses
+    with patch('builtins.print') as mock_print:
+        view_responses(self.conn)
+
+        # Verify responses were displayed
+        output = "\n".join(str(call) for call in mock_print.call_args_list)
+        self.assertIn(f"Response ID: {response1}", output)
+        self.assertIn(f"Response ID: {response2}", output)
+        self.assertIn("Princess Alexandra Hospital", output)
+        self.assertIn("Herts & Essex Hospital", output)
+
 
 if __name__ == "__main__":
     import xmlrunner
