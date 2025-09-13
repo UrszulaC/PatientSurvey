@@ -276,6 +276,7 @@ pipeline {
                                     --registry-username "\$DOCKER_HUB_USER" \
                                     --registry-password "\$DOCKER_HUB_PASSWORD"
                             fi
+
                         '"""
                     }
                 }
