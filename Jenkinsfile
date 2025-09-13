@@ -116,6 +116,14 @@ pipeline {
                         ]) {
                             sh '''
                             set -e
+        
+                            # Export Azure service principal credentials for Terraform
+                            export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
+                            export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
+                            export ARM_TENANT_ID="${ARM_TENANT_ID}"
+                            export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
+        
+                            # Plan and apply Terraform
                             terraform plan -out=complete_plan.out \
                                 -var="db_user=${TF_VAR_db_user}" \
                                 -var="db_password=${TF_VAR_db_password}" \
@@ -125,10 +133,9 @@ pipeline {
                                 -var="location=uksouth" \
                                 -var="docker_user=${TF_VAR_docker_user}" \
                                 -var="docker_password=${TF_VAR_docker_password}"
-                            
+        
                             terraform apply -auto-approve complete_plan.out
-
-
+        
                             # Export outputs to monitoring.env
                             echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
                             echo "DB_USER=${TF_VAR_db_user}" >> $WORKSPACE/monitoring.env
@@ -136,12 +143,15 @@ pipeline {
                             echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" >> $WORKSPACE/monitoring.env
                             echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                             echo "GRAFANA_CREDS=admin:${TF_VAR_grafana_password}" >> $WORKSPACE/monitoring.env
+        
+                            echo "✅ Complete infrastructure applied successfully"
                             '''
                         }
                     }
                 }
             }
         }
+
 
         stage('Create .env File') {
             steps {
