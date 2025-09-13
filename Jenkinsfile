@@ -244,6 +244,7 @@ pipeline {
                         docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
         
+                    
                         # Check if container exists
                         if az container show --resource-group $RESOURCE_GROUP --name survey-app-cg --query name -o tsv 2>/dev/null; then
                             echo "Container exists — updating image..."
@@ -274,6 +275,7 @@ pipeline {
                                 --registry-username "$DOCKER_HUB_USER" \
                                 --registry-password "$DOCKER_HUB_PASSWORD"
                         fi
+
                         '''
                     }
                 }
