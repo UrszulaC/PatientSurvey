@@ -277,12 +277,12 @@ pipeline {
             }
         }
 
-        stage('Display Monitoring URLs') {
+       stage('Display Monitoring URLs') {
             steps {
                 sh '''
                     set -e
-                    # Load environment variables
-                    . monitoring.env
+                    # Load environment variables from workspace
+                    . $WORKSPACE/monitoring.env
         
                     echo "Patient Survey App Metrics: http://survey-app.uksouth.azurecontainer.io:8001/metrics"
                     echo "Node Metrics: http://survey-app.uksouth.azurecontainer.io:9100/metrics"
@@ -292,6 +292,7 @@ pipeline {
                 '''
             }
         }
+
     }
 
     post {
