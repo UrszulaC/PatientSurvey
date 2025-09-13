@@ -11,57 +11,31 @@ import json
 load_dotenv()
 
 class TestPatientSurveySystem(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        """Set up test database and tables"""
+    def setUp(self):
         try:
-            # Connect to master to create/drop the test database
-            # IMPORTANT: Setting autocommit=True for DDL operations like CREATE/DROP DATABASE
-            cls.connection = get_db_connection(database_name=None)
-            cls.connection.autocommit = True # Explicitly set autocommit to True for DDL
-            cls.cursor = cls.connection.cursor()
+            # Connect to existing test DB (assumes it was created once)
+            self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
+            self.cursor = self.conn.cursor()
 
-            # SQL Server specific syntax for dropping and creating database
-            cls.cursor.execute(f"IF EXISTS (SELECT name FROM sys.databases WHERE name = '{Config.DB_TEST_NAME}') DROP DATABASE {Config.DB_TEST_NAME}")
-            cls.cursor.execute(f"CREATE DATABASE {Config.DB_TEST_NAME}")
-            # No explicit commit needed here because autocommit is True
+            # Clean up data before tests
+            tables_to_truncate = [
+                "SurveyResponses",
+                "SurveyQuestions",
+                "PatientSurveys"
+            ]
+            for table in tables_to_truncate:
+                try:
+                    self.cursor.execute(f"IF OBJECT_ID('{table}', 'U') IS NOT NULL TRUNCATE TABLE {table}")
+                except Exception as e:
+                    logging.warning(f"Could not truncate {table}: {e}")
 
-            # For subsequent operations on the test database, autocommit can be False (default)
-            cls.connection.close()
-            cls.connection = get_db_connection(database_name=Config.DB_TEST_NAME)
-            cls.connection.autocommit = True # Explicitly set autocommit for this connection
-            cls.cursor = cls.connection.cursor()
-            # Removed: cls.cursor.row_factory = pyodbc.Row # Not supported directly on cursor
+            self.conn.commit()
 
-            # Import and call the table creation function from main (needs a connection)
-            # This function will now use the pyodbc connection
-            from app.main import create_survey_tables
-            create_survey_tables(cls.connection) # Pass the connection to it
+        except Exception as e:
+            logging.error(f"Database setup failed: {e}")
+            raise
 
-          
-            # SELECT survey_id (index 0)
-            cls.cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-            survey = cls.cursor.fetchone() # Will be a tuple
-            if not survey:
-                raise Exception("Default survey not created")
 
-            cls.survey_id = survey[0] # Access by index
-
-            # Storing question IDs for tests
-            # SELECT question_id (index 0), question_text (index 1)
-            cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ? ORDER BY question_id", (cls.survey_id,)) # Use ?
-            cls.questions = {row[1]: row[0] for row in cls.cursor.fetchall()} # Access by index: {question_text: question_id}
-
-            if len(cls.questions) < 7:
-                raise Exception(f"Expected 7 questions, found {len(cls.questions)}")
-
-        except pyodbc.Error as err: # Catch pyodbc specific errors
-            cls.tearDownClass() # Attempt cleanup
-            raise Exception(f"Test setup failed (pyodbc error): {err}")
-        except Exception as err: # Catch other general exceptions
-            cls.tearDownClass() # Attempt cleanup
-            raise Exception(f"Test setup failed (general error): {err}")
 
     @classmethod
     def tearDownClass(cls):
