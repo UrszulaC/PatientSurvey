@@ -8,27 +8,27 @@ resource "azurerm_container_group" "prometheus" {
   ip_address_type     = "Public"
   dns_name_label      = "prometheus-survey" # stable DNS
   
-container {
-  name   = "prometheus"
-  image  = "urszulach/prometheus-custom:${var.prometheus_image_tag}"
-  cpu    = "0.5"
-  memory = "1.5"
-
-  ports {
-    port     = 9090
-    protocol = "TCP"
-  }
-
-  volume {
-    name                 = "prometheus-data"
-    mount_path           = "/prometheus"
-    read_only            = false
-    storage_account_name = azurerm_storage_account.monitoring.name
-    storage_account_key  = azurerm_storage_account.monitoring.primary_access_key
-    share_name           = azurerm_storage_share.prometheus.name
+  container {
+    name   = "prometheus"
+    image  = "urszulach/prometheus-custom:${var.prometheus_image_tag}"
+    cpu    = "0.5"
+    memory = "1.5"
+  
+    ports {
+      port     = 9090
+      protocol = "TCP"
+    }
+  
+    volume {
+      name                 = "prometheus-data"
+      mount_path           = "/prometheus"
+      read_only            = false
+      storage_account_name = azurerm_storage_account.monitoring.name
+      storage_account_key  = azurerm_storage_account.monitoring.primary_access_key
+      share_name           = azurerm_storage_share.prometheus.name
+    }
   }
 }
-
   
 # ===== GRAFANA =====
 resource "azurerm_container_group" "grafana" {
