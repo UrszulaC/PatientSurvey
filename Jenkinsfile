@@ -248,17 +248,20 @@ pipeline {
                         docker pull ${IMAGE_TAG}
         
                         # Deploy or update container
-                        if az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
+                        if az container show --resource-group $RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
                             echo "Container exists. Updating image..."
-                            az container update --resource-group \$RESOURCE_GROUP --name patientsurvey-app --image ${IMAGE_TAG}
-                            az container restart --resource-group \$RESOURCE_GROUP --name patientsurvey-app
+                            az container update \
+                                --resource-group $RESOURCE_GROUP \
+                                --name patientsurvey-app \
+                                --image urszulach/epa-feedback-app:458
+                            az container restart --resource-group $RESOURCE_GROUP --name patientsurvey-app
                             echo "✅ Container updated successfully"
                         else
                             echo "Creating new container..."
                             az container create \
-                                --resource-group \$RESOURCE_GROUP \
+                                --resource-group $RESOURCE_GROUP \
                                 --name patientsurvey-app \
-                                --image ${IMAGE_TAG} \
+                                --image urszulach/epa-feedback-app:458 \
                                 --os-type Linux \
                                 --cpu 0.5 \
                                 --memory 1.0 \
@@ -267,15 +270,16 @@ pipeline {
                                 --dns-name-label survey-app \
                                 --restart-policy Always \
                                 --environment-variables \
-                                    DB_HOST=\$DB_HOST \
-                                    DB_USER=\$DB_USER \
-                                    DB_PASSWORD=\$DB_PASSWORD \
-                                    DB_NAME=\$DB_NAME \
+                                    DB_HOST=$DB_HOST \
+                                    DB_USER=$DB_USER \
+                                    DB_PASSWORD=$DB_PASSWORD \
+                                    DB_NAME=$DB_NAME \
                                 --registry-login-server index.docker.io \
-                                --registry-username "\$DOCKER_HUB_USER" \
-                                --registry-password "\$DOCKER_HUB_PASSWORD"
+                                --registry-username "$DOCKER_HUB_USER" \
+                                --registry-password "$DOCKER_HUB_PASSWORD"
                             echo "✅ Container created successfully"
                         fi
+
                         '"""
                     }
                 }
