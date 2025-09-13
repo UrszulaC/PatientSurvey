@@ -228,6 +228,24 @@ pipeline {
                 }
             }
         }
+
+        stage('Security Scan') {
+            steps {
+                dir('app') {
+                    sh '''
+                        set -ex
+                        python3 -m pip install --user bandit pip-audit
+                        export PATH="$HOME/.local/bin:$PATH"
+                        
+                        # Run Bandit for Python security analysis
+                        bandit -r . -ll
+                        
+                        # Run pip-audit for dependency vulnerabilities
+                        pip-audit -r ../requirements.txt --verbose
+                    '''
+                }
+            }
+        }
         stage('Cleanup Old Container') {
             steps {
                 script {
