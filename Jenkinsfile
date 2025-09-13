@@ -236,52 +236,56 @@ pipeline {
                     ]) {
                         sh """bash -c '
                         set -e
-        
                         source monitoring.env
         
+                        # Login to Azure
                         az login --service-principal -u "\$ARM_CLIENT_ID" -p "\$ARM_CLIENT_SECRET" --tenant "\$ARM_TENANT_ID"
                         az account set --subscription "\$ARM_SUBSCRIPTION_ID"
         
+                        # Docker login and pull
                         docker login -u "\$DOCKER_HUB_USER" -p "\$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
         
-                        # Delete previous survey-app container if exists
-                        if az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app &>/dev/null; then
-                            echo "Deleting existing survey-app container..."
-                            az container delete --resource-group \$RESOURCE_GROUP --name patientsurvey-app --yes
-                            # Wait until DNS label is released
-                            while az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app &>/dev/null; do
-                                echo "Waiting for survey-app container to be fully deleted..."
-                                sleep 5
-                            done
-                        fi
+                        # Check if container exists
+                        if az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
+                            echo "Container exists. Updating image..."
+                            az container update \
+                                --resource-group \$RESOURCE_GROUP \
+                                --name patientsurvey-app \
+                                --image ${IMAGE_TAG}
         
-                        # Create new survey-app container
-                        echo "Creating new survey-app container..."
-                        az container create \\
-                            --resource-group \$RESOURCE_GROUP \\
-                            --name patientsurvey-app \\
-                            --image ${IMAGE_TAG} \\
-                            --os-type Linux \\
-                            --cpu 0.5 \\
-                            --memory 1.0 \\
-                            --ports 8001 9100 \\
-                            --ip-address Public \\
-                            --dns-name-label survey-app \\
-                            --restart-policy Always \\
-                            --environment-variables \\
-                                DB_HOST=\$DB_HOST \\
-                                DB_USER=\$DB_USER \\
-                                DB_PASSWORD=\$DB_PASSWORD \\
-                                DB_NAME=\$DB_NAME \\
-                            --registry-login-server index.docker.io \\
-                            --registry-username "\$DOCKER_HUB_USER" \\
-                            --registry-password "\$DOCKER_HUB_PASSWORD"
+                            echo "Restarting container..."
+                            az container restart \
+                                --resource-group \$RESOURCE_GROUP \
+                                --name patientsurvey-app
+                        else
+                            echo "Creating new survey-app container..."
+                            az container create \
+                                --resource-group \$RESOURCE_GROUP \
+                                --name patientsurvey-app \
+                                --image ${IMAGE_TAG} \
+                                --os-type Linux \
+                                --cpu 0.5 \
+                                --memory 1.0 \
+                                --ports 8001 9100 \
+                                --ip-address Public \
+                                --dns-name-label survey-app \
+                                --restart-policy Always \
+                                --environment-variables \
+                                    DB_HOST=\$DB_HOST \
+                                    DB_USER=\$DB_USER \
+                                    DB_PASSWORD=\$DB_PASSWORD \
+                                    DB_NAME=\$DB_NAME \
+                                --registry-login-server index.docker.io \
+                                --registry-username "\$DOCKER_HUB_USER" \
+                                --registry-password "\$DOCKER_HUB_PASSWORD"
+                        fi
                         '"""
                     }
                 }
             }
         }
+
 
         stage('Display Monitoring URLs') {
             steps {
