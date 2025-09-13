@@ -189,24 +189,20 @@ pipeline {
         stage('Create .env File') {
             steps {
                 sh '''
-                    set -e
-                    # Read values without exporting them (avoids printing secrets)
-                    DB_HOST=$(grep ^DB_HOST monitoring.env | cut -d '=' -f2-)
-                    DB_USER=$(grep ^DB_USER monitoring.env | cut -d '=' -f2-)
-                    DB_PASSWORD=$(grep ^DB_PASSWORD monitoring.env | cut -d '=' -f2-)
-                    DB_NAME=$(grep ^DB_NAME monitoring.env | cut -d '=' -f2-)
+                set -e
+                # Load environment variables
+                export $(grep -v "^#" monitoring.env | xargs)
         
-                    # Write .env file
-                    cat > app/.env <<EOL
-        DB_HOST=$DB_HOST
-        DB_USER=$DB_USER
-        DB_PASSWORD=$DB_PASSWORD
-        DB_NAME=$DB_NAME
-        EOL
+                # Write .env without printing sensitive values
+                {
+                    echo "DB_HOST=$DB_HOST"
+                    echo "DB_USER=$DB_USER"
+                    echo "DB_PASSWORD=$DB_PASSWORD"
+                    echo "DB_NAME=$DB_NAME"
+                } > app/.env
                 '''
             }
         }
-
         stage('Run Tests') {
             steps {
                 sh '''
