@@ -81,13 +81,23 @@ def create_survey_tables(conn):
         # Insert default survey if it doesn't exist
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
         survey = cursor.fetchone()
+
         if not survey:
             cursor.execute("""
                 INSERT INTO surveys (title, description, is_active)
                 VALUES (?, ?, ?)
             """, ('Patient Experience Survey', 'Survey to collect feedback', True))
             conn.commit()
+
+            # Try to get survey_id from SCOPE_IDENTITY first
             survey_id_row = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()
+            if survey_id_row is None or survey_id_row[0] is None:
+                # Fallback: query the row directly
+                cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
+                survey_id_row = cursor.fetchone()
+                if survey_id_row is None:
+                    raise Exception("Failed to create or retrieve default survey in create_survey_tables")
+
             survey_id = int(survey_id_row[0])
         else:
             survey_id = survey[0]
