@@ -224,7 +224,7 @@ pipeline {
             }
         }
 
-        stage('Deploy Application') {
+       stage('Deploy Application') {
             steps {
                 script {
                     withCredentials([
@@ -236,25 +236,26 @@ pipeline {
                     ]) {
                         sh """bash -c '
                         set -e
+        
+                        # Load environment variables
                         source monitoring.env
         
                         # Login to Azure
                         az login --service-principal -u "\$ARM_CLIENT_ID" -p "\$ARM_CLIENT_SECRET" --tenant "\$ARM_TENANT_ID"
                         az account set --subscription "\$ARM_SUBSCRIPTION_ID"
         
-                        # Docker login and pull
+                        # Docker login and pull new image
                         docker login -u "\$DOCKER_HUB_USER" -p "\$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
         
                         # Check if container exists
                         if az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
-                            echo "Container exists. Updating image..."
+                            echo "Container exists. Updating image and restarting..."
                             az container update \
                                 --resource-group \$RESOURCE_GROUP \
                                 --name patientsurvey-app \
                                 --image ${IMAGE_TAG}
         
-                            echo "Restarting container..."
                             az container restart \
                                 --resource-group \$RESOURCE_GROUP \
                                 --name patientsurvey-app
@@ -285,6 +286,7 @@ pipeline {
                 }
             }
         }
+ 
 
 
         stage('Display Monitoring URLs') {
