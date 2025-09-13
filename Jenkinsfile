@@ -186,25 +186,23 @@ pipeline {
                 }
             }
         }
-
-
         stage('Create .env File') {
             steps {
                 sh '''
                     set -e
-                    # Load only non-secret variables for environment
-                    export DB_HOST=$(grep ^DB_HOST monitoring.env | cut -d '=' -f2)
-                    export DB_NAME=$(grep ^DB_NAME monitoring.env | cut -d '=' -f2)
-                    export DB_USER=$(grep ^DB_USER monitoring.env | cut -d '=' -f2)
-                    export DB_PASSWORD=$(grep ^DB_PASSWORD monitoring.env | cut -d '=' -f2)
+                    # Read values without exporting them (avoids printing secrets)
+                    DB_HOST=$(grep ^DB_HOST monitoring.env | cut -d '=' -f2-)
+                    DB_USER=$(grep ^DB_USER monitoring.env | cut -d '=' -f2-)
+                    DB_PASSWORD=$(grep ^DB_PASSWORD monitoring.env | cut -d '=' -f2-)
+                    DB_NAME=$(grep ^DB_NAME monitoring.env | cut -d '=' -f2-)
         
-                    # Write to .env without printing secrets
-                    {
-                        echo "DB_HOST=$DB_HOST"
-                        echo "DB_USER=$DB_USER"
-                        echo "DB_PASSWORD=$DB_PASSWORD"
-                        echo "DB_NAME=$DB_NAME"
-                    } > app/.env
+                    # Write .env file
+                    cat > app/.env <<EOL
+        DB_HOST=$DB_HOST
+        DB_USER=$DB_USER
+        DB_PASSWORD=$DB_PASSWORD
+        DB_NAME=$DB_NAME
+        EOL
                 '''
             }
         }
