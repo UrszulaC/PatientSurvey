@@ -234,22 +234,24 @@ pipeline {
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
                         usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD')
                     ]) {
-                        sh '''
-                        #!/bin/bash
+                        sh """bash -c '
+                        set -e  # exit on any error
                         source monitoring.env
-                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
-                        docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
+        
+                        az login --service-principal -u "\$ARM_CLIENT_ID" -p "\$ARM_CLIENT_SECRET" --tenant "\$ARM_TENANT_ID"
+                        az account set --subscription "\$ARM_SUBSCRIPTION_ID"
+        
+                        docker login -u "\$DOCKER_HUB_USER" -p "\$DOCKER_HUB_PASSWORD"
                         docker pull ${IMAGE_TAG}
-
-                        # Check if container exists and update it, or create new
-                        if az container show --resource-group $RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
+        
+                        # Check if container exists and delete it if so
+                        if az container show --resource-group \$RESOURCE_GROUP --name patientsurvey-app --query name -o tsv 2>/dev/null; then
                             echo "Updating existing container..."
-                            az container delete --resource-group $RESOURCE_GROUP --name patientsurvey-app --yes
+                            az container delete --resource-group \$RESOURCE_GROUP --name patientsurvey-app --yes
                         fi
-
+        
                         az container create \
-                            --resource-group $RESOURCE_GROUP \
+                            --resource-group \$RESOURCE_GROUP \
                             --name patientsurvey-app \
                             --image ${IMAGE_TAG} \
                             --os-type Linux \
@@ -260,18 +262,19 @@ pipeline {
                             --dns-name-label survey-app \
                             --restart-policy Always \
                             --environment-variables \
-                                DB_HOST=$DB_HOST \
-                                DB_USER=$DB_USER \
-                                DB_PASSWORD=$DB_PASSWORD \
-                                DB_NAME=$DB_NAME \
+                                DB_HOST=\$DB_HOST \
+                                DB_USER=\$DB_USER \
+                                DB_PASSWORD=\$DB_PASSWORD \
+                                DB_NAME=\$DB_NAME \
                             --registry-login-server index.docker.io \
-                            --registry-username "$DOCKER_HUB_USER" \
-                            --registry-password "$DOCKER_HUB_PASSWORD"
-                        '''
+                            --registry-username "\$DOCKER_HUB_USER" \
+                            --registry-password "\$DOCKER_HUB_PASSWORD"
+                        '"""
                     }
                 }
             }
         }
+
 
         stage('Display Monitoring URLs') {
             steps {
