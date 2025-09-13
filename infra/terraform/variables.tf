@@ -33,3 +33,15 @@ variable "tenant_id" {
   type        = string
   description = "Azure tenant ID"
 }
+
+variable "docker_user" {
+  description = "Docker Hub username for private images"
+  type        = string
+}
+
+variable "docker_password" {
+  description = "Docker Hub password for private images"
+  type        = string
+  sensitive   = true
+}
+
