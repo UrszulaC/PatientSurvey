@@ -195,12 +195,18 @@ pipeline {
                 script {
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-                            // Build with NO cache and unique tag
-                            docker.build("urszulach/epa-feedback-app:${env.BUILD_NUMBER}", "--no-cache .").push()
                             
-                            // Also tag as latest
+                            // Build Python app image
+                            docker.build("urszulach/epa-feedback-app:${env.BUILD_NUMBER}", ".").push()
                             sh "docker tag urszulach/epa-feedback-app:${env.BUILD_NUMBER} urszulach/epa-feedback-app:latest"
                             sh "docker push urszulach/epa-feedback-app:latest"
+                
+                            // ✅ ADD THIS: Build Prometheus image too!
+                            dir('infra/monitoring') {
+                                docker.build("urszulach/prometheus-custom:${env.BUILD_NUMBER}", ".").push()
+                                sh "docker tag urszulach/prometheus-custom:${env.BUILD_NUMBER} urszulach/prometheus-custom:latest"
+                                sh "docker push urszulach/prometheus-custom:latest"
+                            }
                         }
                     }
                 }
