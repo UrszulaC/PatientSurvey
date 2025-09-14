@@ -160,7 +160,20 @@ pipeline {
                                 export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
-        
+
+                                # Debug: confirm Docker Hub creds are passed (masking actual values)
+                                if [ -n "$TF_VAR_docker_user" ]; then
+                                  echo "✅ Docker Hub username variable is set"
+                                else
+                                  echo "❌ Docker Hub username variable is NOT set!"
+                                fi
+                                
+                                if [ -n "$TF_VAR_docker_password" ]; then
+                                  echo "✅ Docker Hub password variable is set"
+                                else
+                                  echo "❌ Docker Hub password variable is NOT set!"
+                                fi
+
                                 # Explicitly pass RG + location
                                 terraform plan -out=complete_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
