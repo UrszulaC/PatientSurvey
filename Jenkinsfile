@@ -227,7 +227,7 @@ pipeline {
                             usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
                         ]) {
                             sh '''#!/bin/bash
-        set -euo pipefail
+        set -e
         
         export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
         export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
@@ -255,7 +255,6 @@ pipeline {
             -var="prometheus_image_tag=${BUILD_NUMBER}" \
             -var="resource_group_name=MyPatientSurveyRG" \
             -var="location=uksouth"
-
         
         # Apply plan
         terraform apply -auto-approve complete_plan.out
