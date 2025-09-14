@@ -1,4 +1,10 @@
 FROM prom/prometheus:v2.47.0
-COPY prometheus.yml /etc/monitoring/prometheus.yml
+
+# Copy Prometheus configuration from the same folder
+COPY prometheus.yml /etc/prometheus/prometheus.yml
+
+# Expose Prometheus port
 EXPOSE 9090
-CMD ["/bin/prometheus", "--config.file=/etc/monitoring/prometheus.yml"]
+
+# Base image already runs Prometheus, no need for CMD
+
