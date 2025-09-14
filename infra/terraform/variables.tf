@@ -25,4 +25,8 @@ variable "docker_password" {
   type        = string
   sensitive   = true
 }
+variable "prometheus_image_tag" {
+  description = "Prometheus Docker image tag"
+  default     = "latest"
+}
 
