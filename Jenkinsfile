@@ -196,22 +196,21 @@ pipeline {
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
         
-                            // Build Prometheus + node_exporter + Python app image
-                            dir('infra/monitoring') {
-                                def prometheusImage = "urszulach/prometheus-custom:${env.BUILD_NUMBER}"
-                                docker.build(prometheusImage).push()
-                                echo "✅ Prometheus image built and pushed: ${prometheusImage}"
+                            // Build Python app image
+                            dir('PatientSurvey') {
+                                docker.build("urszulach/epa-feedback-app:${env.BUILD_NUMBER}").push()
                             }
         
-                            // Build main feedback app image
-                            def appImage = "urszulach/epa-feedback-app:${env.BUILD_NUMBER}"
-                            docker.build(appImage, '.').push()
-                            echo "✅ Feedback app image built and pushed: ${appImage}"
+                            // Build Prometheus image
+                            dir('infra/monitoring') {
+                                docker.build("urszulach/prometheus-custom:${env.BUILD_NUMBER}").push()
+                            }
                         }
                     }
                 }
             }
         }
+
 
         stage('Deploy Complete Infrastructure') {
             steps {
