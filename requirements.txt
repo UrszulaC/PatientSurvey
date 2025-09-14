@@ -1,6 +1,7 @@
 # Core requirements
 pyodbc
 python-dotenv>=0.19.0
+flask>=2.3.0
 
 # Testing requirements (unittest + Jenkins reporting)
 unittest-xml-reporting>=3.0.4
