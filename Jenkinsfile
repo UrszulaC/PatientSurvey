@@ -223,6 +223,7 @@ pipeline {
                             usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
                         ]) {
                             sh '''
+                                #!/bin/bash
                                 set -e
                                 export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
                                 export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
