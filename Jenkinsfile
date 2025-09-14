@@ -189,15 +189,19 @@ pipeline {
                 }
             }
         }
+       
         stage('Build Docker Images') {
             steps {
                 script {
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-                            // Build and push Prometheus image
-                            docker.build("urszulach/prometheus-custom:${env.BUILD_NUMBER}", './monitoring').push()
-                            
-                            // Build and push main app image
+        
+                            // Build Prometheus image
+                            dir('infra/monitoring') {
+                                docker.build("urszulach/prometheus-custom:${env.BUILD_NUMBER}").push()
+                            }
+        
+                            // Build main app image
                             docker.build("urszulach/epa-feedback-app:${env.BUILD_NUMBER}", '.').push()
                         }
                     }
