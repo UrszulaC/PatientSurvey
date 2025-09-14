@@ -377,5 +377,7 @@ if __name__ == "__main__":
     logger.info("Starting Patient Survey Application")
     initialize_database()
     
-    # Run Flask app
+    # Import and run Flask app
+    from app import create_app
+    app = create_app()
     app.run(host='0.0.0.0', port=8001, debug=False)
