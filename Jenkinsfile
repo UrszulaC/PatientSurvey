@@ -189,7 +189,19 @@ pipeline {
                 }
             }
         }
-
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
+                            // Build and push image with Jenkins build number as tag
+                            docker.build("urszulach/prometheus-custom:${env.BUILD_NUMBER}", './prometheus').push()
+                            docker.build("urszulach/epa-feedback-app:${env.BUILD_NUMBER}", '.').push()
+                        }
+                    }
+                }
+            }
+        }
         stage('Deploy Complete Infrastructure') {
             steps {
                 script {
@@ -228,6 +240,7 @@ pipeline {
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
                                     -var="docker_user=${TF_VAR_docker_user}" \
                                     -var="docker_password=${TF_VAR_docker_password}" \
+                                    -var="prometheus_image_tag=${env.BUILD_NUMBER}" \
                                     -var="resource_group_name=MyPatientSurveyRG" \
                                     -var="location=uksouth"
         
@@ -280,17 +293,7 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
-                            docker.build(IMAGE_TAG, '.').push()
-                        }
-                    }
-                }
-            }
-        }
+        
 
         stage('Security Scan') {
             steps {
