@@ -54,8 +54,8 @@ pipeline {
                 '''
             }
         }
-        
-        stage('Deploy Complete Infrastructure') {
+
+        stage('Initialize Terraform and Import Existing Resources') {
             steps {
                 script {
                     dir('infra/terraform') {
@@ -65,18 +65,15 @@ pipeline {
                             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
                             string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                             string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
-                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
-                            usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
+                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password')
                         ]) {
                             sh '''
                                 set -e
-        
-                                # Export Azure credentials for Terraform
                                 export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
                                 export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
                                 export ARM_TENANT_ID="${ARM_TENANT_ID}"
                                 export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
-        
+                                
                                 export TF_VAR_client_id="${ARM_CLIENT_ID}"
                                 export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
@@ -88,15 +85,89 @@ pipeline {
                                                -backend-config="container_name=${TF_STATE_CONTAINER}" \
                                                -backend-config="key=${TF_STATE_KEY}"
         
-                                # Plan and apply updates (only changes will be applied)
+                                # Login to Azure for resource import
+                                az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                                az account set --subscription "$ARM_SUBSCRIPTION_ID_VAR"
+        
+                                # Get current state
+                                terraform state list > existing_state.txt || true
+                                
+                                # Function to import resource if not in state
+                                import_if_missing() {
+                                    local resource_name="$1"
+                                    local azure_resource_id="$2"
+                                    
+                                    if ! grep -xq "$resource_name" existing_state.txt; then
+                                        echo "Attempting to import $resource_name..."
+                                        if terraform import -var="resource_group_name=MyPatientSurveyRG" -var="location=uksouth" "$resource_name" "$azure_resource_id" 2>/dev/null; then
+                                            echo "✅ Successfully imported $resource_name"
+                                        else
+                                            echo "⚠️  Import failed for $resource_name (resource may not exist or ID format may be different)"
+                                        fi
+                                    else
+                                        echo "✅ $resource_name already in state"
+                                    fi
+                                }
+        
+                                # Import SQL resources
+                                import_if_missing "azurerm_mssql_server.sql_server" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql"
+                                import_if_missing "azurerm_mssql_database.sql_database" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/databases/patient_survey_db"
+                                import_if_missing "azurerm_mssql_firewall_rule.allow_azure_services" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/firewallRules/AllowAzureServices"
+                                
+                                # Import Network resources
+                                import_if_missing "azurerm_network_security_group.monitoring_nsg" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg"
+                                
+                                # Import Storage Account
+                                import_if_missing "azurerm_storage_account.monitoring" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
+                                
+                                # Import Storage Shares
+                                import_if_missing "azurerm_storage_share.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/prometheus-data"    
+                                import_if_missing "azurerm_storage_share.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/grafana-data"
+
+        
+                                # Try to import container groups if they exist
+                                import_if_missing "azurerm_container_group.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg"
+                                import_if_missing "azurerm_container_group.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg"
+        
+                                echo "✅ Terraform initialization and resource import completed"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+
+        stage('Deploy Complete Infrastructure') {
+            steps {
+                script {
+                    dir('infra/terraform') {
+                        withCredentials([
+                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
+                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                            string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
+                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password')
+                        ]) {
+                            sh '''
+                                set -e
+                                export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
+                                export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
+                                export ARM_TENANT_ID="${ARM_TENANT_ID}"
+                                export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
+                                
+                                export TF_VAR_client_id="${ARM_CLIENT_ID}"
+                                export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
+                                export TF_VAR_tenant_id="${ARM_TENANT_ID}"
+                                export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
+        
+                                # Explicitly pass RG + location
                                 terraform plan -out=complete_plan.out \
-                                    -var="prometheus_image_tag=${BUILD_NUMBER}" \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
-                                    -var="docker_user=${TF_VAR_docker_user}" \
-                                    -var="docker_password=${TF_VAR_docker_password}" \
-                                    -var="resource_group_name=${RESOURCE_GROUP}" \
+                                    -var="resource_group_name=MyPatientSurveyRG" \
                                     -var="location=uksouth"
         
                                 terraform apply -auto-approve complete_plan.out
@@ -108,7 +179,6 @@ pipeline {
                                 echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_CREDS=admin:${TF_VAR_grafana_password}" >> $WORKSPACE/monitoring.env
-        
                                 echo "✅ Complete infrastructure applied successfully"
                             '''
                         }
@@ -116,18 +186,17 @@ pipeline {
                 }
             }
         }
-        
         stage('Create .env File') {
             steps {
                 sh '''
                     set -e
-                    # Load DB info from monitoring.env
+                    # Read values without exporting them (avoids printing secrets)
                     DB_HOST=$(grep ^DB_HOST monitoring.env | cut -d '=' -f2-)
                     DB_USER=$(grep ^DB_USER monitoring.env | cut -d '=' -f2-)
                     DB_PASSWORD=$(grep ^DB_PASSWORD monitoring.env | cut -d '=' -f2-)
-                    DB_NAME=${DB_NAME:-patient_survey_db}
+                    DB_NAME=$(grep ^DB_NAME monitoring.env | cut -d '=' -f2-)
         
-                    # Write app/.env file
+                    # Write .env file
                     cat > app/.env <<EOL
         DB_HOST=$DB_HOST
         DB_USER=$DB_USER
@@ -137,8 +206,17 @@ pipeline {
                 '''
             }
         }
-        
-        
+
+        stage('Run Tests') {
+            steps {
+                sh '''
+                    mkdir -p test-results
+                    touch tests/__init__.py
+                    python3 -m xmlrunner discover -s tests -o test-results --failfast --verbose
+                '''
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 script {
@@ -271,4 +349,3 @@ pipeline {
         }
     }
 }
-
