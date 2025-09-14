@@ -136,8 +136,6 @@ pipeline {
                 }
             }
         }
-
-
         stage('Deploy Complete Infrastructure') {
             steps {
                 script {
@@ -148,7 +146,8 @@ pipeline {
                             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
                             string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                             string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
-                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password')
+                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
+                            usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
                         ]) {
                             sh '''
                                 set -e
@@ -162,11 +161,19 @@ pipeline {
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
         
-                                # Explicitly pass RG + location
+                                # Initialize Terraform with backend
+                                terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
+                                               -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
+                                               -backend-config="container_name=${TF_STATE_CONTAINER}" \
+                                               -backend-config="key=${TF_STATE_KEY}"
+        
+                                # Explicitly pass all required variables including Docker
                                 terraform plan -out=complete_plan.out \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
+                                    -var="docker_user=${TF_VAR_docker_user}" \
+                                    -var="docker_password=${TF_VAR_docker_password}" \
                                     -var="resource_group_name=MyPatientSurveyRG" \
                                     -var="location=uksouth"
         
@@ -179,6 +186,7 @@ pipeline {
                                 echo "PROMETHEUS_URL=$(terraform output -raw prometheus_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_CREDS=admin:${TF_VAR_grafana_password}" >> $WORKSPACE/monitoring.env
+        
                                 echo "✅ Complete infrastructure applied successfully"
                             '''
                         }
@@ -186,6 +194,7 @@ pipeline {
                 }
             }
         }
+  
         stage('Create .env File') {
             steps {
                 sh '''
