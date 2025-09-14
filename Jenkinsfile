@@ -271,7 +271,56 @@ pipeline {
             }
         }
 
-        
+        stage('Replace Survey App Container Group') {
+            steps {
+                script {
+                    dir('infra/terraform') {
+                        withCredentials([
+                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
+                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                            string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
+                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
+                            usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
+                        ]) {
+                            sh '''#!/bin/bash
+                            set -e
+                            
+                            export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
+                            export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
+                            export ARM_TENANT_ID="${ARM_TENANT_ID}"
+                            export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
+                            
+                            export TF_VAR_client_id="${ARM_CLIENT_ID}"
+                            export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
+                            export TF_VAR_tenant_id="${ARM_TENANT_ID}"
+                            export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
+                            
+                            # Initialize Terraform (if not already done)
+                            terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
+                                           -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
+                                           -backend-config="container_name=${TF_STATE_CONTAINER}" \
+                                           -backend-config="key=${TF_STATE_KEY}"
+                            
+                            # Replace ONLY the survey app container group
+                            terraform apply -replace="azurerm_container_group.survey_app" -auto-approve \
+                                -var="db_user=${TF_VAR_db_user}" \
+                                -var="db_password=${TF_VAR_db_password}" \
+                                -var="grafana_password=${TF_VAR_grafana_password}" \
+                                -var="docker_user=${TF_VAR_docker_user}" \
+                                -var="docker_password=${TF_VAR_docker_password}" \
+                                -var="prometheus_image_tag=${BUILD_NUMBER}" \
+                                -var="resource_group_name=MyPatientSurveyRG" \
+                                -var="location=uksouth"
+                            
+                            echo "✅ Survey app container group replaced successfully"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
         stage('Create .env File') {
             steps {
                 sh '''
