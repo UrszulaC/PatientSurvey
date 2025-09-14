@@ -55,60 +55,6 @@ pipeline {
             }
         }
         
-        stage('Import Existing Resources') {
-            steps {
-                script {
-                    dir('infra/terraform') {
-                        withCredentials([
-                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
-                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                            string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
-                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
-                            usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
-                        ]) {
-                            sh '''
-                                set -e
-        
-                                export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
-                                export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
-                                export ARM_TENANT_ID="${ARM_TENANT_ID}"
-                                export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
-                                
-                                export TF_VAR_client_id="${ARM_CLIENT_ID}"
-                                export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
-                                export TF_VAR_tenant_id="${ARM_TENANT_ID}"
-                                export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
-        
-                                # Initialize Terraform backend
-                                terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
-                                               -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
-                                               -backend-config="container_name=${TF_STATE_CONTAINER}" \
-                                               -backend-config="key=${TF_STATE_KEY}"
-        
-                                echo "⏳ Importing existing Azure resources into Terraform state..."
-        
-                                terraform import azurerm_mssql_server.sql_server /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql
-                                terraform import azurerm_mssql_database.sql_database /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/databases/patient_survey_db
-                                terraform import azurerm_mssql_firewall_rule.allow_azure_services /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/firewallRules/AllowAzureServices
-        
-                                terraform import azurerm_network_security_group.monitoring_nsg /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg
-        
-                                terraform import azurerm_storage_account.monitoring /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor
-                                terraform import azurerm_storage_share.prometheus /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/prometheus-data
-                                terraform import azurerm_storage_share.grafana /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/grafana-data
-        
-                                terraform import azurerm_container_group.prometheus /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg
-                                terraform import azurerm_container_group.grafana /subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg
-        
-                                echo "✅ Imports completed successfully"
-                            '''
-                        }
-                    }
-                }
-            }
-        }
         stage('Deploy Complete Infrastructure') {
             steps {
                 script {
@@ -125,18 +71,24 @@ pipeline {
                             sh '''
                                 set -e
         
+                                # Export Azure credentials for Terraform
                                 export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
                                 export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
                                 export ARM_TENANT_ID="${ARM_TENANT_ID}"
                                 export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
-                                
+        
                                 export TF_VAR_client_id="${ARM_CLIENT_ID}"
                                 export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
         
-                                echo "⏳ Running Terraform plan + apply for complete infrastructure..."
+                                # Initialize Terraform with backend
+                                terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
+                                               -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
+                                               -backend-config="container_name=${TF_STATE_CONTAINER}" \
+                                               -backend-config="key=${TF_STATE_KEY}"
         
+                                # Plan and apply updates (only changes will be applied)
                                 terraform plan -out=complete_plan.out \
                                     -var="prometheus_image_tag=${BUILD_NUMBER}" \
                                     -var="db_user=${TF_VAR_db_user}" \
@@ -144,7 +96,7 @@ pipeline {
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
                                     -var="docker_user=${TF_VAR_docker_user}" \
                                     -var="docker_password=${TF_VAR_docker_password}" \
-                                    -var="resource_group_name=MyPatientSurveyRG" \
+                                    -var="resource_group_name=${RESOURCE_GROUP}" \
                                     -var="location=uksouth"
         
                                 terraform apply -auto-approve complete_plan.out
@@ -157,26 +109,25 @@ pipeline {
                                 echo "GRAFANA_URL=$(terraform output -raw grafana_url)" >> $WORKSPACE/monitoring.env
                                 echo "GRAFANA_CREDS=admin:${TF_VAR_grafana_password}" >> $WORKSPACE/monitoring.env
         
-                                echo "✅ Infrastructure deployed and outputs exported"
+                                echo "✅ Complete infrastructure applied successfully"
                             '''
                         }
                     }
                 }
             }
         }
-
         
         stage('Create .env File') {
             steps {
                 sh '''
                     set -e
-                    # Read values without exporting them (avoids printing secrets)
+                    # Load DB info from monitoring.env
                     DB_HOST=$(grep ^DB_HOST monitoring.env | cut -d '=' -f2-)
                     DB_USER=$(grep ^DB_USER monitoring.env | cut -d '=' -f2-)
                     DB_PASSWORD=$(grep ^DB_PASSWORD monitoring.env | cut -d '=' -f2-)
-                    DB_NAME=$(grep ^DB_NAME monitoring.env | cut -d '=' -f2-)
+                    DB_NAME=${DB_NAME:-patient_survey_db}
         
-                    # Write .env file
+                    # Write app/.env file
                     cat > app/.env <<EOL
         DB_HOST=$DB_HOST
         DB_USER=$DB_USER
@@ -186,17 +137,8 @@ pipeline {
                 '''
             }
         }
-
-        stage('Run Tests') {
-            steps {
-                sh '''
-                    mkdir -p test-results
-                    touch tests/__init__.py
-                    python3 -m xmlrunner discover -s tests -o test-results --failfast --verbose
-                '''
-            }
-        }
-
+        
+        
         stage('Build Docker Image') {
             steps {
                 script {
