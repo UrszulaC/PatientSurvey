@@ -1,3 +1,24 @@
+# ===== PERSISTENT STORAGE =====
+resource "azurerm_storage_account" "monitoring" {
+  name                     = "mypatientsurveymonitor"
+  resource_group_name      = var.resource_group_name
+  location                 = var.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
+
+resource "azurerm_storage_share" "prometheus" {
+  name               = "prometheus-data"
+  storage_account_id = azurerm_storage_account.monitoring.id
+  quota              = 50
+}
+
+resource "azurerm_storage_share" "grafana" {
+  name               = "grafana-data"
+  storage_account_id = azurerm_storage_account.monitoring.id
+  quota              = 50
+}
+
 # ===== PROMETHEUS =====
 resource "azurerm_container_group" "prometheus" {
   name                = "prometheus-cg"
@@ -29,19 +50,11 @@ resource "azurerm_container_group" "prometheus" {
     }
   }
 
-  # Docker Hub credentials for private image
   image_registry_credential {
     server   = "index.docker.io"
     username = var.docker_user
     password = var.docker_password
   }
-}
-
-# Persistent storage for Prometheus
-resource "azurerm_storage_share" "prometheus" {
-  name               = "prometheus-data"
-  storage_account_id = azurerm_storage_account.monitoring.id
-  quota              = 50
 }
 
 # ===== GRAFANA =====
@@ -81,27 +94,6 @@ resource "azurerm_container_group" "grafana" {
   }
 }
 
-# ===== PERSISTENT STORAGE =====
-resource "azurerm_storage_account" "monitoring" {
-  name                     = "mypatientsurveymonitor"
-  resource_group_name      = var.resource_group_name
-  location                 = var.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-}
-
-resource "azurerm_storage_share" "prometheus" {
-  name               = "prometheus-data"
-  storage_account_id = azurerm_storage_account.monitoring.id
-  quota              = 50
-}
-
-resource "azurerm_storage_share" "grafana" {
-  name               = "grafana-data"
-  storage_account_id = azurerm_storage_account.monitoring.id
-  quota              = 50
-}
-
 # ===== OUTPUTS =====
 output "prometheus_url" {
   value = "http://${azurerm_container_group.prometheus.fqdn}:9090"
@@ -126,6 +118,3 @@ variable "prometheus_image_tag" {
   description = "Prometheus Docker image tag"
   default     = "latest"
 }
-
-
-
