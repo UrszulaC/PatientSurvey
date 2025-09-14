@@ -270,57 +270,40 @@ pipeline {
                 }
             }
         }
-
-        stage('Replace Survey App Container Group') {
+        stage('Health Check') {
             steps {
                 script {
-                    dir('infra/terraform') {
-                        withCredentials([
-                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
-                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                            string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
-                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
-                            usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
-                        ]) {
-                            sh '''#!/bin/bash
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                    ]) {
+                        sh '''
                             set -e
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                            # Get the application URL
+                            APP_URL="http://survey-app.uksouth.azurecontainer.io:8001"
                             
-                            export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
-                            export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
-                            export ARM_TENANT_ID="${ARM_TENANT_ID}"
-                            export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
+                            # Wait for app to be ready
+                            echo "Waiting for application to start..."
+                            timeout 120 bash -c 'until curl -s --head --fail "$APP_URL/health"; do sleep 5; done'
                             
-                            export TF_VAR_client_id="${ARM_CLIENT_ID}"
-                            export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
-                            export TF_VAR_tenant_id="${ARM_TENANT_ID}"
-                            export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
+                            # Test health endpoint
+                            curl -s "$APP_URL/health" | grep '"status":"healthy"' || exit 1
+                            echo "✅ Application health check passed"
                             
-                            # Initialize Terraform (if not already done)
-                            terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
-                                           -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
-                                           -backend-config="container_name=${TF_STATE_CONTAINER}" \
-                                           -backend-config="key=${TF_STATE_KEY}"
-                            
-                            # Replace ONLY the survey app container group
-                            terraform apply -replace="azurerm_container_group.survey_app" -auto-approve \
-                                -var="db_user=${TF_VAR_db_user}" \
-                                -var="db_password=${TF_VAR_db_password}" \
-                                -var="grafana_password=${TF_VAR_grafana_password}" \
-                                -var="docker_user=${TF_VAR_docker_user}" \
-                                -var="docker_password=${TF_VAR_docker_password}" \
-                                -var="prometheus_image_tag=${BUILD_NUMBER}" \
-                                -var="resource_group_name=MyPatientSurveyRG" \
-                                -var="location=uksouth"
-                            
-                            echo "✅ Survey app container group replaced successfully"
-                            '''
-                        }
+                            # Test metrics endpoint
+                            curl -s "$APP_URL/metrics" | grep -q "patient_survey" || exit 1
+                            echo "✅ Metrics endpoint working"
+                        '''
                     }
                 }
             }
         }
+        
         stage('Create .env File') {
             steps {
                 sh '''
@@ -346,14 +329,11 @@ pipeline {
             steps {
                 sh '''
                     mkdir -p test-results
-                    touch tests/__init__.py
-                    python3 -m xmlrunner discover -s tests -o test-results --failfast --verbose
+                    # Run the updated tests
+                    python -m xmlrunner discover -s . -o test-results --failfast --verbose -p "test_*.py"
                 '''
             }
         }
-
-        
-
         stage('Security Scan') {
             steps {
                 dir('app') {
@@ -371,83 +351,6 @@ pipeline {
                 }
             }
         }
-        stage('Cleanup Old Container') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
-                    ]) {
-                        sh '''
-                            set -e
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
-
-                            if az container show --resource-group $RESOURCE_GROUP --name survey-app-cg &>/dev/null; then
-                                echo "Deleting old container survey-app-cg..."
-                                az container delete --resource-group $RESOURCE_GROUP --name survey-app-cg --yes
-                            else
-                                echo "No old container to delete."
-                            fi
-                        '''
-                    }
-                }
-            }
-        }
-        stage('Deploy Application') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID'),
-                        usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD')
-                    ]) {
-                        sh '''
-                        set -e
-                        # Load env vars
-                        export $(grep -v "^#" monitoring.env | xargs)
-        
-                        az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                        az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-                        docker login -u "$DOCKER_HUB_USER" -p "$DOCKER_HUB_PASSWORD"
-                        docker pull ${IMAGE_TAG}
-        
-                        # Check if container exists
-                        if az container show --resource-group $RESOURCE_GROUP --name survey-app-cg --query name -o tsv 2>/dev/null; then
-                            echo "Container exists — deleting..."
-                            az container delete --resource-group $RESOURCE_GROUP --name survey-app-cg --yes
-                        fi
-        
-                        echo "Creating new container..."
-                        az container create \
-                            --resource-group $RESOURCE_GROUP \
-                            --name survey-app-cg \
-                            --image ${IMAGE_TAG} \
-                            --os-type Linux \
-                            --cpu 0.5 \
-                            --memory 1.0 \
-                            --ports 8001 9100 \
-                            --ip-address Public \
-                            --dns-name-label survey-app \
-                            --restart-policy Always \
-                            --environment-variables \
-                                DB_HOST=$DB_HOST \
-                                DB_USER=$DB_USER \
-                                DB_PASSWORD=$DB_PASSWORD \
-                                DB_NAME=$DB_NAME \
-                            --registry-login-server index.docker.io \
-                            --registry-username "$DOCKER_HUB_USER" \
-                            --registry-password "$DOCKER_HUB_PASSWORD"
-                        '''
-                    }
-                }
-            }
-        }
 
        stage('Display Monitoring URLs') {
             steps {
@@ -455,8 +358,14 @@ pipeline {
                     set -e
                     # Load environment variables
                     export $(grep -v "^#" monitoring.env | xargs)
-        
-                    echo "Patient Survey App Metrics: http://survey-app.uksouth.azurecontainer.io:8001/metrics"
+            
+                    echo "=== APPLICATION URLs ==="
+                    echo "Patient Survey App: http://survey-app.uksouth.azurecontainer.io:8001"
+                    echo "Survey API: http://survey-app.uksouth.azurecontainer.io:8001/api/questions"
+                    echo "Health Check: http://survey-app.uksouth.azurecontainer.io:8001/health"
+                    
+                    echo ""
+                    echo "=== MONITORING URLs ==="
                     echo "Node Metrics: http://survey-app.uksouth.azurecontainer.io:9100/metrics"
                     echo "Prometheus Dashboard: $PROMETHEUS_URL"
                     echo "Grafana Dashboard: $GRAFANA_URL"
@@ -464,9 +373,6 @@ pipeline {
                 '''
             }
         }
-
-    }
-
     post {
         always {
             junit 'test-results/*.xml'
