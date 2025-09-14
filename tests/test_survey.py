@@ -4,10 +4,11 @@ import logging
 import pyodbc
 import json
 import time
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from dotenv import load_dotenv
 from app.config import Config
 from app.utils.db_utils import get_db_connection
+from app import create_app
 
 # Load .env before using Config
 load_dotenv()
@@ -16,8 +17,14 @@ class TestPatientSurveySystem(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Connect to the test database and prepare survey and questions mapping."""
+        """Set up Flask test client and database connection."""
         try:
+            # Create Flask test client
+            cls.app = create_app()
+            cls.app.config['TESTING'] = True
+            cls.client = cls.app.test_client()
+            
+            # Connect to the test database
             cls.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
             cls.cursor = cls.conn.cursor()
 
@@ -66,7 +73,121 @@ class TestPatientSurveySystem(unittest.TestCase):
         if hasattr(cls, 'conn') and cls.conn:
             cls.conn.close()
 
-    # --- Database Structure Tests ---
+    # --- API Endpoint Tests ---
+    def test_get_questions_endpoint(self):
+        """Test GET /api/questions endpoint"""
+        response = self.client.get('/api/questions')
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 7)
+        
+        # Check that questions have expected structure
+        question = data[0]
+        self.assertIn('question_id', question)
+        self.assertIn('question_text', question)
+        self.assertIn('question_type', question)
+        self.assertIn('is_required', question)
+        self.assertIn('options', question)
+
+    def test_submit_survey_endpoint(self):
+        """Test POST /api/survey endpoint"""
+        survey_data = {
+            'answers': [
+                {'question_id': self.questions['Date of visit?'], 'answer_value': '2023-01-01'},
+                {'question_id': self.questions['Which site did you visit?'], 'answer_value': 'Princess Alexandra Hospital'},
+                {'question_id': self.questions['Patient name?'], 'answer_value': 'John Doe'},
+                {'question_id': self.questions['How easy was it to get an appointment?'], 'answer_value': 'Neutral'},
+                {'question_id': self.questions['Were you properly informed about your procedure?'], 'answer_value': 'Yes'},
+                {'question_id': self.questions['What went well during your visit?'], 'answer_value': 'Friendly staff'},
+                {'question_id': self.questions['Overall satisfaction (1-5)'], 'answer_value': '5'}
+            ]
+        }
+        
+        response = self.client.post('/api/survey', 
+                                  json=survey_data,
+                                  content_type='application/json')
+        
+        self.assertEqual(response.status_code, 201)
+        data = response.get_json()
+        self.assertIn('response_id', data)
+        self.assertIn('message', data)
+        
+        # Verify data was actually inserted
+        self.cursor.execute("SELECT COUNT(*) FROM responses")
+        self.assertEqual(self.cursor.fetchone()[0], 1)
+        
+        self.cursor.execute("SELECT COUNT(*) FROM answers")
+        self.assertEqual(self.cursor.fetchone()[0], 7)
+
+    def test_submit_survey_invalid_data(self):
+        """Test POST /api/survey with invalid data"""
+        # Test with no data
+        response = self.client.post('/api/survey', 
+                                  json={},
+                                  content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        
+        # Test with missing answers
+        response = self.client.post('/api/survey', 
+                                  json={'wrong_key': []},
+                                  content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_get_responses_endpoint(self):
+        """Test GET /api/responses endpoint"""
+        # First insert some test data
+        self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,))
+        self.cursor.execute("SELECT SCOPE_IDENTITY()")
+        response_id = int(self.cursor.fetchone()[0])
+        
+        # Insert answers
+        for question_id in self.questions.values():
+            self.cursor.execute(
+                "INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
+                (response_id, question_id, 'test answer')
+            )
+        self.conn.commit()
+        
+        # Test the endpoint
+        response = self.client.get('/api/responses')
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()
+        self.assertIsInstance(data, dict)
+        self.assertIn(str(response_id), data)
+        self.assertEqual(len(data[str(response_id)]['answers']), 7)
+
+    def test_get_responses_empty(self):
+        """Test GET /api/responses when no responses exist"""
+        response = self.client.get('/api/responses')
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()
+        self.assertEqual(data, {})
+
+    def test_health_endpoint(self):
+        """Test GET /health endpoint"""
+        response = self.client.get('/health')
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()
+        self.assertEqual(data['status'], 'healthy')
+        self.assertEqual(data['database'], 'connected')
+
+    def test_metrics_endpoint(self):
+        """Test GET /metrics endpoint"""
+        response = self.client.get('/metrics')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content_type, 'text/plain; version=0.0.4; charset=utf-8')
+
+    def test_index_endpoint(self):
+        """Test GET / endpoint"""
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+
+    # --- Database Structure Tests (Keep these) ---
     def test_tables_created_correctly(self):
         self.cursor.execute(
             f"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
@@ -101,107 +222,24 @@ class TestPatientSurveySystem(unittest.TestCase):
             'Herts & Essex Hospital'
         ])
 
-    # --- Survey Conducting Tests ---
-    @patch('builtins.input')
-    def test_complete_survey_flow(self, mock_input):
-        mock_input.side_effect = [
-            '2023-01-01',
-            '1',
-            'John Doe',
-            '3',
-            '1',
-            'Friendly staff',
-            '5'
-        ]
-        from app.main import conduct_survey
-        conduct_survey(self.conn)
-
-        self.cursor.execute("SELECT * FROM responses")
-        response = self.cursor.fetchone()
-        self.assertIsNotNone(response)
-
-        self.cursor.execute("SELECT COUNT(*) FROM answers WHERE response_id = ?", (response[0],))
-        self.assertEqual(self.cursor.fetchone()[0], 7)
-
-        self.cursor.execute(
-            "SELECT answer_value FROM answers WHERE question_id = ? AND response_id = ?",
-            (self.questions['What went well during your visit?'], response[0])
-        )
-        self.assertEqual(self.cursor.fetchone()[0], 'Friendly staff')
-
-    @patch('builtins.input')
-    def test_required_field_validation(self, mock_input):
-        mock_input.side_effect = [
-            '', '2023-01-01', '1', 'John', '3', '1', 'Good', '5'
-        ]
-        from app.main import conduct_survey
-        conduct_survey(self.conn)
-
-        self.cursor.execute("SELECT * FROM responses")
-        self.assertIsNotNone(self.cursor.fetchone())
-
-    @patch('builtins.input')
-    def test_optional_field_handling(self, mock_input):
-        mock_input.side_effect = [
-            '2023-01-01', '1', 'John', '3', '1', '', '5'
-        ]
-        from app.main import conduct_survey
-        conduct_survey(self.conn)
-
-        self.cursor.execute("SELECT * FROM responses")
-        response = self.cursor.fetchone()
-        self.assertIsNotNone(response)
-
-        self.cursor.execute(
-            "SELECT answer_value FROM answers WHERE question_id = ? AND response_id = ?",
-            (self.questions['What went well during your visit?'], response[0])
-        )
-        self.assertEqual(self.cursor.fetchone()[0], '[No response]')
-
-    # --- View Responses Tests ---
-    def test_view_empty_responses(self):
-        from app.main import view_responses
-        with patch('builtins.print') as mock_print:
-            view_responses(self.conn)
-            mock_print.assert_any_call("\nNo responses found in the database.")
-
-    def test_view_multiple_responses(self):
-        # Insert two responses
-        for _ in range(2):
-            self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,))
-            self.cursor.execute("SELECT SCOPE_IDENTITY()")
-            new_response_row = self.cursor.fetchone()
-            if not new_response_row or new_response_row[0] is None:
-                self.cursor.execute("SELECT @@IDENTITY")
-                new_response_row = self.cursor.fetchone()
-            response_id = int(new_response_row[0])
-            # Insert an answer for testing
-            self.cursor.execute(
-                "INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
-                (response_id, self.questions['Date of visit?'], f'2023-01-{response_id:02d}')
-            )
-        self.conn.commit()
-
-        from app.main import view_responses
-        with patch('builtins.print') as mock_print:
-            view_responses(self.conn)
-            output = "\n".join(str(call) for call in mock_print.call_args_list)
-            self.assertIn("Date of visit?", output)
-
     # --- Edge Cases ---
-    @patch('builtins.input')
-    def test_invalid_multiple_choice_input(self, mock_input):
-        mock_input.side_effect = [
-            '2023-01-01', '5', '1', 'John', '3', '1', 'Good', '5'
-        ]
-        from app.main import conduct_survey
-        with patch('builtins.print') as mock_print:
-            conduct_survey(self.conn)
-            output = "\n".join(str(call) for call in mock_print.call_args_list)
-            self.assertIn("Please enter a number between 1 and 3", output)
-
-        self.cursor.execute("SELECT * FROM responses")
-        self.assertIsNotNone(self.cursor.fetchone())
+    def test_submit_survey_missing_required_field(self):
+        """Test submitting survey with missing required field"""
+        survey_data = {
+            'answers': [
+                # Missing some required fields intentionally
+                {'question_id': self.questions['Date of visit?'], 'answer_value': '2023-01-01'},
+                {'question_id': self.questions['Patient name?'], 'answer_value': 'John Doe'},
+            ]
+        }
+        
+        # The API should still accept this (validation is now client-side)
+        response = self.client.post('/api/survey', 
+                                  json=survey_data,
+                                  content_type='application/json')
+        
+        # Should still succeed since validation is now client-side
+        self.assertEqual(response.status_code, 201)
 
     def test_database_constraints(self):
         with self.assertRaises(pyodbc.Error):
