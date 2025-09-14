@@ -196,8 +196,9 @@ pipeline {
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-creds') {
         
-                            // Build Python app image (Dockerfile + requirements.txt are at project root)
-                            docker.build("urszulach/epa-feedback-app:${env.BUILD_NUMBER}", "-f Dockerfile .").push()
+                            // Build Prometheus image
+                            docker.build("urszulach/prometheus-custom:${env.BUILD_NUMBER}", "-f monitoring/Dockerfile monitoring").push()
+
         
                             // Build Prometheus image (Dockerfile + prometheus.yml are in monitoring folder)
                             dir('monitoring') {
