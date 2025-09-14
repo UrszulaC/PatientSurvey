@@ -372,6 +372,7 @@ pipeline {
                     echo "⚠️ Grafana credentials are hidden for security"
                 '''
             }
+           }
         }
     post {
         always {
