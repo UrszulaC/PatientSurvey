@@ -11,9 +11,17 @@ resource "azurerm_container_group" "prometheus" {
   container {
     name   = "prometheus"
     image  = "urszulach/prometheus-custom:${var.prometheus_image_tag}"
-    cpu    = "0.5"
-    memory = "1.5"
+    cpu    = "1.0"
+    memory = "2.0"
 
+    ports {
+      port     = 8001
+      protocol = "TCP"
+    }
+    ports {
+      port     = 9100
+      protocol = "TCP"
+    }
     ports {
       port     = 9090
       protocol = "TCP"
@@ -29,13 +37,13 @@ resource "azurerm_container_group" "prometheus" {
     }
   }
 
-  # Credentials for private Docker image
   image_registry_credential {
     server   = "index.docker.io"
     username = var.docker_user
     password = var.docker_password
   }
 }
+
 
 # ===== GRAFANA =====
 resource "azurerm_container_group" "grafana" {
