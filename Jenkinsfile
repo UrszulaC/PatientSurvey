@@ -199,8 +199,8 @@ pipeline {
                             docker.build("urszulach/epa-feedback-app:${env.BUILD_NUMBER}", "--no-cache .").push()
                             
                             // Also tag as latest
-                            sh 'docker tag urszulach/epa-feedback-app:${env.BUILD_NUMBER} urszulach/epa-feedback-app:latest'
-                            sh 'docker push urszulach/epa-feedback-app:latest'
+                            sh "docker tag urszulach/epa-feedback-app:${env.BUILD_NUMBER} urszulach/epa-feedback-app:latest"
+                            sh "docker push urszulach/epa-feedback-app:latest"
                         }
                     }
                 }
