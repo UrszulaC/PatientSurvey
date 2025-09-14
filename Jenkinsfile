@@ -136,20 +136,11 @@ pipeline {
                 }
             }
         }
-        stage('Build Prometheus Image') {
-            steps {
-                script {
-                    def prometheusImage = "urszulach/prometheus-custom:${env.BUILD_NUMBER}"
-                    docker.build(prometheusImage, 'infra/monitoring')
-                }
-            }
-        }
-
         stage('Deploy Complete Infrastructure') {
             steps {
                 script {
                     dir('infra/terraform') {
-                       withCredentials([
+                        withCredentials([
                             usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
                             string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
                             string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
@@ -169,10 +160,9 @@ pipeline {
                                 export TF_VAR_client_secret="${ARM_CLIENT_SECRET}"
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
-                        
-                                # Explicitly pass RG + location + Docker creds
+        
+                                # Explicitly pass RG + location
                                 terraform plan -out=complete_plan.out \
-                                    -var="prometheus_image_tag=${BUILD_NUMBER}" \
                                     -var="db_user=${TF_VAR_db_user}" \
                                     -var="db_password=${TF_VAR_db_password}" \
                                     -var="grafana_password=${TF_VAR_grafana_password}" \
@@ -180,8 +170,9 @@ pipeline {
                                     -var="docker_password=${TF_VAR_docker_password}" \
                                     -var="resource_group_name=MyPatientSurveyRG" \
                                     -var="location=uksouth"
+        
                                 terraform apply -auto-approve complete_plan.out
-                        
+        
                                 # Export outputs to monitoring.env
                                 echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > $WORKSPACE/monitoring.env
                                 echo "DB_USER=${TF_VAR_db_user}" >> $WORKSPACE/monitoring.env
@@ -192,28 +183,34 @@ pipeline {
                                 echo "✅ Complete infrastructure applied successfully"
                             '''
                         }
- 
                     }
                 }
             }
         }
+
+
+        
         stage('Create .env File') {
             steps {
                 sh '''
-                set -e
-                # Load environment variables
-                export $(grep -v "^#" monitoring.env | xargs)
+                    set -e
+                    # Read values without exporting them (avoids printing secrets)
+                    DB_HOST=$(grep ^DB_HOST monitoring.env | cut -d '=' -f2-)
+                    DB_USER=$(grep ^DB_USER monitoring.env | cut -d '=' -f2-)
+                    DB_PASSWORD=$(grep ^DB_PASSWORD monitoring.env | cut -d '=' -f2-)
+                    DB_NAME=$(grep ^DB_NAME monitoring.env | cut -d '=' -f2-)
         
-                # Write .env without printing sensitive values
-                {
-                    echo "DB_HOST=$DB_HOST"
-                    echo "DB_USER=$DB_USER"
-                    echo "DB_PASSWORD=$DB_PASSWORD"
-                    echo "DB_NAME=$DB_NAME"
-                } > app/.env
+                    # Write .env file
+                    cat > app/.env <<EOL
+        DB_HOST=$DB_HOST
+        DB_USER=$DB_USER
+        DB_PASSWORD=$DB_PASSWORD
+        DB_NAME=$DB_NAME
+        EOL
                 '''
             }
         }
+
         stage('Run Tests') {
             steps {
                 sh '''
@@ -356,3 +353,4 @@ pipeline {
         }
     }
 }
+
