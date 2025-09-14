@@ -11,17 +11,9 @@ resource "azurerm_container_group" "prometheus" {
   container {
     name   = "prometheus"
     image  = "urszulach/prometheus-custom:${var.prometheus_image_tag}"
-    cpu    = "1.0"
-    memory = "2.0"
+    cpu    = "0.5"
+    memory = "1.5"
 
-    ports {
-      port     = 8001
-      protocol = "TCP"
-    }
-    ports {
-      port     = 9100
-      protocol = "TCP"
-    }
     ports {
       port     = 9090
       protocol = "TCP"
@@ -29,7 +21,7 @@ resource "azurerm_container_group" "prometheus" {
 
     volume {
       name                 = "prometheus-data"
-      mount_path           = "/prometheus"
+      mount_path           = "/prometheus-data"
       read_only            = false
       storage_account_name = azurerm_storage_account.monitoring.name
       storage_account_key  = azurerm_storage_account.monitoring.primary_access_key
@@ -37,6 +29,7 @@ resource "azurerm_container_group" "prometheus" {
     }
   }
 
+  # Docker Hub credentials for private image
   image_registry_credential {
     server   = "index.docker.io"
     username = var.docker_user
@@ -44,6 +37,12 @@ resource "azurerm_container_group" "prometheus" {
   }
 }
 
+# Persistent storage for Prometheus
+resource "azurerm_storage_share" "prometheus" {
+  name               = "prometheus-data"
+  storage_account_id = azurerm_storage_account.monitoring.id
+  quota              = 50
+}
 
 # ===== GRAFANA =====
 resource "azurerm_container_group" "grafana" {
