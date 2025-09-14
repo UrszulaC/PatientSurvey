@@ -1,10 +1,10 @@
 FROM prom/prometheus:v2.47.0
 
-# Copy Prometheus configuration from the same folder
+# Copy your Prometheus config into the image
 COPY prometheus.yml /etc/prometheus/prometheus.yml
 
 # Expose Prometheus port
 EXPOSE 9090
 
-# Base image already runs Prometheus, no need for CMD
-
+# Run Prometheus with the config file
+CMD ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus-data"]
