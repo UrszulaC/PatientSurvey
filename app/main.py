@@ -2,27 +2,29 @@ import logging
 import json
 import time
 import pyodbc
+from flask import Flask, request, jsonify, render_template
+from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram
 from app.utils.db_utils import get_db_connection
 from app.config import Config
-
-from prometheus_client import start_http_server, Counter
-import threading
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Prometheus metrics
+# Initialize Flask app
+app = Flask(__name__)
+
+# Prometheus metrics - ALL YOUR ORIGINAL METRICS
 survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
 survey_duration = Counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
 survey_failures = Counter('patient_survey_failures_total', 'Total failed survey submissions')
 active_surveys = Counter('active_surveys_total', 'Number of active surveys initialized')
 question_count = Counter('survey_questions_total', 'Total number of questions initialized')
 
+# Additional metrics for web service
+request_duration = Histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
+active_connections = Gauge('db_active_connections', 'Number of active database connections')
 
-# This function needs to handle its own connection for creating/dropping databases
-# Decorator connects to a specific database.
-# It will take `conn` as an argument, and `main()` will pass it.
 def create_survey_tables(conn):
     """Create all necessary tables for surveys safely (if not exist)"""
     try:
@@ -99,12 +101,15 @@ def create_survey_tables(conn):
                     raise Exception("Failed to create or retrieve default survey in create_survey_tables")
 
             survey_id = int(survey_id_row[0])
+            active_surveys.inc()  # Increment active surveys metric
         else:
             survey_id = survey[0]
 
         # Insert default questions only if they do not exist
         cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = ?", (survey_id,))
-        if cursor.fetchone()[0] == 0:
+        existing_questions = cursor.fetchone()[0]
+        
+        if existing_questions == 0:
             questions = [
                 {'text': 'Date of visit?', 'type': 'text', 'required': True},
                 {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
@@ -118,6 +123,7 @@ def create_survey_tables(conn):
                 {'text': 'Overall satisfaction (1-5)', 'type': 'multiple_choice', 'required': True,
                  'options': ['1', '2', '3', '4', '5']}
             ]
+            
             for q in questions:
                 cursor.execute("""
                     INSERT INTO questions (survey_id, question_text, question_type, is_required, options)
@@ -129,6 +135,7 @@ def create_survey_tables(conn):
                     q.get('required', False),
                     json.dumps(q['options']) if 'options' in q else None
                 ))
+                question_count.inc()  # Increment question count metric
 
         conn.commit()
         logger.info("Database tables initialized safely.")
@@ -139,219 +146,236 @@ def create_survey_tables(conn):
         logger.error(f"Database initialization failed: {e}")
         raise
 
-
-
-def conduct_survey(conn): # Now explicitly accepts conn
-    """Conduct the survey and store responses"""
+def initialize_database():
+    """Initialize the database tables"""
     try:
-        start_time = time.time()  # Starting timer
+        # Get connection for DDL operations
+        conn = get_db_connection(database_name=None)
+        conn.autocommit = True
+        
         cursor = conn.cursor()
-        # Removed: cursor.row_factory = pyodbc.Row # Not supported directly on cursor
-
-        # SELECT survey_id (index 0)
-        cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-        survey = cursor.fetchone()
-        if not survey:
-            logger.error("Survey not found in database")
-            return
-
-        # SELECT question_id (0), question_text (1), question_type (2), is_required (3), options (4)
-        cursor.execute("""
-            SELECT question_id, question_text, question_type, is_required, options
-            FROM questions WHERE survey_id = ? ORDER BY question_id -- Use ? for parameters
-        """, (survey[0],)) # Access survey_id by index
-
-        questions = cursor.fetchall()
-
-        print("\n=== Patient Experience Survey ===")
-        answers = []
-
-        for q in questions:
-            print(f"\n{q[1]}{' (required)' if q[3] else ''}") # Access question_text by index (1), is_required by index (3)
-
-            if q[2] == 'multiple_choice': # question_type is at index 2
-                options = json.loads(q[4]) if q[4] is not None else [] # options is at index 4
-                for i, opt in enumerate(options, 1):
-                    print(f"{i}. {opt}")
-                while True:
-                    try:
-                        choice = int(input("Your choice (number): "))
-                        if 1 <= choice <= len(options):
-                            answers.append({
-                                'question_id': q[0], # question_id is at index 0
-                                'answer_value': options[choice-1]
-                            })
-                            break
-                        print(f"Please enter a number between 1 and {len(options)}")
-                    except ValueError:
-                        print("Please enter a valid number")
-            else:
-                while True:
-                    answer = input("Your response: ").strip()
-                    if answer or not q[3]: # is_required is at index 3
-                        answers.append({
-                            'question_id': q[0], # question_id is at index 0
-                            'answer_value': answer if answer else "[No response]"
-                        })
-                        break
-                    print("This field is required")
-
-        cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey[0],)) # Access survey_id by index
-        conn.commit() # Explicitly commit the insert before getting identity
-        cursor.execute("SELECT SCOPE_IDENTITY()") # Get last inserted ID
-        new_response_id_row = cursor.fetchone()
         
-        # CRITICAL FIX: Added robust check and fallback for SCOPE_IDENTITY in conduct_survey
-        if new_response_id_row is None or new_response_id_row[0] is None:
-            logger.warning("SCOPE_IDENTITY returned None in conduct_survey. Attempting to use @@IDENTITY as a fallback.")
-            cursor.execute("SELECT @@IDENTITY")
-            new_response_id_row = cursor.fetchone()
-            if new_response_id_row is None or new_response_id_row[0] is None:
-                raise Exception("Failed to retrieve any identity after inserting response in conduct_survey. Insert might have failed or returned no ID.")
-        
-        response_id = int(new_response_id_row[0]) # Convert to int
-
-
-        for a in answers:
-            cursor.execute("""
-                INSERT INTO answers (response_id, question_id, answer_value)
-                VALUES (?, ?, ?) -- Use ?
-            """, (response_id, a['question_id'], a['answer_value']))
-
-        conn.commit() # Explicit commit
-        survey_counter.inc()  # increment metric
-        survey_duration.inc(time.time() - start_time)  # record time spent
-        print("\nThank you for your feedback!")
-        logger.info(f"New survey response recorded (ID: {response_id})")
-
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Survey submission failed: {e}")
-        raise
-
-# Removed @with_db_connection decorator
-def view_responses(conn): # Now explicitly accepts conn
-    """View all survey responses"""
-    try:
-        cursor = conn.cursor()
-        # Removed: cursor.row_factory = pyodbc.Row 
-
-        # SELECT COUNT(DISTINCT response_id) as count (index 0)
-        cursor.execute("SELECT COUNT(DISTINCT response_id) as count FROM answers")
-        total_responses = cursor.fetchone()[0] # Access count by index
-
-        if total_responses == 0:
-            print("\nNo responses found in the database.")
-            return
-
-        # SELECT r.response_id (0), date (1), q.question_text (2), a.answer_value (3)
-        cursor.execute("""
-            SELECT
-                r.response_id,
-                FORMAT(r.submitted_at, 'yyyy-MM-dd HH:mm') as date, -- SQL Server FORMAT function
-                q.question_text,
-                a.answer_value
-            FROM responses r
-            JOIN answers a ON r.response_id = a.response_id
-            JOIN questions q ON a.question_id = q.question_id
-            ORDER BY r.response_id, q.question_id
-        """)
-
-        responses = {}
-        current_id = None
-
-        for row in cursor.fetchall():
-            if row[0] != current_id: # Access response_id by index
-                current_id = row[0]
-                responses[current_id] = {
-                    'date': row[1], # Access date by index
-                    'answers': []
-                }
-            responses[current_id]['answers'].append(
-                (row[2], row[3]) # Access question_text by index (2), answer_value by index (3)
-            )
-
-        print(f"\n=== SURVEY RESPONSES ({len(responses)} total) ===")
-        for response_id, data in responses.items():
-            print(f"\nResponse ID: {response_id} | Date: {data['date']}")
-            print("-" * 50)
-            for question, answer in data['answers']:
-                print(f"Q: {question}")
-                print(f"A: {answer}\n")
-            print("-" * 50)
-
-        logger.info(f"Viewed {len(responses)} survey responses")
-
-    except Exception as e:
-        logger.error(f"Failed to retrieve responses: {e}")
-        raise
-
-def main():
-    try:
-        logger.info("Starting Patient Survey Application")
-        # Start metrics server
-        threading.Thread(target=start_http_server, args=(8000,), daemon=True).start()
-
-        # Get a connection for DDL operations in create_survey_tables
-        # This connection should not specify a database initially
-        conn_for_ddl = get_db_connection(database_name=None)
-        conn_for_ddl.autocommit = True # Explicitly set autocommit to True for DDL
-        
-        # Dropping and creating the main application database first
-        # This requires connecting to master database
-        cursor_ddl = conn_for_ddl.cursor()
-       
-        # 1. Parameterized check for database existence (safe)
-        cursor_ddl.execute(
+        # Check if database exists
+        cursor.execute(
             "SELECT name FROM sys.databases WHERE name = ?", 
             (Config.DB_NAME,)
         )
-        db_exists = cursor_ddl.fetchone()
+        db_exists = cursor.fetchone()
         
-        # Only create DB if it does not exist
         if not db_exists:
-            cursor_ddl.execute(f"CREATE DATABASE [{Config.DB_NAME}]")
-        # else: do nothing, keep existing DB
+            cursor.execute(f"CREATE DATABASE [{Config.DB_NAME}]")
+            logger.info(f"Created database: {Config.DB_NAME}")
         
-        # Close the cursor and connection
-        cursor_ddl.close()
-        conn_for_ddl.close()
-
+        cursor.close()
+        conn.close()
         
-        # Now, creating tables within the newly created Config.DB_NAME database
-        # This connection will be passed to create_survey_tables
-        conn_for_tables = get_db_connection(database_name=Config.DB_NAME)
-        conn_for_tables.autocommit = True # Explicitly set autocommit for this connection
-        create_survey_tables(conn_for_tables) # Pass connection to decorator
-        conn_for_tables.close() # Close after use
-
-        # Main application loop will now manage its own connection
-        app_conn = get_db_connection(database_name=Config.DB_NAME) # NEW: Get a dedicated connection for the app
-        # app_conn.autocommit = False # Default behavior for DML operations
-
-        while True:
-            print("\nMain Menu:")
-            print("1. Conduct Survey")
-            print("2. View Responses")
-            print("3. Exit")
-            choice = input("Your choice (1-3): ")
-
-            if choice == '1':
-                conduct_survey(app_conn) # Pass the app_conn
-            elif choice == '2':
-                view_responses(app_conn) # Pass the app_conn
-            elif choice == '3':
-                print("Goodbye!")
-                break
-            else:
-                print("Please enter a number between 1 and 3")
-
+        # Now create tables in the database
+        conn = get_db_connection(database_name=Config.DB_NAME)
+        conn.autocommit = True
+        
+        create_survey_tables(conn)
+        
+        conn.close()
+        logger.info("Database initialized successfully")
+        
     except Exception as e:
-        logger.critical(f"Application error: {e}")
-    finally:
-        if 'app_conn' in locals() and app_conn: # Ensure app_conn is defined and not None
-            app_conn.close() # Close app connection on exit
-        logger.info("Application shutdown")
+        logger.error(f"Database initialization failed: {e}")
+        raise
+
+# Flask Routes
+@app.route('/')
+def index():
+    """Home page"""
+    with request_duration.labels(method='GET', endpoint='/').time():
+        return render_template('index.html')
+
+@app.route('/api/survey', methods=['POST'])
+def conduct_survey_api():
+    """API endpoint to submit a survey"""
+    start_time = time.time()
+    
+    try:
+        # Get JSON data from request
+        data = request.get_json()
+        if not data:
+            survey_failures.inc()
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        # Connect to database
+        conn = get_db_connection(database_name=Config.DB_NAME)
+        active_connections.inc()
+        cursor = conn.cursor()
+        
+        # Get survey ID
+        cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
+        survey = cursor.fetchone()
+        if not survey:
+            conn.close()
+            active_connections.dec()
+            survey_failures.inc()
+            return jsonify({'error': 'Survey not found'}), 404
+        
+        survey_id = survey[0]
+        
+        # Insert response
+        cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey_id,))
+        conn.commit()
+        
+        # Get response ID
+        cursor.execute("SELECT SCOPE_IDENTITY()")
+        response_id_row = cursor.fetchone()
+        if response_id_row is None or response_id_row[0] is None:
+            cursor.execute("SELECT @@IDENTITY")
+            response_id_row = cursor.fetchone()
+            if response_id_row is None or response_id_row[0] is None:
+                conn.close()
+                active_connections.dec()
+                survey_failures.inc()
+                return jsonify({'error': 'Failed to create response'}), 500
+        
+        response_id = int(response_id_row[0])
+        
+        # Insert answers
+        for answer in data.get('answers', []):
+            cursor.execute("""
+                INSERT INTO answers (response_id, question_id, answer_value)
+                VALUES (?, ?, ?)
+            """, (response_id, answer['question_id'], answer['answer_value']))
+        
+        conn.commit()
+        conn.close()
+        active_connections.dec()
+        
+        # Update metrics
+        survey_counter.inc()
+        survey_duration.inc(time.time() - start_time)
+        
+        logger.info(f"New survey response recorded (ID: {response_id})")
+        return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
+        
+    except Exception as e:
+        survey_failures.inc()
+        logger.error(f"Survey submission failed: {e}")
+        if 'conn' in locals():
+            conn.close()
+            active_connections.dec()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/responses', methods=['GET'])
+def get_responses():
+    """API endpoint to get all survey responses"""
+    with request_duration.labels(method='GET', endpoint='/api/responses').time():
+        try:
+            conn = get_db_connection(database_name=Config.DB_NAME)
+            active_connections.inc()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT
+                    r.response_id,
+                    FORMAT(r.submitted_at, 'yyyy-MM-dd HH:mm') as date,
+                    q.question_text,
+                    a.answer_value
+                FROM responses r
+                JOIN answers a ON r.response_id = a.response_id
+                JOIN questions q ON a.question_id = q.question_id
+                ORDER BY r.response_id, q.question_id
+            """)
+            
+            responses = {}
+            current_id = None
+            
+            for row in cursor.fetchall():
+                if row[0] != current_id:
+                    current_id = row[0]
+                    responses[current_id] = {
+                        'date': row[1],
+                        'answers': []
+                    }
+                responses[current_id]['answers'].append({
+                    'question': row[2],
+                    'answer': row[3]
+                })
+            
+            conn.close()
+            active_connections.dec()
+            logger.info(f"Retrieved {len(responses)} survey responses")
+            return jsonify(responses)
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve responses: {e}")
+            if 'conn' in locals():
+                conn.close()
+                active_connections.dec()
+            return jsonify({'error': str(e)}), 500
+
+@app.route('/api/questions', methods=['GET'])
+def get_questions():
+    """API endpoint to get survey questions"""
+    with request_duration.labels(method='GET', endpoint='/api/questions').time():
+        try:
+            conn = get_db_connection(database_name=Config.DB_NAME)
+            active_connections.inc()
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
+            survey = cursor.fetchone()
+            if not survey:
+                conn.close()
+                active_connections.dec()
+                return jsonify({'error': 'Survey not found'}), 404
+            
+            cursor.execute("""
+                SELECT question_id, question_text, question_type, is_required, options
+                FROM questions WHERE survey_id = ? ORDER BY question_id
+            """, (survey[0],))
+            
+            questions = []
+            for q in cursor.fetchall():
+                question = {
+                    'question_id': q[0],
+                    'question_text': q[1],
+                    'question_type': q[2],
+                    'is_required': bool(q[3]),
+                    'options': json.loads(q[4]) if q[4] else []
+                }
+                questions.append(question)
+            
+            conn.close()
+            active_connections.dec()
+            return jsonify(questions)
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve questions: {e}")
+            if 'conn' in locals():
+                conn.close()
+                active_connections.dec()
+            return jsonify({'error': str(e)}), 500
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint"""
+    try:
+        conn = get_db_connection(database_name=Config.DB_NAME)
+        active_connections.inc()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        conn.close()
+        active_connections.dec()
+        return jsonify({'status': 'healthy', 'database': 'connected'}), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}), 500
+
+@app.route('/metrics')
+def metrics():
+    """Prometheus metrics endpoint"""
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 if __name__ == "__main__":
-    main()
+    # Initialize database
+    logger.info("Starting Patient Survey Application")
+    initialize_database()
+    
+    # Run Flask app
+    app.run(host='0.0.0.0', port=8001, debug=False)
