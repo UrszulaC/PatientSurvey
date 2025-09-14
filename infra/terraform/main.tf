@@ -68,3 +68,13 @@ output "survey_app_fqdn" {
 output "survey_app_public_ip" {
   value = azurerm_container_group.survey_app.ip_address
 }
+output "docker_user_set" {
+  value     = var.docker_user != "" ? "SET" : "MISSING"
+  sensitive = false
+}
+
+output "docker_password_set" {
+  value     = var.docker_password != "" ? "SET" : "MISSING"
+  sensitive = false
+}
+
