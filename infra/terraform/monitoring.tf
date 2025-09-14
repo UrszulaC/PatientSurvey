@@ -42,8 +42,8 @@ resource "azurerm_container_group" "prometheus" {
 
     volume {
       name                 = "prometheus-data"
-      mount_path           = "/prometheus-data"
-      read_only            = false
+      mount_path           = "/etc/prometheus"
+      read_only            = true
       storage_account_name = azurerm_storage_account.monitoring.name
       storage_account_key  = azurerm_storage_account.monitoring.primary_access_key
       share_name           = azurerm_storage_share.prometheus.name
