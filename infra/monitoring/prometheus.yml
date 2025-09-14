@@ -1,8 +1,12 @@
-- job_name: 'myapp-node'
-  static_configs:
-    - targets: ['patient-survey-app-cg.uksouth.azurecontainer.io:9100']
+FROM prom/prometheus:v2.47.0
 
-- job_name: 'patient-survey-app'
-  static_configs:
-    - targets: ['patient-survey-app-cg.uksouth.azurecontainer.io:8001']
+# Copy your Prometheus config into the image
+COPY prometheus.yml /etc/prometheus/prometheus.yml
+
+# Expose Prometheus port
+EXPOSE 9090
+
+# Run Prometheus with the config file
+CMD ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus-data"]
+
 
