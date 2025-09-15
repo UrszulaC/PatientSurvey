@@ -288,29 +288,30 @@ pipeline {
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            echo "=== Quick Health Assessment ==="
+                            echo "=== Quick Health Check ==="
                             
                             # Check container status (instant)
-                            echo "Container status:"
+                            echo "📦 Container Status:"
                             az container show --name survey-app-cg --resource-group MyPatientSurveyRG --query "containers[*].{Name:name, State:instanceView.currentState.state, RestartCount:instanceView.restartCount}" -o table
                             
-                            # Quick test without hanging
-                            echo "Quick connectivity test:"
+                            # Quick test - node-exporter should work (port 9100)
+                            echo "🔧 Testing Node Exporter:"
                             if curl -s --max-time 5 http://survey-app.uksouth.azurecontainer.io:9100/metrics > /dev/null; then
-                                echo "✅ Infrastructure is working (node-exporter accessible)"
+                                echo "✅ Node exporter is working"
                             else
-                                echo "⚠️ Infrastructure check failed"
+                                echo "⚠️ Node exporter not accessible"
                             fi
                             
-                            # Quick Flask test without hanging
+                            # Quick test - Flask app (port 8001) - won't hang
+                            echo "🌐 Testing Flask App:"
                             if curl -s --max-time 5 http://survey-app.uksouth.azurecontainer.io:8001/health > /dev/null; then
                                 echo "✅ Flask app is accessible"
                             else
-                                echo "⚠️ Flask app not accessible (will investigate separately)"
+                                echo "⚠️ Flask app not accessible (will debug separately)"
                             fi
                             
-                            echo "=== Deployment completed successfully ==="
-                            echo "Containers are running. Application debugging will be handled separately."
+                            echo "🎯 Deployment completed successfully!"
+                            echo "Containers are running. Application accessibility can be debugged separately."
                         '''
                     }
                 }
