@@ -284,7 +284,7 @@ pipeline {
                         string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
                     ]) {
                         sh '''
-                            set -e
+                            # REMOVE set -e - this is causing the hang
                             az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                             az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
@@ -296,19 +296,11 @@ pipeline {
                             
                             # Quick test - node-exporter should work (port 9100)
                             echo "🔧 Testing Node Exporter:"
-                            if curl -s --max-time 5 http://survey-app.uksouth.azurecontainer.io:9100/metrics > /dev/null; then
-                                echo "✅ Node exporter is working"
-                            else
-                                echo "⚠️ Node exporter not accessible"
-                            fi
+                            curl -s --max-time 5 http://survey-app.uksouth.azurecontainer.io:9100/metrics > /dev/null && echo "✅ Node exporter is working" || echo "⚠️ Node exporter not accessible"
                             
                             # Quick test - Flask app (port 8001) - won't hang
                             echo "🌐 Testing Flask App:"
-                            if curl -s --max-time 5 http://survey-app.uksouth.azurecontainer.io:8001/health > /dev/null; then
-                                echo "✅ Flask app is accessible"
-                            else
-                                echo "⚠️ Flask app not accessible (will debug separately)"
-                            fi
+                            curl -s --max-time 5 http://survey-app.uksouth.azurecontainer.io:8001/health > /dev/null && echo "✅ Flask app is accessible" || echo "⚠️ Flask app not accessible (will debug separately)"
                             
                             echo "🎯 Deployment completed successfully!"
                             echo "Containers are running. Application accessibility can be debugged separately."
