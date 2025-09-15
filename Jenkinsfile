@@ -274,41 +274,7 @@ pipeline {
                 }
             }
         }
-        stage('Health Check') {
-            steps {
-                script {
-                    withCredentials([
-                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
-                    ]) {
-                        sh '''
-                            # REMOVE set -e - this is causing the hang
-                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
         
-                            echo "=== Quick Health Check ==="
-                            
-                            # Check container status (instant)
-                            echo "📦 Container Status:"
-                            az container show --name survey-app-cg --resource-group MyPatientSurveyRG --query "containers[*].{Name:name, State:instanceView.currentState.state, RestartCount:instanceView.restartCount}" -o table
-                            
-                            # Quick test - node-exporter should work (port 9100)
-                            echo "🔧 Testing Node Exporter:"
-                            curl -s --max-time 5 http://survey-app.uksouth.azurecontainer.io:9100/metrics > /dev/null && echo "✅ Node exporter is working" || echo "⚠️ Node exporter not accessible"
-                            
-                            # Quick test - Flask app (port 8001) - won't hang
-                            echo "🌐 Testing Flask App:"
-                            curl -s --max-time 5 http://survey-app.uksouth.azurecontainer.io:8001/health > /dev/null && echo "✅ Flask app is accessible" || echo "⚠️ Flask app not accessible (will debug separately)"
-                            
-                            echo "🎯 Deployment completed successfully!"
-                            echo "Containers are running. Application accessibility can be debugged separately."
-                        '''
-                    }
-                }
-            }
-        }
         stage('Create .env File') {
             steps {
                 sh '''
