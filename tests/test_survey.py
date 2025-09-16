@@ -44,7 +44,7 @@ class TestPatientSurveySystem(unittest.TestCase):
             raise
 
     def setUp(self):
-        """Clean tables before each test."""
+        """Clean tables before each test and recreate default survey."""
         try:
             self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
             self.cursor = self.conn.cursor()
@@ -72,9 +72,50 @@ class TestPatientSurveySystem(unittest.TestCase):
                 
             self.conn.commit()
     
+            # RECREATE THE DEFAULT SURVEY AFTER CLEANING
+            self._create_default_survey()
+            
         except Exception as e:
             logging.error(f"Test setup failed: {e}")
             raise
+    
+    def _create_default_survey(self):
+        """Helper method to create the default survey."""
+        # Insert default survey
+        self.cursor.execute(
+            "INSERT INTO surveys (title, description, created_at, is_active) VALUES (?, ?, GETDATE(), ?)",
+            ('Patient Experience Survey', 'Survey to collect feedback', 1)
+        )
+        self.conn.commit()
+        
+        # Get the survey ID
+        self.cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
+        survey_row = self.cursor.fetchone()
+        self.survey_id = survey_row[0]
+        
+        # Insert questions
+        questions_data = [
+            # Your question data here (same as in your actual application)
+            ('Date of visit?', 'date', 1, None, 1),
+            ('Which site did you visit?', 'multiple_choice', 1, json.dumps([
+                'Princess Alexandra Hospital',
+                'St Margaret\'s Hospital',
+                'Herts & Essex Hospital'
+            ]), 2),
+            # ... add all other questions
+        ]
+        
+        for question_text, question_type, is_required, options, order in questions_data:
+            self.cursor.execute(
+                "INSERT INTO questions (survey_id, question_text, question_type, is_required, options, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+                (self.survey_id, question_text, question_type, is_required, options, order)
+            )
+        
+        self.conn.commit()
+        
+        # Refresh questions mapping
+        self.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ?", (self.survey_id,))
+        self.questions = {row[1]: row[0] for row in self.cursor.fetchall()}
 
     def tearDown(self):
         """Close connections after each test."""
