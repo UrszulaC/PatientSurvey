@@ -135,7 +135,7 @@ class TestPatientSurveySystem(unittest.TestCase):
                                   content_type='application/json')
         self.assertEqual(response.status_code, 400)
 
-   def test_get_responses_endpoint(self):
+    def test_get_responses_endpoint(self):
         """Test GET /api/responses endpoint"""
         # Skip this test if we can't get a proper response ID
         self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,))
