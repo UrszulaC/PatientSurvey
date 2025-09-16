@@ -48,12 +48,30 @@ class TestPatientSurveySystem(unittest.TestCase):
         try:
             self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
             self.cursor = self.conn.cursor()
-
-            # Delete from child tables first
-            self.cursor.execute("DELETE FROM answers")
-            self.cursor.execute("DELETE FROM responses")
+    
+            # Delete from child tables first (with proper error handling)
+            try:
+                self.cursor.execute("DELETE FROM answers")
+            except pyodbc.Error as e:
+                print(f"Note: Error deleting answers (might not exist): {e}")
+                
+            try:
+                self.cursor.execute("DELETE FROM responses")
+            except pyodbc.Error as e:
+                print(f"Note: Error deleting responses (might not exist): {e}")
+                
+            try:
+                self.cursor.execute("DELETE FROM questions")
+            except pyodbc.Error as e:
+                print(f"Note: Error deleting questions (might not exist): {e}")
+                
+            try:
+                self.cursor.execute("DELETE FROM surveys")
+            except pyodbc.Error as e:
+                print(f"Note: Error deleting surveys (might not exist): {e}")
+                
             self.conn.commit()
-
+    
         except Exception as e:
             logging.error(f"Test setup failed: {e}")
             raise
