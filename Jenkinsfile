@@ -189,7 +189,38 @@ pipeline {
                 }
             }
         }
-       
+        stage('Cleanup Old Resources') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                        string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                        string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                        string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID')
+                    ]) {
+                        sh '''
+                            set +e  # Don't fail pipeline on cleanup errors
+                            az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                            az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        
+                            echo "🧹 Cleaning up old resources..."
+                            
+                            # List and delete old container groups (keep last 2-3)
+                            az container list --resource-group MyPatientSurveyRG --query "[].name" -o tsv | grep -E "(survey-app-cg|prometheus-cg|grafana-cg)" | head -n -3 | while read name; do
+                                echo "Deleting old container: $name"
+                                az container delete --resource-group MyPatientSurveyRG --name "$name" --yes || true
+                            done
+        
+                            # Cleanup old Docker images locally
+                            docker system prune -a -f || true
+                            
+                            echo "✅ Cleanup completed"
+                        '''
+                    }
+                }
+            }
+        }
+    
        stage('Build Docker Images') {
             steps {
                 script {
