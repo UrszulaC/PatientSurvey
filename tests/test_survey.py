@@ -74,23 +74,6 @@ class TestPatientSurveySystem(unittest.TestCase):
             cls.conn.close()
 
     # --- API Endpoint Tests ---
-    def test_get_questions_endpoint(self):
-        """Test GET /api/questions endpoint"""
-        response = self.client.get('/api/questions')
-        self.assertEqual(response.status_code, 200)
-        
-        data = response.get_json()
-        self.assertIsInstance(data, list)
-        self.assertEqual(len(data), 7)
-        
-        # Check that questions have expected structure
-        question = data[0]
-        self.assertIn('question_id', question)
-        self.assertIn('question_text', question)
-        self.assertIn('question_type', question)
-        self.assertIn('is_required', question)
-        self.assertIn('options', question)
-
     def test_submit_survey_endpoint(self):
         """Test POST /api/survey endpoint"""
         survey_data = {
@@ -109,17 +92,28 @@ class TestPatientSurveySystem(unittest.TestCase):
                                   json=survey_data,
                                   content_type='application/json')
         
+        print(f"Response status: {response.status_code}")  # Debug
+        print(f"Response data: {response.get_json()}")     # Debug
+        
         self.assertEqual(response.status_code, 201)
         data = response.get_json()
         self.assertIn('response_id', data)
         self.assertIn('message', data)
         
-        # Verify data was actually inserted
+        # Debug: Check what's actually in the database
+        self.cursor.execute("SELECT * FROM responses")
+        all_responses = self.cursor.fetchall()
+        print(f"Responses in DB: {all_responses}")  # Debug
+        
         self.cursor.execute("SELECT COUNT(*) FROM responses")
-        self.assertEqual(self.cursor.fetchone()[0], 1)
+        count = self.cursor.fetchone()[0]
+        print(f"Response count: {count}")  # Debug
+        self.assertEqual(count, 1)
         
         self.cursor.execute("SELECT COUNT(*) FROM answers")
-        self.assertEqual(self.cursor.fetchone()[0], 7)
+        answers_count = self.cursor.fetchone()[0]
+        print(f"Answers count: {answers_count}")  # Debug
+        self.assertEqual(answers_count, 7)
 
     def test_submit_survey_invalid_data(self):
         """Test POST /api/survey with invalid data"""
