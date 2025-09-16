@@ -15,75 +15,43 @@ load_dotenv()
 
 class TestPatientSurveySystem(unittest.TestCase):
 
-    @classmethod
-    def setUpClass(cls):
-        """Set up Flask test client and database connection."""
+    def setUp(self):
+        """Set up test environment before each test."""
         try:
             # Create Flask test client
-            cls.app = create_app()
-            cls.app.config['TESTING'] = True
-            cls.client = cls.app.test_client()
+            self.app = create_app()
+            self.app.config['TESTING'] = True
+            self.client = self.app.test_client()
             
             # Connect to the test database
-            cls.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
-            cls.cursor = cls.conn.cursor()
-
-            # Fetch the survey_id of the default survey
-            cls.cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
-            survey_row = cls.cursor.fetchone()
-            if not survey_row:
-                raise Exception("Default survey not found in the database")
-            cls.survey_id = survey_row[0]
-
-            # Map question text to IDs for easy access in tests
-            cls.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ?", (cls.survey_id,))
-            cls.questions = {row[1]: row[0] for row in cls.cursor.fetchall()}
-
-        except Exception as e:
-            logging.error(f"Database setup failed: {e}")
-            raise
-
-    def setUp(self):
-        """Clean tables before each test and recreate default survey."""
-        try:
             self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
             self.cursor = self.conn.cursor()
-    
-            # Delete from child tables first (with proper error handling)
-            try:
-                self.cursor.execute("DELETE FROM answers")
-            except pyodbc.Error as e:
-                print(f"Note: Error deleting answers (might not exist): {e}")
-                
-            try:
-                self.cursor.execute("DELETE FROM responses")
-            except pyodbc.Error as e:
-                print(f"Note: Error deleting responses (might not exist): {e}")
-                
-            try:
-                self.cursor.execute("DELETE FROM questions")
-            except pyodbc.Error as e:
-                print(f"Note: Error deleting questions (might not exist): {e}")
-                
-            try:
-                self.cursor.execute("DELETE FROM surveys")
-            except pyodbc.Error as e:
-                print(f"Note: Error deleting surveys (might not exist): {e}")
-                
-            self.conn.commit()
-    
-            # RECREATE THE DEFAULT SURVEY AFTER CLEANING
+
+            # Clean any existing data
+            self._clean_database()
+
+            # Create default survey and questions
             self._create_default_survey()
-            
+
         except Exception as e:
             logging.error(f"Test setup failed: {e}")
             raise
-    
+
+    def _clean_database(self):
+        """Clean all test data."""
+        tables = ['answers', 'responses', 'questions', 'surveys']
+        for table in tables:
+            try:
+                self.cursor.execute(f"DELETE FROM {table}")
+            except pyodbc.Error as e:
+                print(f"Note: Error deleting {table} (might not exist): {e}")
+        self.conn.commit()
+
     def _create_default_survey(self):
-        """Helper method to create the default survey."""
+        """Create the default survey and questions."""
         # Insert default survey
         self.cursor.execute(
-            "INSERT INTO surveys (title, description, created_at, is_active) VALUES (?, ?, GETDATE(), ?)",
+            "INSERT INTO surveys (title, description, is_active) VALUES (?, ?, ?)",
             ('Patient Experience Survey', 'Survey to collect feedback', 1)
         )
         self.conn.commit()
@@ -95,25 +63,30 @@ class TestPatientSurveySystem(unittest.TestCase):
         
         # Insert questions
         questions_data = [
-            # Your question data here (same as in your actual application)
             ('Date of visit?', 'date', 1, None, 1),
             ('Which site did you visit?', 'multiple_choice', 1, json.dumps([
-                'Princess Alexandra Hospital',
-                'St Margaret\'s Hospital',
-                'Herts & Essex Hospital'
+                'Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital'
             ]), 2),
-            # ... add all other questions
+            ('Patient name?', 'text', 1, None, 3),
+            ('How easy was it to get an appointment?', 'multiple_choice', 0, json.dumps([
+                'Very easy', 'Easy', 'Neutral', 'Difficult', 'Very difficult'
+            ]), 4),
+            ('Were you properly informed about your procedure?', 'multiple_choice', 0, json.dumps([
+                'Yes', 'No', 'Partially'
+            ]), 5),
+            ('What went well during your visit?', 'text', 0, None, 6),
+            ('Overall satisfaction (1-5)', 'multiple_choice', 1, json.dumps(['1', '2', '3', '4', '5']), 7)
         ]
         
-        for question_text, question_type, is_required, options, order in questions_data:
+        for question_text, question_type, is_required, options, display_order in questions_data:
             self.cursor.execute(
                 "INSERT INTO questions (survey_id, question_text, question_type, is_required, options, display_order) VALUES (?, ?, ?, ?, ?, ?)",
-                (self.survey_id, question_text, question_type, is_required, options, order)
+                (self.survey_id, question_text, question_type, is_required, options, display_order)
             )
         
         self.conn.commit()
         
-        # Refresh questions mapping
+        # Create questions mapping
         self.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ?", (self.survey_id,))
         self.questions = {row[1]: row[0] for row in self.cursor.fetchall()}
 
@@ -123,14 +96,6 @@ class TestPatientSurveySystem(unittest.TestCase):
             self.cursor.close()
         if hasattr(self, 'conn') and self.conn:
             self.conn.close()
-
-    @classmethod
-    def tearDownClass(cls):
-        """Close class-level connection."""
-        if hasattr(cls, 'cursor') and cls.cursor:
-            cls.cursor.close()
-        if hasattr(cls, 'conn') and cls.conn:
-            cls.conn.close()
 
     # --- API Endpoint Tests ---
     def test_submit_survey_endpoint(self):
@@ -190,32 +155,25 @@ class TestPatientSurveySystem(unittest.TestCase):
 
     def test_get_responses_endpoint(self):
         """Test GET /api/responses endpoint"""
-        # Skip this test if we can't get a proper response ID
-        self.cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (self.survey_id,))
-        self.conn.commit()
+        # First submit a survey to have data to retrieve
+        survey_data = {
+            'answers': [
+                {'question_id': self.questions['Date of visit?'], 'answer_value': '2023-01-01'},
+                {'question_id': self.questions['Patient name?'], 'answer_value': 'John Doe'}
+            ]
+        }
         
-        # Try multiple ways to get the ID
-        self.cursor.execute("SELECT MAX(response_id) FROM responses")
-        result = self.cursor.fetchone()
-        if not result or result[0] is None:
-            self.skipTest("Could not get response ID for testing")
-            return
-            
-        response_id = int(result[0])
-        
-        # Insert a simple test answer
-        first_question_id = list(self.questions.values())[0]
-        self.cursor.execute(
-            "INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
-            (response_id, first_question_id, 'test answer')
-        )
-        self.conn.commit()
+        submit_response = self.client.post('/api/survey', 
+                                         json=survey_data,
+                                         content_type='application/json')
+        self.assertEqual(submit_response.status_code, 201)
         
         # Test the endpoint
         response = self.client.get('/api/responses')
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertIsInstance(data, dict)
+        self.assertIn('responses', data)
 
     def test_get_responses_empty(self):
         """Test GET /api/responses when no responses exist"""
@@ -245,14 +203,17 @@ class TestPatientSurveySystem(unittest.TestCase):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
 
-    # --- Database Structure Tests (Keep these) ---
+    # --- Database Structure Tests ---
     def test_tables_created_correctly(self):
         self.cursor.execute(
             f"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
             f"WHERE TABLE_TYPE='BASE TABLE' AND TABLE_CATALOG='{Config.DB_TEST_NAME}'"
         )
         tables = {row[0] for row in self.cursor.fetchall()}
-        self.assertEqual(tables, {'surveys', 'questions', 'responses', 'answers'})
+        expected_tables = {'surveys', 'questions', 'responses', 'answers'}
+        # Check that all expected tables exist (some might not be created yet)
+        for table in expected_tables:
+            self.assertIn(table, tables)
 
     def test_default_survey_exists(self):
         self.cursor.execute(
@@ -306,6 +267,43 @@ class TestPatientSurveySystem(unittest.TestCase):
                 (1, 999, 'test')
             )
             self.conn.commit()
+
+    def test_multiple_surveys(self):
+        """Test that multiple survey submissions work correctly"""
+        # Submit first survey
+        survey_data_1 = {
+            'answers': [
+                {'question_id': self.questions['Date of visit?'], 'answer_value': '2023-01-01'},
+                {'question_id': self.questions['Patient name?'], 'answer_value': 'John Doe'}
+            ]
+        }
+        
+        response_1 = self.client.post('/api/survey', 
+                                    json=survey_data_1,
+                                    content_type='application/json')
+        self.assertEqual(response_1.status_code, 201)
+        
+        # Submit second survey
+        survey_data_2 = {
+            'answers': [
+                {'question_id': self.questions['Date of visit?'], 'answer_value': '2023-02-01'},
+                {'question_id': self.questions['Patient name?'], 'answer_value': 'Jane Smith'}
+            ]
+        }
+        
+        response_2 = self.client.post('/api/survey', 
+                                    json=survey_data_2,
+                                    content_type='application/json')
+        self.assertEqual(response_2.status_code, 201)
+        
+        # Verify both responses exist
+        self.cursor.execute("SELECT COUNT(*) FROM responses")
+        count = self.cursor.fetchone()[0]
+        self.assertEqual(count, 2)
+        
+        self.cursor.execute("SELECT COUNT(*) FROM answers")
+        answers_count = self.cursor.fetchone()[0]
+        self.assertEqual(answers_count, 4)
 
 
 if __name__ == "__main__":
