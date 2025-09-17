@@ -45,7 +45,7 @@ survey_failures = get_or_create_counter('patient_survey_failures_total', 'Total 
 active_surveys = get_or_create_counter('active_surveys_total', 'Number of active surveys initialized')
 question_count = get_or_create_counter('survey_questions_total', 'Total number of questions initialized')
 
-# Additional metrics for web service - FIX THESE TOO:
+# Additional metrics for web service
 request_duration = get_or_create_histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
 active_connections = get_or_create_gauge('db_active_connections', 'Number of active database connections')
 
@@ -94,7 +94,7 @@ def create_survey_tables(conn):
         # Create answers table
         cursor.execute("""
             IF OBJECT_ID('answers', 'U') IS NULL
-            CREATE TABLE answers (
+                CREATE TABLE answers (
                 answer_id INT IDENTITY(1,1) PRIMARY KEY,
                 response_id INT NOT NULL,
                 question_id INT NOT NULL,
@@ -225,8 +225,8 @@ def conduct_survey_api():
             survey_failures.inc()
             return jsonify({'error': 'No JSON data provided'}), 400
         
-        # Connect to database
-        conn = get_db_connection(database_name=Config.DB_NAME)
+        # Connect to database - let get_db_connection decide which DB to use
+        conn = get_db_connection()
         active_connections.inc()
         cursor = conn.cursor()
         
@@ -290,7 +290,7 @@ def get_responses():
     """API endpoint to get all survey responses"""
     with request_duration.labels(method='GET', endpoint='/api/responses').time():
         try:
-            conn = get_db_connection(database_name=Config.DB_NAME)
+            conn = get_db_connection()
             active_connections.inc()
             cursor = conn.cursor()
             
@@ -338,7 +338,7 @@ def get_questions():
     """API endpoint to get survey questions"""
     with request_duration.labels(method='GET', endpoint='/api/questions').time():
         try:
-            conn = get_db_connection(database_name=Config.DB_NAME)
+            conn = get_db_connection()
             active_connections.inc()
             cursor = conn.cursor()
             
@@ -380,7 +380,7 @@ def get_questions():
 def health_check():
     """Health check endpoint"""
     try:
-        conn = get_db_connection(database_name=Config.DB_NAME)
+        conn = get_db_connection()
         active_connections.inc()
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
