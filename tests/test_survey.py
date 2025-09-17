@@ -18,21 +18,24 @@ class TestPatientSurveySystem(unittest.TestCase):
     def setUp(self):
         """Set up test environment before each test."""
         try:
-            # Create Flask test client
-            self.app = create_app()
-            self.app.config['TESTING'] = True
+            # Import the app from main
+            from app.main import app
+            
+            # Set testing mode
+            app.config['TESTING'] = True
+            self.app = app
             self.client = self.app.test_client()
             
             # Connect to the test database
             self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
             self.cursor = self.conn.cursor()
-
+    
             # Clean any existing data
             self._clean_database()
-
+    
             # Create default survey and questions
             self._create_default_survey()
-
+    
         except Exception as e:
             logging.error(f"Test setup failed: {e}")
             raise
