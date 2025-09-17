@@ -36,8 +36,6 @@ class Config:
         if not cls.DB_USER:
             missing.append('DB_USER')
         if not cls.DB_PASSWORD:
-            # For security, you might not want to check if password is None here directly.
-            # But the connection will fail if it's truly missing.
             pass
         if not cls.ODBC_DRIVER:
             missing.append('ODBC_DRIVER')
