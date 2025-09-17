@@ -12,6 +12,18 @@ def get_db_connection(database_name=None):
     which is useful for DDL operations like CREATE/DROP DATABASE.
     """
     try:
+        # Check if we're in testing mode and use test database if no specific database is provided
+        if database_name is None:
+            try:
+                from flask import current_app
+                if current_app and current_app.config.get('TESTING'):
+                    database_name = Config.DB_TEST_NAME
+                else:
+                    database_name = Config.DB_NAME
+            except RuntimeError:
+                # No app context, use production database
+                database_name = Config.DB_NAME
+        
         conn_string = Config.DB_CONNECTION_STRING
         if database_name:
             conn_string += f"DATABASE={database_name};"
