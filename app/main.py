@@ -221,9 +221,20 @@ def conduct_survey_api():
     try:
         # Get JSON data from request
         data = request.get_json()
-        if not data:
+        if not data or 'answers' not in data:
             survey_failures.inc()
-            return jsonify({'error': 'No JSON data provided'}), 400
+            return jsonify({'error': 'No JSON data provided or missing answers field'}), 400
+        
+        # Validate that answers is a list
+        if not isinstance(data.get('answers'), list):
+            survey_failures.inc()
+            return jsonify({'error': 'Answers must be a list'}), 400
+        
+        # Validate each answer has required fields
+        for answer in data['answers']:
+            if not isinstance(answer, dict) or 'question_id' not in answer or 'answer_value' not in answer:
+                survey_failures.inc()
+                return jsonify({'error': 'Each answer must have question_id and answer_value'}), 400
         
         # Connect to database - let get_db_connection decide which DB to use
         conn = get_db_connection()
