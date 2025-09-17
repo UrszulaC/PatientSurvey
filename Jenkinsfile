@@ -331,9 +331,11 @@ pipeline {
             steps {
                 sh '''
                     mkdir -p test-results
+                    export FLASK_HOST="127.0.0.1"
                     # Run the updated tests
-                    python -m xmlrunner discover -s . -o test-results --failfast --verbose -p "test_*.py"
+                    python -m xmlrunner discover -s . -o test-results --failfast --verbose -p "test_*.py
                 '''
+                
             }
         }
         stage('Security Scan') {
