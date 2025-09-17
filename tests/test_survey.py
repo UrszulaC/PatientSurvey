@@ -48,7 +48,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.conn.commit()
 
     def _create_default_survey(self):
-        """Create the default survey and questions."""
+        """Create the default survey and questions matching the actual schema."""
         # First check if tables exist, if not create them
         self._ensure_tables_exist()
         
@@ -64,39 +64,26 @@ class TestPatientSurveySystem(unittest.TestCase):
         survey_row = self.cursor.fetchone()
         self.survey_id = survey_row[0]
         
-        # Insert questions - without display_order since it doesn't exist in your schema
-        questions_data = [
-            ('Date of visit?', 'date', 1, None),
-            ('Which site did you visit?', 'multiple_choice', 1, json.dumps([
-                'Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital'
-            ])),
-            ('Patient name?', 'text', 1, None),
-            ('How easy was it to get an appointment?', 'multiple_choice', 0, json.dumps([
-                'Very easy', 'Easy', 'Neutral', 'Difficult', 'Very difficult'
-            ])),
-            ('Were you properly informed about your procedure?', 'multiple_choice', 0, json.dumps([
-                'Yes', 'No', 'Partially'
-            ])),
-            ('What went well during your visit?', 'text', 0, None),
-            ('Overall satisfaction (1-5)', 'multiple_choice', 1, json.dumps(['1', '2', '3', '4', '5']))
+        # Insert questions - matching the exact schema from main.py
+        questions = [
+            {'text': 'Date of visit?', 'type': 'text', 'required': True, 'options': None},
+            {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
+             'options': ['Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital']},
+            {'text': 'Patient name?', 'type': 'text', 'required': True, 'options': None},
+            {'text': 'How easy was it to get an appointment?', 'type': 'multiple_choice', 'required': True,
+             'options': ['Very difficult', 'Somewhat difficult', 'Neutral', 'Easy', 'Very easy']},
+            {'text': 'Were you properly informed about your procedure?', 'type': 'multiple_choice', 'required': True,
+             'options': ['Yes', 'No', 'Partially']},
+            {'text': 'What went well during your visit?', 'type': 'text', 'required': False, 'options': None},
+            {'text': 'Overall satisfaction (1-5)', 'type': 'multiple_choice', 'required': True,
+             'options': ['1', '2', '3', '4', '5']}
         ]
         
-        for question_text, question_type, is_required, options in questions_data:
-            # Try different insert patterns based on what columns exist
-            try:
-                self.cursor.execute(
-                    "INSERT INTO questions (survey_id, question_text, question_type, is_required, options) VALUES (?, ?, ?, ?, ?)",
-                    (self.survey_id, question_text, question_type, is_required, options)
-                )
-            except pyodbc.Error as e:
-                # If options column doesn't exist, try without it
-                if 'options' in str(e).lower():
-                    self.cursor.execute(
-                        "INSERT INTO questions (survey_id, question_text, question_type, is_required) VALUES (?, ?, ?, ?)",
-                        (self.survey_id, question_text, question_type, is_required)
-                    )
-                else:
-                    raise
+        for q in questions:
+            self.cursor.execute(
+                "INSERT INTO questions (survey_id, question_text, question_type, is_required, options) VALUES (?, ?, ?, ?, ?)",
+                (self.survey_id, q['text'], q['type'], q['required'], json.dumps(q['options']) if q['options'] else None)
+            )
         
         self.conn.commit()
         
@@ -105,11 +92,11 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.questions = {row[1]: row[0] for row in self.cursor.fetchall()}
 
     def _ensure_tables_exist(self):
-        """Ensure the required tables exist with basic structure."""
+        """Ensure the required tables exist with the exact schema from main.py."""
         try:
-            # Check if surveys table exists
+            # Create surveys table (if not exists)
             self.cursor.execute("""
-                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='surveys' AND xtype='U')
+                IF OBJECT_ID('surveys', 'U') IS NULL
                 CREATE TABLE surveys (
                     survey_id INT IDENTITY(1,1) PRIMARY KEY,
                     title NVARCHAR(255) NOT NULL,
@@ -118,39 +105,42 @@ class TestPatientSurveySystem(unittest.TestCase):
                     is_active BIT DEFAULT 1
                 )
             """)
-            
-            # Check if questions table exists
+
+            # Create questions table (if not exists)
             self.cursor.execute("""
-                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='questions' AND xtype='U')
+                IF OBJECT_ID('questions', 'U') IS NULL
                 CREATE TABLE questions (
                     question_id INT IDENTITY(1,1) PRIMARY KEY,
-                    survey_id INT NOT NULL FOREIGN KEY REFERENCES surveys(survey_id),
+                    survey_id INT NOT NULL,
                     question_text NVARCHAR(MAX) NOT NULL,
                     question_type NVARCHAR(50) NOT NULL,
                     is_required BIT DEFAULT 0,
-                    created_at DATETIME DEFAULT GETDATE()
+                    options NVARCHAR(MAX),
+                    FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
                 )
             """)
-            
-            # Check if responses table exists
+
+            # Create responses table (if not exists)
             self.cursor.execute("""
-                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='responses' AND xtype='U')
+                IF OBJECT_ID('responses', 'U') IS NULL
                 CREATE TABLE responses (
                     response_id INT IDENTITY(1,1) PRIMARY KEY,
-                    survey_id INT NOT NULL FOREIGN KEY REFERENCES surveys(survey_id),
-                    submitted_at DATETIME DEFAULT GETDATE()
+                    survey_id INT NOT NULL,
+                    submitted_at DATETIME DEFAULT GETDATE(),
+                    FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
                 )
             """)
-            
-            # Check if answers table exists
+
+            # Create answers table (if not exists)
             self.cursor.execute("""
-                IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='answers' AND xtype='U')
+                IF OBJECT_ID('answers', 'U') IS NULL
                 CREATE TABLE answers (
                     answer_id INT IDENTITY(1,1) PRIMARY KEY,
-                    response_id INT NOT NULL FOREIGN KEY REFERENCES responses(response_id),
-                    question_id INT NOT NULL FOREIGN KEY REFERENCES questions(question_id),
-                    answer_value NVARCHAR(MAX) NOT NULL,
-                    created_at DATETIME DEFAULT GETDATE()
+                    response_id INT NOT NULL,
+                    question_id INT NOT NULL,
+                    answer_value NVARCHAR(MAX),
+                    FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE,
+                    FOREIGN KEY (question_id) REFERENCES questions(question_id) ON DELETE NO ACTION
                 )
             """)
             
@@ -270,19 +260,26 @@ class TestPatientSurveySystem(unittest.TestCase):
         )
         survey = self.cursor.fetchone()
         self.assertIsNotNone(survey)
-        # Check if is_active column exists at position 4, otherwise adjust
-        try:
-            self.cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='surveys' AND ORDINAL_POSITION=4")
-            column_name = self.cursor.fetchone()
-            if column_name and column_name[0].lower() == 'is_active':
-                self.assertTrue(survey[4])
-        except:
-            pass  # Skip if we can't determine column position
-        self.assertEqual(survey[2], 'Survey to collect feedback')
+        self.assertEqual(survey[1], 'Patient Experience Survey')  # title
+        self.assertEqual(survey[2], 'Survey to collect feedback')  # description
 
     def test_questions_created(self):
         self.cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = ?", (self.survey_id,))
         self.assertEqual(self.cursor.fetchone()[0], 7)
+
+    def test_question_options(self):
+        """Test that multiple choice questions have proper options"""
+        self.cursor.execute(
+            "SELECT question_text, options FROM questions WHERE question_type = 'multiple_choice' AND survey_id = ?",
+            (self.survey_id,)
+        )
+        mc_questions = self.cursor.fetchall()
+        
+        for question_text, options_json in mc_questions:
+            self.assertIsNotNone(options_json)
+            options = json.loads(options_json)
+            self.assertIsInstance(options, list)
+            self.assertGreater(len(options), 0)
 
     # --- Edge Cases ---
     def test_submit_survey_missing_required_field(self):
@@ -309,6 +306,23 @@ class TestPatientSurveySystem(unittest.TestCase):
                 (99999, 99999, 'test')  # Non-existent IDs
             )
             self.conn.commit()
+
+    def test_get_questions_endpoint(self):
+        """Test GET /api/questions endpoint"""
+        response = self.client.get('/api/questions')
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.get_json()
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 7)
+        
+        # Check that questions have the expected structure
+        for question in data:
+            self.assertIn('question_id', question)
+            self.assertIn('question_text', question)
+            self.assertIn('question_type', question)
+            self.assertIn('is_required', question)
+            self.assertIn('options', question)
 
 
 if __name__ == "__main__":
