@@ -1,3 +1,4 @@
+import os
 import logging
 import json
 import time
@@ -412,5 +413,9 @@ if __name__ == "__main__":
     logger.info("Starting Patient Survey Application")
     initialize_database()
     
-    # Run Flask app
-    app.run(host='0.0.0.0', port=8001, debug=False)
+    # Run Flask app - make host configurable via environment variable
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')  # Default to localhost for security
+    port = int(os.environ.get('FLASK_PORT', 8001))
+    
+    logger.info(f"Starting server on {host}:{port}")
+    app.run(host=host, port=port, debug=False)
