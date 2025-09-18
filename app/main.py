@@ -210,9 +210,11 @@ def initialize_database():
 # Flask Routes
 @app.route('/')
 def index():
-    """Home page"""
-    with request_duration.labels(method='GET', endpoint='/').time():
-        return render_template('index.html')
+    response = make_response(render_template('index.html'))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/api/survey', methods=['POST'])
 def conduct_survey_api():
