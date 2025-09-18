@@ -14,7 +14,6 @@ from app import create_app
 load_dotenv()
 
 class TestPatientSurveySystem(unittest.TestCase):
-
     def setUp(self):
         """Set up test environment before each test."""
         try:
@@ -23,32 +22,6 @@ class TestPatientSurveySystem(unittest.TestCase):
             
             # Set testing mode
             app.config['TESTING'] = True
-            
-            # Set the template folder explicitly for tests
-            import os
-            # Get the project root directory (one level up from tests directory)
-            project_root = os.path.join(os.path.dirname(__file__), '..')
-            template_path = os.path.abspath(os.path.join(project_root, 'templates'))
-            
-            # Check if templates exist at the expected path
-            if os.path.exists(template_path):
-                app.template_folder = template_path
-                print(f"Template folder set to: {template_path}")
-            else:
-                # Fallback: check if templates are in app/templates
-                app_template_path = os.path.abspath(os.path.join(project_root, 'app', 'templates'))
-                if os.path.exists(app_template_path):
-                    app.template_folder = app_template_path
-                    print(f"Template folder set to: {app_template_path}")
-                else:
-                    # Create a temporary templates directory for tests
-                    os.makedirs(template_path, exist_ok=True)
-                    # Create a simple index.html for testing
-                    with open(os.path.join(template_path, 'index.html'), 'w') as f:
-                        f.write('<html><body><h1>Test Survey</h1></body></html>')
-                    app.template_folder = template_path
-                    print(f"Created temporary template folder: {template_path}")
-            
             self.app = app
             self.client = self.app.test_client()
             
@@ -65,6 +38,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         except Exception as e:
             logging.error(f"Test setup failed: {e}")
             raise
+    
 
     def _clean_database(self):
         """Clean all test data."""
