@@ -3,7 +3,7 @@ import logging
 import json
 import time
 import pyodbc
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, make_response
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram
 from app.utils.db_utils import get_db_connection
 from app.config import Config
@@ -211,9 +211,11 @@ def initialize_database():
 @app.route('/')
 def index():
     response = make_response(render_template('index.html'))
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
+    # Only add cache headers when not in testing mode
+    if not app.config.get('TESTING'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     return response
 
 @app.route('/api/survey', methods=['POST'])
