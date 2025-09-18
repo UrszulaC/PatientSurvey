@@ -15,6 +15,13 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 
+template_path = os.path.join(os.path.dirname(__file__), '..', 'templates')
+if os.path.exists(template_path):
+    app.template_folder = template_path
+else:
+    # Fallback to default
+    app.template_folder = 'templates'
+
 # Prometheus metrics
 def get_or_create_counter(name, description, registry=None):
     try:
@@ -411,6 +418,22 @@ def health_check():
 def metrics():
     """Prometheus metrics endpoint"""
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+@app.route('/debug-template-path')
+def debug_template_path():
+    import os
+    current_file = os.path.dirname(__file__)
+    attempted_path = os.path.join(current_file, '..', 'templates')
+    absolute_attempted = os.path.abspath(attempted_path)
+    
+    return f"""
+    Current file: {current_file}<br>
+    Attempted path: {attempted_path}<br>
+    Absolute attempted: {absolute_attempted}<br>
+    Exists: {os.path.exists(absolute_attempted)}<br>
+    Current working directory: {os.getcwd()}<br>
+    Template folder: {app.template_folder}<br>
+    """
 
 if __name__ == "__main__":
     # Initialize database
