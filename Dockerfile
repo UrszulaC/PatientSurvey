@@ -21,6 +21,7 @@ ENV PYTHONPATH=/app
 
 # Copy app source
 COPY . .
+COPY templates/ ./templates/
 
 # Install Python dependencies (make sure Flask is in requirements.txt!)
 RUN pip install --no-cache-dir -r requirements.txt
