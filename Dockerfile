@@ -26,6 +26,8 @@ COPY . .
 # Install Python dependencies (make sure Flask is in requirements.txt!)
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY templates/ ./templates/
+
 # Expose Flask app port
 EXPOSE 8001
 
