@@ -37,6 +37,8 @@ resource "azurerm_container_group" "survey_app" {
     }
 
     environment_variables = {
+      FLASK_HOST = "0.0.0.0"
+      FLASK_PORT = "8001"
       DB_HOST     = azurerm_mssql_server.sql_server.fully_qualified_domain_name
       DB_NAME     = "patient_survey_db"
       DB_USER     = var.db_user
