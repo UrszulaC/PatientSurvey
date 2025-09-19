@@ -15,11 +15,26 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 
-template_path = os.path.join(os.path.dirname(__file__), '..', 'templates')
-if os.path.exists(template_path):
-    app.template_folder = template_path
+# Improved template path configuration
+base_dir = os.path.dirname(os.path.abspath(__file__))
+template_path = os.path.join(base_dir, 'templates')
+
+# Check multiple possible template locations
+possible_paths = [
+    template_path,
+    os.path.join(base_dir, '..', 'templates'),
+    os.path.join(base_dir, 'app', 'templates'),
+    'templates'  # default fallback
+]
+
+for path in possible_paths:
+    absolute_path = os.path.abspath(path)
+    if os.path.exists(absolute_path) and os.path.isdir(absolute_path):
+        app.template_folder = absolute_path
+        logger.info(f"Using template folder: {absolute_path}")
+        break
 else:
-    # Fallback to default
+    logger.warning("No template folder found, using default")
     app.template_folder = 'templates'
 
 # Prometheus metrics
