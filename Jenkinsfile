@@ -355,29 +355,34 @@ pipeline {
                 }
             }
         }
-
-       stage('Display Monitoring URLs') {
+        stage('Display Monitoring URLs') {
             steps {
-                sh '''
-                    set -e
-                    # Load environment variables
-                    export $(grep -v "^#" monitoring.env | xargs)
-            
-                    echo "=== APPLICATION URLs ==="
-                    echo "Patient Survey App: http://survey-app.uksouth.azurecontainer.io:8001"
-                    echo "Survey API: http://survey-app.uksouth.azurecontainer.io:8001/api/questions"
-                    echo "Health Check: http://survey-app.uksouth.azurecontainer.io:8001/health"
-                    
-                    echo ""
-                    echo "=== MONITORING URLs ==="
-                    echo "Node Metrics: http://survey-app.uksouth.azurecontainer.io:9100/metrics"
-                    echo "Prometheus Dashboard: $PROMETHEUS_URL"
-                    echo "Grafana Dashboard: $GRAFANA_URL"
-                    echo "⚠️ Grafana credentials are hidden for security"
-                '''
+                withCredentials([
+                    string(credentialsId: 'GRAFANA_PASSWORD', variable: 'GRAFANA_PASS'),
+                    string(credentialsId: 'GRAFANA_SERVICE_ACCOUNT_TOKEN', variable: 'GRAFANA_TOKEN')
+                ]) {
+                    sh '''
+                        set -e
+                        # Load only non-sensitive URLs
+                        export $(grep -E "^(PROMETHEUS_URL|GRAFANA_URL)=" monitoring.env | xargs)
+        
+                        echo "=== APPLICATION URLs ==="
+                        echo "Patient Survey App: http://survey-app.uksouth.azurecontainer.io:8001"
+                        echo "Survey API: http://survey-app.uksouth.azurecontainer.io:8001/api/questions"
+                        echo "Health Check: http://survey-app.uksouth.azurecontainer.io:8001/health"
+        
+                        echo ""
+                        echo "=== MONITORING URLs ==="
+                        echo "Node Metrics: http://survey-app.uksouth.azurecontainer.io:9100/metrics"
+                        echo "Prometheus Dashboard: $PROMETHEUS_URL"
+                        echo "Grafana Dashboard: $GRAFANA_URL"
+                        echo "⚠️ Grafana credentials are stored securely in Jenkins (not printed)"
+                    '''
+                }
             }
-           }
         }
+
+      
     post {
         always {
             junit 'test-results/*.xml'
