@@ -1,49 +1,28 @@
+main
+
 import os
 import logging
 import json
 import time
 import pyodbc
-from flask import Flask, request, jsonify, render_template, make_response
+from flask import Flask, request, jsonify, render_template
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram
 from app.utils.db_utils import get_db_connection
 from app.config import Config
 
-# --------------------------
-# Logging
-# --------------------------
+# Initialize logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --------------------------
-# Flask app and templates
-# --------------------------
+# Initialize Flask app
 app = Flask(__name__)
-base_dir = os.path.dirname(os.path.abspath(__file__))
 
-possible_paths = [
-    os.path.join(base_dir, 'templates'),
-    os.path.join(base_dir, '..', 'templates'),
-    os.path.join(base_dir, 'app', 'templates'),
-    'templates'
-]
-
-for path in possible_paths:
-    absolute_path = os.path.abspath(path)
-    if os.path.exists(absolute_path) and os.path.isdir(absolute_path):
-        app.template_folder = absolute_path
-        logger.info(f"Using template folder: {absolute_path}")
-        break
-else:
-    app.template_folder = 'templates'
-    logger.warning("No template folder found, using default")
-
-# --------------------------
-# Prometheus metric helpers
-# --------------------------
+# Prometheus metrics
 def get_or_create_counter(name, description, registry=None):
     try:
         return Counter(name, description, registry=registry)
     except ValueError:
+        # Metric already exists, return the existing one
         from prometheus_client import REGISTRY
         return REGISTRY._names_to_collectors[name]
 
@@ -51,6 +30,7 @@ def get_or_create_histogram(name, description, labelnames=(), registry=None):
     try:
         return Histogram(name, description, labelnames=labelnames, registry=registry)
     except ValueError:
+        # Metric already exists, return the existing one
         from prometheus_client import REGISTRY
         return REGISTRY._names_to_collectors[name]
 
@@ -58,28 +38,26 @@ def get_or_create_gauge(name, description, registry=None):
     try:
         return Gauge(name, description, registry=registry)
     except ValueError:
+        # Metric already exists, return the existing one
         from prometheus_client import REGISTRY
         return REGISTRY._names_to_collectors[name]
 
-# --------------------------
-# Prometheus metrics
-# --------------------------
 survey_counter = get_or_create_counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
 survey_duration = get_or_create_counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
 survey_failures = get_or_create_counter('patient_survey_failures_total', 'Total failed survey submissions')
 active_surveys = get_or_create_counter('active_surveys_total', 'Number of active surveys initialized')
 question_count = get_or_create_counter('survey_questions_total', 'Total number of questions initialized')
 
+# Additional metrics for web service
 request_duration = get_or_create_histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
 active_connections = get_or_create_gauge('db_active_connections', 'Number of active database connections')
 
-# --------------------------
-# Initialize DB and tables
-# --------------------------
 def create_survey_tables(conn):
+    """Create all necessary tables for surveys safely (if not exist)"""
     try:
         cursor = conn.cursor()
 
+        # Create surveys table
         cursor.execute("""
             IF OBJECT_ID('surveys', 'U') IS NULL
             CREATE TABLE surveys (
@@ -91,6 +69,7 @@ def create_survey_tables(conn):
             )
         """)
 
+        # Create questions table
         cursor.execute("""
             IF OBJECT_ID('questions', 'U') IS NULL
             CREATE TABLE questions (
@@ -104,6 +83,7 @@ def create_survey_tables(conn):
             )
         """)
 
+        # Create responses table
         cursor.execute("""
             IF OBJECT_ID('responses', 'U') IS NULL
             CREATE TABLE responses (
@@ -114,9 +94,10 @@ def create_survey_tables(conn):
             )
         """)
 
+        # Create answers table
         cursor.execute("""
             IF OBJECT_ID('answers', 'U') IS NULL
-            CREATE TABLE answers (
+                CREATE TABLE answers (
                 answer_id INT IDENTITY(1,1) PRIMARY KEY,
                 response_id INT NOT NULL,
                 question_id INT NOT NULL,
@@ -126,24 +107,36 @@ def create_survey_tables(conn):
             )
         """)
 
-        # Insert default survey if not exists
+        # Insert default survey if it doesn't exist
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
         survey = cursor.fetchone()
+
         if not survey:
             cursor.execute("""
                 INSERT INTO surveys (title, description, is_active)
                 VALUES (?, ?, ?)
             """, ('Patient Experience Survey', 'Survey to collect feedback', True))
             conn.commit()
-            cursor.execute("SELECT SCOPE_IDENTITY()")
-            survey_id = int(cursor.fetchone()[0])
-            active_surveys.inc()
+
+            # Try to get survey_id from SCOPE_IDENTITY first
+            survey_id_row = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()
+            if survey_id_row is None or survey_id_row[0] is None:
+                # Fallback: query the row directly
+                cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
+                survey_id_row = cursor.fetchone()
+                if survey_id_row is None:
+                    raise Exception("Failed to create or retrieve default survey in create_survey_tables")
+
+            survey_id = int(survey_id_row[0])
+            active_surveys.inc()  # Increment active surveys metric
         else:
             survey_id = survey[0]
 
-        # Insert default questions if not exist
+        # Insert default questions only if they do not exist
         cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = ?", (survey_id,))
-        if cursor.fetchone()[0] == 0:
+        existing_questions = cursor.fetchone()[0]
+        
+        if existing_questions == 0:
             questions = [
                 {'text': 'Date of visit?', 'type': 'text', 'required': True},
                 {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
@@ -157,14 +150,22 @@ def create_survey_tables(conn):
                 {'text': 'Overall satisfaction (1-5)', 'type': 'multiple_choice', 'required': True,
                  'options': ['1', '2', '3', '4', '5']}
             ]
+            
             for q in questions:
                 cursor.execute("""
                     INSERT INTO questions (survey_id, question_text, question_type, is_required, options)
                     VALUES (?, ?, ?, ?, ?)
-                """, (survey_id, q['text'], q['type'], q['required'], json.dumps(q.get('options')) if 'options' in q else None))
-                question_count.inc()
+                """, (
+                    survey_id,
+                    q['text'],
+                    q['type'],
+                    q.get('required', False),
+                    json.dumps(q['options']) if 'options' in q else None
+                ))
+                question_count.inc()  # Increment question count metric
 
         conn.commit()
+        logger.info("Database tables initialized safely.")
 
     except Exception as e:
         survey_failures.inc()
@@ -173,192 +174,77 @@ def create_survey_tables(conn):
         raise
 
 def initialize_database():
+    """Initialize the database tables"""
     try:
+        # Get connection for DDL operations
         conn = get_db_connection(database_name=None)
         conn.autocommit = True
+        
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sys.databases WHERE name = ?", (Config.DB_NAME,))
-        if not cursor.fetchone():
+        
+        # Check if database exists
+        cursor.execute(
+            "SELECT name FROM sys.databases WHERE name = ?", 
+            (Config.DB_NAME,)
+        )
+        db_exists = cursor.fetchone()
+        
+        if not db_exists:
             cursor.execute(f"CREATE DATABASE [{Config.DB_NAME}]")
-            logger.info(f"Created database {Config.DB_NAME}")
+            logger.info(f"Created database: {Config.DB_NAME}")
+        
         cursor.close()
         conn.close()
-
+        
+        # Now create tables in the database
         conn = get_db_connection(database_name=Config.DB_NAME)
         conn.autocommit = True
+        
         create_survey_tables(conn)
+        
         conn.close()
         logger.info("Database initialized successfully")
-
+        
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
 
-# --------------------------
-# Sync metrics from DB
-# --------------------------
-def sync_metrics_with_db():
-    try:
-        conn = get_db_connection(database_name=Config.DB_NAME)
-        cursor = conn.cursor()
-
-        # Submissions
-        cursor.execute("SELECT COUNT(*) FROM responses")
-        total_responses = cursor.fetchone()[0] or 0
-        survey_counter._value.set(total_responses)
-
-        # Active surveys
-        cursor.execute("SELECT COUNT(*) FROM surveys WHERE is_active = 1")
-        active_surveys._value.set(cursor.fetchone()[0] or 0)
-
-        # Questions
-        cursor.execute("SELECT COUNT(*) FROM questions")
-        question_count._value.set(cursor.fetchone()[0] or 0)
-
-        # Failures - runtime only (or implement DB table)
-        survey_failures._value.set(0)
-
-        # Duration - runtime only unless stored
-        survey_duration._value.set(0)
-
-        # DB connections snapshot
-        cursor.execute("""
-            SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE database_id = DB_ID(?)
-        """, (Config.DB_NAME,))
-        active_connections._value.set(cursor.fetchone()[0] or 0)
-
-        conn.close()
-        logger.info(f"Metrics synced from DB: {total_responses} submissions, "
-                    f"{active_surveys._value.get()} active surveys, "
-                    f"{question_count._value.get()} questions")
-    except Exception as e:
-        logger.error(f"Failed to sync metrics with DB: {e}")
-
-# --------------------------
-# Flask routes (API, metrics, health)
-# --------------------------
+# Flask Routes
 @app.route('/')
 def index():
-    response = make_response(render_template('index.html'))
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
-
-@app.route('/api/survey', methods=['POST'])
-def submit_survey():
-    """Submit a new patient survey response."""
-    start_time = time.time()
-    try:
-        data = request.get_json()
-
-        if not data or 'answers' not in data or not isinstance(data['answers'], list):
-            survey_failures.inc()
-            return jsonify({'error': 'Invalid survey data'}), 400
-
-        conn = get_db_connection()
-        active_connections.inc()
-        cursor = conn.cursor()
-
-        # Get Patient Experience Survey ID
-        cursor.execute("SELECT TOP 1 survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
-        survey_row = cursor.fetchone()
-        if not survey_row:
-            conn.close()
-            active_connections.dec()
-            return jsonify({'error': 'Survey not found'}), 404
-        survey_id = survey_row[0]
-
-        # Insert into responses
-        cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey_id,))
-        cursor.execute("SELECT SCOPE_IDENTITY()")
-        response_id = cursor.fetchone()[0]
-
-        # Insert answers
-        for ans in data['answers']:
-            if 'question_id' not in ans or 'answer_value' not in ans:
-                conn.rollback()
-                conn.close()
-                active_connections.dec()
-                survey_failures.inc()
-                return jsonify({'error': 'Invalid answer format'}), 400
-
-            cursor.execute(
-                "INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
-                (int(response_id), int(ans['question_id']), ans['answer_value'])
-            )
-
-        conn.commit()
-        conn.close()
-        active_connections.dec()
-
-        # Update metrics
-        survey_counter.inc()
-        survey_duration.inc(time.time() - start_time)
-
-        return jsonify({'response_id': int(response_id), 'message': 'Survey submitted successfully'}), 201
-
-    except Exception as e:
-        survey_failures.inc()
-        logger.error(f"Survey submission failed: {e}")
-        try:
-            if 'conn' in locals():
-                conn.rollback()
-                conn.close()
-                active_connections.dec()
-        except Exception:
-            pass
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/questions', methods=['GET'])
-def get_questions():
-    try:
-        conn = get_db_connection(database_name=Config.DB_NAME)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT question_id, question_text, question_type, is_required, options
-            FROM questions
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-
-        questions = []
-        for row in rows:
-            questions.append({
-                'question_id': row[0],
-                'question_text': row[1],
-                'question_type': row[2],
-                'is_required': bool(row[3]),
-                'options': json.loads(row[4]) if row[4] else None
-            })
-
-        return jsonify(questions), 200
-    except Exception as e:
-        logger.error(f"Failed to fetch questions: {e}")
-        return jsonify({'error': str(e)}), 500
+    """Home page"""
+    with request_duration.labels(method='GET', endpoint='/').time():
+        return render_template('index.html')
 
 @app.route('/api/survey', methods=['POST'])
 def conduct_survey_api():
+    """API endpoint to submit a survey"""
     start_time = time.time()
+    
     try:
+        # Get JSON data from request
         data = request.get_json()
         if not data or 'answers' not in data:
             survey_failures.inc()
-            return jsonify({'error': 'Missing answers'}), 400
-        if not isinstance(data['answers'], list):
+            return jsonify({'error': 'No JSON data provided or missing answers field'}), 400
+        
+        # Validate that answers is a list
+        if not isinstance(data.get('answers'), list):
             survey_failures.inc()
             return jsonify({'error': 'Answers must be a list'}), 400
-
-        for ans in data['answers']:
-            if 'question_id' not in ans or 'answer_value' not in ans:
+        
+        # Validate each answer has required fields
+        for answer in data['answers']:
+            if not isinstance(answer, dict) or 'question_id' not in answer or 'answer_value' not in answer:
                 survey_failures.inc()
-                return jsonify({'error': 'Invalid answer format'}), 400
-
+                return jsonify({'error': 'Each answer must have question_id and answer_value'}), 400
+        
+        # Connect to database - let get_db_connection decide which DB to use
         conn = get_db_connection()
         active_connections.inc()
         cursor = conn.cursor()
-
+        
+        # Get survey ID
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
         survey = cursor.fetchone()
         if not survey:
@@ -366,47 +252,62 @@ def conduct_survey_api():
             active_connections.dec()
             survey_failures.inc()
             return jsonify({'error': 'Survey not found'}), 404
+        
         survey_id = survey[0]
-
+        
+        # Insert response
         cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey_id,))
         conn.commit()
+        
+        # Get response ID
         cursor.execute("SELECT SCOPE_IDENTITY()")
-        response_id = int(cursor.fetchone()[0])
-
-        for ans in data['answers']:
-            cursor.execute("INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
-                           (response_id, ans['question_id'], ans['answer_value']))
+        response_id_row = cursor.fetchone()
+        if response_id_row is None or response_id_row[0] is None:
+            cursor.execute("SELECT @@IDENTITY")
+            response_id_row = cursor.fetchone()
+            if response_id_row is None or response_id_row[0] is None:
+                conn.close()
+                active_connections.dec()
+                survey_failures.inc()
+                return jsonify({'error': 'Failed to create response'}), 500
+        
+        response_id = int(response_id_row[0])
+        
+        # Insert answers
+        for answer in data.get('answers', []):
+            cursor.execute("""
+                INSERT INTO answers (response_id, question_id, answer_value)
+                VALUES (?, ?, ?)
+            """, (response_id, answer['question_id'], answer['answer_value']))
+        
         conn.commit()
         conn.close()
         active_connections.dec()
-
+        
         # Update metrics
         survey_counter.inc()
         survey_duration.inc(time.time() - start_time)
-
-        logger.info(f"Survey recorded ID: {response_id}")
-        return jsonify({'message': 'Survey submitted', 'response_id': response_id}), 201
+        
+        logger.info(f"New survey response recorded (ID: {response_id})")
+        return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
+        
     except Exception as e:
         survey_failures.inc()
+        logger.error(f"Survey submission failed: {e}")
         if 'conn' in locals():
             conn.close()
             active_connections.dec()
-        logger.error(f"Survey submission failed: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/responses', methods=['GET'])
 def get_responses():
-    """API endpoint to get all survey responses (grouped by response_id)."""
-    # Use the request_duration histogram if you'd like timing for this endpoint
-    # (it was used in your earlier versions); if not needed you can remove the context manager.
-    try:
-        # If you have a histogram with labels 'method' and 'endpoint' (request_duration),
-        # record timing like in the tests' expected code.
-        with request_duration.labels(method='GET', endpoint='/api/responses').time():
+    """API endpoint to get all survey responses"""
+    with request_duration.labels(method='GET', endpoint='/api/responses').time():
+        try:
             conn = get_db_connection()
             active_connections.inc()
             cursor = conn.cursor()
-
+            
             cursor.execute("""
                 SELECT
                     r.response_id,
@@ -418,47 +319,80 @@ def get_responses():
                 JOIN questions q ON a.question_id = q.question_id
                 ORDER BY r.response_id, q.question_id
             """)
-
+            
             responses = {}
             current_id = None
-
+            
             for row in cursor.fetchall():
-                rid = row[0]
-                if rid != current_id:
-                    current_id = rid
-                    responses[rid] = {
+                if row[0] != current_id:
+                    current_id = row[0]
+                    responses[current_id] = {
                         'date': row[1],
                         'answers': []
                     }
-                responses[rid]['answers'].append({
+                responses[current_id]['answers'].append({
                     'question': row[2],
                     'answer': row[3]
                 })
-
+            
             conn.close()
             active_connections.dec()
             logger.info(f"Retrieved {len(responses)} survey responses")
-            return jsonify(responses), 200
-
-    except Exception as e:
-        # Make sure we decrement active_connections if an exception happens after increment
-        try:
+            return jsonify(responses)
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve responses: {e}")
             if 'conn' in locals():
                 conn.close()
                 active_connections.dec()
-        except Exception:
-            pass
-        logger.error(f"Failed to retrieve responses: {e}")
-        return jsonify({'error': str(e)}), 500
+            return jsonify({'error': str(e)}), 500
 
-
-
-@app.route('/metrics')
-def metrics():
-    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+@app.route('/api/questions', methods=['GET'])
+def get_questions():
+    """API endpoint to get survey questions"""
+    with request_duration.labels(method='GET', endpoint='/api/questions').time():
+        try:
+            conn = get_db_connection()
+            active_connections.inc()
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
+            survey = cursor.fetchone()
+            if not survey:
+                conn.close()
+                active_connections.dec()
+                return jsonify({'error': 'Survey not found'}), 404
+            
+            cursor.execute("""
+                SELECT question_id, question_text, question_type, is_required, options
+                FROM questions WHERE survey_id = ? ORDER BY question_id
+            """, (survey[0],))
+            
+            questions = []
+            for q in cursor.fetchall():
+                question = {
+                    'question_id': q[0],
+                    'question_text': q[1],
+                    'question_type': q[2],
+                    'is_required': bool(q[3]),
+                    'options': json.loads(q[4]) if q[4] else []
+                }
+                questions.append(question)
+            
+            conn.close()
+            active_connections.dec()
+            return jsonify(questions)
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve questions: {e}")
+            if 'conn' in locals():
+                conn.close()
+                active_connections.dec()
+            return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
 def health_check():
+    """Health check endpoint"""
     try:
         conn = get_db_connection()
         active_connections.inc()
@@ -468,34 +402,26 @@ def health_check():
         active_connections.dec()
         return jsonify({'status': 'healthy', 'database': 'connected'}), 200
     except Exception as e:
-        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+        logger.error(f"Health check failed: {e}")
+        return jsonify({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}), 500
 
-# --------------------------
-# Main
-# --------------------------
+@app.route('/metrics')
+def metrics():
+    """Prometheus metrics endpoint"""
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
 if __name__ == "__main__":
-    logger.info("Starting Patient Survey App")
-
-    # Initialize DB and tables
+    # Initialize database
+    logger.info("Starting Patient Survey Application")
     initialize_database()
-
-    # Ensure metric objects exist (no-op increments)
-    survey_counter.inc(0)
-    survey_duration.inc(0)
-    survey_failures.inc(0)
-    active_surveys.inc(0)
-    question_count.inc(0)
-    request_duration.observe(0)
-    active_connections.set(0)
-
-    # Sync metrics with actual DB values
-    with app.app_context():
-        sync_metrics_with_db()
-
-    host = os.environ.get('FLASK_HOST', '127.0.0.1')
+    
+    # Run Flask app - make host configurable via environment variable
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')  # Default to localhost for security
     port = int(os.environ.get('FLASK_PORT', 8001))
-    logger.info(f"Server starting on {host}:{port}")
+    
+    logger.info(f"Starting server on {host}:{port}")
     app.run(host=host, port=port, debug=False)
+
 
 
 
