@@ -324,9 +324,10 @@ def health_check():
 if __name__ == "__main__":
     logger.info("Starting Patient Survey App")
 
+    # Initialize DB and tables
     initialize_database()
 
-    # Ensure all metrics exist
+    # Ensure metric objects exist (no-op increments)
     survey_counter.inc(0)
     survey_duration.inc(0)
     survey_failures.inc(0)
@@ -335,13 +336,15 @@ if __name__ == "__main__":
     request_duration.observe(0)
     active_connections.set(0)
 
-    # Sync metrics with DB (historical values)
-    sync_metrics_with_db()
+    # Sync metrics with actual DB values
+    with app.app_context():
+        sync_metrics_with_db()
 
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
     port = int(os.environ.get('FLASK_PORT', 8001))
     logger.info(f"Server starting on {host}:{port}")
     app.run(host=host, port=port, debug=False)
+
 
 
 
