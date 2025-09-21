@@ -245,6 +245,71 @@ def index():
     response.headers['Expires'] = '0'
     return response
 
+@app.route('/api/survey', methods=['POST'])
+def submit_survey():
+    """Submit a new patient survey response."""
+    start_time = time.time()
+    try:
+        data = request.get_json()
+
+        if not data or 'answers' not in data or not isinstance(data['answers'], list):
+            survey_failures.inc()
+            return jsonify({'error': 'Invalid survey data'}), 400
+
+        conn = get_db_connection()
+        active_connections.inc()
+        cursor = conn.cursor()
+
+        # Get Patient Experience Survey ID
+        cursor.execute("SELECT TOP 1 survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
+        survey_row = cursor.fetchone()
+        if not survey_row:
+            conn.close()
+            active_connections.dec()
+            return jsonify({'error': 'Survey not found'}), 404
+        survey_id = survey_row[0]
+
+        # Insert into responses
+        cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey_id,))
+        cursor.execute("SELECT SCOPE_IDENTITY()")
+        response_id = cursor.fetchone()[0]
+
+        # Insert answers
+        for ans in data['answers']:
+            if 'question_id' not in ans or 'answer_value' not in ans:
+                conn.rollback()
+                conn.close()
+                active_connections.dec()
+                survey_failures.inc()
+                return jsonify({'error': 'Invalid answer format'}), 400
+
+            cursor.execute(
+                "INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
+                (int(response_id), int(ans['question_id']), ans['answer_value'])
+            )
+
+        conn.commit()
+        conn.close()
+        active_connections.dec()
+
+        # Update metrics
+        survey_counter.inc()
+        survey_duration.inc(time.time() - start_time)
+
+        return jsonify({'response_id': int(response_id), 'message': 'Survey submitted successfully'}), 201
+
+    except Exception as e:
+        survey_failures.inc()
+        logger.error(f"Survey submission failed: {e}")
+        try:
+            if 'conn' in locals():
+                conn.rollback()
+                conn.close()
+                active_connections.dec()
+        except Exception:
+            pass
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/questions', methods=['GET'])
 def get_questions():
     try:
