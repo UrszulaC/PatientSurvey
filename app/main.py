@@ -72,6 +72,31 @@ question_count = get_or_create_counter('survey_questions_total', 'Total number o
 request_duration = get_or_create_histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
 active_connections = get_or_create_gauge('db_active_connections', 'Number of active database connections')
 
+def initialize_metrics_from_db():
+    """Initialize Prometheus counters from existing DB data"""
+    try:
+        conn = get_db_connection(database_name=Config.DB_NAME)
+        active_connections.inc()
+        cursor = conn.cursor()
+        
+        # Get the total number of survey responses
+        cursor.execute("SELECT COUNT(*) FROM responses")
+        total_responses = cursor.fetchone()[0]
+        
+        # Increment the Prometheus counter
+        if total_responses > 0:
+            survey_counter.inc(total_responses)
+            logger.info(f"Initialized patient_survey_submissions_total with {total_responses} existing responses")
+        
+        cursor.close()
+        conn.close()
+        active_connections.dec()
+    except Exception as e:
+        logger.error(f"Failed to initialize metrics from DB: {e}")
+        if 'conn' in locals():
+            conn.close()
+            active_connections.dec()
+
 def create_survey_tables(conn):
     """Create all necessary tables for surveys safely (if not exist)"""
     try:
@@ -505,13 +530,17 @@ def sync_metrics_with_db():
         
 if __name__ == "__main__":
     logger.info("Starting Patient Survey Application")
+    
+    # Initialize database (tables, default survey/questions)
     initialize_database()
-
-    # Sync metrics with DB for all-time state
-    sync_metrics_with_db()
-
+    
+    # Initialize Prometheus counters from existing database responses
+    initialize_metrics_from_db()
+    
+    # Run Flask app
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
     port = int(os.environ.get('FLASK_PORT', 8001))
     logger.info(f"Starting server on {host}:{port}")
     app.run(host=host, port=port, debug=False)
+
 
