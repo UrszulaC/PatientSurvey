@@ -79,23 +79,28 @@ def initialize_metrics_from_db():
         active_connections.inc()
         cursor = conn.cursor()
         
-        # Get the total number of survey responses
+        # Total number of survey responses
         cursor.execute("SELECT COUNT(*) FROM responses")
         total_responses = cursor.fetchone()[0]
-        
-        # Increment the Prometheus counter
         if total_responses > 0:
             survey_counter.inc(total_responses)
             logger.info(f"Initialized patient_survey_submissions_total with {total_responses} existing responses")
+            
+            # Approximate survey duration: assume 60 seconds per past submission
+            approx_duration = total_responses * 60
+            survey_duration.inc(approx_duration)
+            logger.info(f"Initialized patient_survey_duration_seconds_total with {approx_duration} seconds (approx.)")
         
         cursor.close()
         conn.close()
         active_connections.dec()
+        
     except Exception as e:
         logger.error(f"Failed to initialize metrics from DB: {e}")
         if 'conn' in locals():
             conn.close()
             active_connections.dec()
+
 
 def create_survey_tables(conn):
     """Create all necessary tables for surveys safely (if not exist)"""
