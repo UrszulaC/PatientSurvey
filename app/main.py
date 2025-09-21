@@ -535,18 +535,32 @@ def sync_metrics_with_db():
         
 if __name__ == "__main__":
     logger.info("Starting Patient Survey Application")
-    
+
     # Initialize database (tables, default survey/questions)
     initialize_database()
-    
-    # Sync Prometheus counters with existing DB data
-    sync_metrics_with_db()
-    
+
+    # Ensure all Prometheus metrics exist and sync with DB
+    try:
+        # Force all metrics to exist with 0
+        survey_counter.inc(0)
+        survey_duration.inc(0)
+        survey_failures.inc(0)
+        active_surveys.inc(0)
+        question_count.inc(0)
+        request_duration.observe(0)
+        active_connections.set(0)
+
+        # Sync with database for actual counts
+        sync_metrics_with_db()
+    except Exception as e:
+        logger.warning(f"Failed to sync metrics with DB: {e}")
+
     # Run Flask app
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
     port = int(os.environ.get('FLASK_PORT', 8001))
     logger.info(f"Starting server on {host}:{port}")
     app.run(host=host, port=port, debug=False)
+
 
 
 
