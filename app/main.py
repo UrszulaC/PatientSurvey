@@ -329,6 +329,65 @@ def conduct_survey_api():
         logger.error(f"Survey submission failed: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/responses', methods=['GET'])
+def get_responses():
+    """API endpoint to get all survey responses (grouped by response_id)."""
+    # Use the request_duration histogram if you'd like timing for this endpoint
+    # (it was used in your earlier versions); if not needed you can remove the context manager.
+    try:
+        # If you have a histogram with labels 'method' and 'endpoint' (request_duration),
+        # record timing like in the tests' expected code.
+        with request_duration.labels(method='GET', endpoint='/api/responses').time():
+            conn = get_db_connection()
+            active_connections.inc()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT
+                    r.response_id,
+                    FORMAT(r.submitted_at, 'yyyy-MM-dd HH:mm') as date,
+                    q.question_text,
+                    a.answer_value
+                FROM responses r
+                JOIN answers a ON r.response_id = a.response_id
+                JOIN questions q ON a.question_id = q.question_id
+                ORDER BY r.response_id, q.question_id
+            """)
+
+            responses = {}
+            current_id = None
+
+            for row in cursor.fetchall():
+                rid = row[0]
+                if rid != current_id:
+                    current_id = rid
+                    responses[rid] = {
+                        'date': row[1],
+                        'answers': []
+                    }
+                responses[rid]['answers'].append({
+                    'question': row[2],
+                    'answer': row[3]
+                })
+
+            conn.close()
+            active_connections.dec()
+            logger.info(f"Retrieved {len(responses)} survey responses")
+            return jsonify(responses), 200
+
+    except Exception as e:
+        # Make sure we decrement active_connections if an exception happens after increment
+        try:
+            if 'conn' in locals():
+                conn.close()
+                active_connections.dec()
+        except Exception:
+            pass
+        logger.error(f"Failed to retrieve responses: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+
 @app.route('/metrics')
 def metrics():
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
