@@ -3,7 +3,7 @@ import logging
 import json
 import time
 import pyodbc
-from flask import Flask, request, jsonify, render_template, make_response
+from flask import Flask, request, jsonify, render_template, make_response, response
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram
 from app.utils.db_utils import get_db_connection
 from app.config import Config
@@ -450,14 +450,68 @@ def debug_template_path():
     Template folder: {app.template_folder}<br>
     """
 
+def sync_metrics_with_db():
+    """Sync Prometheus counters with existing DB state so Grafana shows history"""
+    try:
+        conn = get_db_connection(database_name=Config.DB_NAME)
+        cursor = conn.cursor()
+
+        # === Responses (submissions) ===
+        cursor.execute("SELECT COUNT(*) FROM responses")
+        total_responses = cursor.fetchone()[0] or 0
+        survey_counter._value.set(total_responses)
+
+        # === Active surveys ===
+        cursor.execute("SELECT COUNT(*) FROM surveys WHERE is_active = 1")
+        total_active = cursor.fetchone()[0] or 0
+        active_surveys._value.set(total_active)
+
+        # === Questions ===
+        cursor.execute("SELECT COUNT(*) FROM questions")
+        total_questions = cursor.fetchone()[0] or 0
+        question_count._value.set(total_questions)
+
+        # === Failures (if logged in a table) ===
+        # If you don't have a table for failed submissions, keep as runtime only.
+        # Example: cursor.execute("SELECT COUNT(*) FROM failed_responses")
+        total_failures = 0
+        survey_failures._value.set(total_failures)
+
+        # === Duration (sum of time taken per survey if stored) ===
+        # If not logged in DB, keep as runtime only.
+        total_duration = 0
+        survey_duration._value.set(total_duration)
+
+        # === DB active connections (snapshot, not cumulative) ===
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM sys.dm_exec_sessions
+            WHERE database_id = DB_ID(?)
+        """, (Config.DB_NAME,))
+        current_conns = cursor.fetchone()[0] or 0
+        active_connections._value.set(current_conns)
+
+        conn.close()
+
+        logger.info(f"Metrics synced from DB: {total_responses} responses, "
+                    f"{total_active} active surveys, "
+                    f"{total_questions} questions, "
+                    f"{total_failures} failures, "
+                    f"{total_duration}s duration, "
+                    f"{current_conns} active connections")
+
+    except Exception as e:
+        logger.error(f"Failed to sync metrics with DB: {e}")
+        
 if __name__ == "__main__":
-    # Initialize database
     logger.info("Starting Patient Survey Application")
     initialize_database()
-    
-    # Run Flask app - make host configurable via environment variable
-    host = os.environ.get('FLASK_HOST', '127.0.0.1')  # Default to localhost for security
+
+    # Sync metrics with DB for all-time state
+    sync_metrics_with_db()
+
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')
     port = int(os.environ.get('FLASK_PORT', 8001))
-    
     logger.info(f"Starting server on {host}:{port}")
     app.run(host=host, port=port, debug=False)
+
