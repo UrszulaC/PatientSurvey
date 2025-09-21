@@ -539,13 +539,14 @@ if __name__ == "__main__":
     # Initialize database (tables, default survey/questions)
     initialize_database()
     
-    # Initialize Prometheus counters from existing database responses
-    initialize_metrics_from_db()
+    # Sync Prometheus counters with existing DB data
+    sync_metrics_with_db()
     
     # Run Flask app
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
     port = int(os.environ.get('FLASK_PORT', 8001))
     logger.info(f"Starting server on {host}:{port}")
     app.run(host=host, port=port, debug=False)
+
 
 
