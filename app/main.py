@@ -1,5 +1,3 @@
-main
-
 import os
 import logging
 import json
@@ -421,10 +419,3 @@ if __name__ == "__main__":
     
     logger.info(f"Starting server on {host}:{port}")
     app.run(host=host, port=port, debug=False)
-
-
-
-
-
-
-
