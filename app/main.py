@@ -245,6 +245,34 @@ def index():
     response.headers['Expires'] = '0'
     return response
 
+@app.route('/api/questions', methods=['GET'])
+def get_questions():
+    try:
+        conn = get_db_connection(database_name=Config.DB_NAME)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT question_id, question_text, question_type, is_required, options
+            FROM questions
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        questions = []
+        for row in rows:
+            questions.append({
+                'question_id': row[0],
+                'question_text': row[1],
+                'question_type': row[2],
+                'is_required': bool(row[3]),
+                'options': json.loads(row[4]) if row[4] else None
+            })
+
+        return jsonify(questions), 200
+    except Exception as e:
+        logger.error(f"Failed to fetch questions: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/survey', methods=['POST'])
 def conduct_survey_api():
     start_time = time.time()
