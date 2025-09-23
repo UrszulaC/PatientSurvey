@@ -256,19 +256,15 @@ def conduct_survey_api():
             """, (response_id, answer['question_id'], answer['answer_value']))
         
         conn.commit()
-        
-        # === PERSISTENT COUNTING: Get total from database ===
-        cursor.execute("SELECT COUNT(*) FROM responses")
-        total_submissions = cursor.fetchone()[0]
-        survey_counter.set(total_submissions)  # Set gauge to actual database count
-        # === END PERSISTENT COUNTING ===
-        
         conn.close()
         active_connections.dec()
+        
+        # Update metrics - SIMPLE INCREMENTS (remove the database counting approach)
+        survey_counter.inc()  # Simple increment
         survey_duration.inc(time.time() - start_time)
         
-        logger.info(f"New survey response recorded (ID: {response_id}, Total: {total_submissions})")
-        return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id, 'total_submissions': total_submissions}), 201
+        logger.info(f"New survey response recorded (ID: {response_id})")
+        return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
         
     except Exception as e:
         survey_failures.inc()
@@ -277,7 +273,7 @@ def conduct_survey_api():
             conn.close()
             active_connections.dec()
         return jsonify({'error': str(e)}), 500
-
+        
 @app.route('/api/responses', methods=['GET'])
 def get_responses():
     """API endpoint to get all survey responses"""
