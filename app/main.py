@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__, template_folder='../templates')
 
-# Prometheus metrics
-survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
+# === FIXED METRICS SECTION ===
+# Use Gauge for persistent counting, Counter for others
+survey_counter = Gauge('patient_survey_submissions_total', 'Total number of patient surveys submitted')
 survey_duration = Counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
 survey_failures = Counter('patient_survey_failures_total', 'Total failed survey submissions')
 active_surveys = Counter('active_surveys_total', 'Number of active surveys initialized')
