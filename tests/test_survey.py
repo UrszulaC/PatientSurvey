@@ -220,14 +220,20 @@ class TestPatientSurveySystem(unittest.TestCase):
                                   json={'wrong_key': []},
                                   content_type='application/json')
         self.assertEqual(response.status_code, 400)
-
     def test_get_responses_endpoint(self):
         """Test GET /api/responses endpoint"""
-        # First submit a survey to have data to retrieve
+        # Ensure we have valid question IDs
+        self.assertIsNotNone(self.questions, "Questions mapping should not be None")
+        self.assertGreater(len(self.questions), 0, "Should have questions available")
+        
+        # Use the first two question IDs that are available
+        question_ids = list(self.questions.values())[:2]
+        self.assertEqual(len(question_ids), 2, "Should have at least 2 questions")
+        
         survey_data = {
             'answers': [
-                {'question_id': self.questions['Date of visit?'], 'answer_value': '2023-01-01'},
-                {'question_id': self.questions['Patient name?'], 'answer_value': 'John Doe'}
+                {'question_id': question_ids[0], 'answer_value': '2023-01-01'},
+                {'question_id': question_ids[1], 'answer_value': 'John Doe'}
             ]
         }
         
@@ -241,7 +247,8 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertIsInstance(data, dict)
-        self.assertGreater(len(data), 0)  # Should have responses now
+        self.assertGreater(len(data), 0)
+    
 
     def test_get_responses_empty(self):
         """Test GET /api/responses endpoint works without crashing"""
