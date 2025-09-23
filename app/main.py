@@ -16,29 +16,15 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, template_folder='../templates')
 
 # Prometheus metrics
-def get_or_create_counter(name, description, registry=None):
-    try:
-        return Counter(name, description, registry=registry)
-    except ValueError:
-        # Metric already exists, return the existing one
-        from prometheus_client import REGISTRY
-        return REGISTRY._names_to_collectors[name]
+survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
+survey_duration = Counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
+survey_failures = Counter('patient_survey_failures_total', 'Total failed survey submissions')
+active_surveys = Counter('active_surveys_total', 'Number of active surveys initialized')
+question_count = Counter('survey_questions_total', 'Total number of questions initialized')
 
-def get_or_create_histogram(name, description, labelnames=(), registry=None):
-    try:
-        return Histogram(name, description, labelnames=labelnames, registry=registry)
-    except ValueError:
-        # Metric already exists, return the existing one
-        from prometheus_client import REGISTRY
-        return REGISTRY._names_to_collectors[name]
-
-def get_or_create_gauge(name, description, registry=None):
-    try:
-        return Gauge(name, description, registry=registry)
-    except ValueError:
-        # Metric already exists, return the existing one
-        from prometheus_client import REGISTRY
-        return REGISTRY._names_to_collectors[name]
+# Additional metrics for web service
+request_duration = Histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
+active_connections = Gauge('db_active_connections', 'Number of active database connections')
 
 survey_counter = get_or_create_counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
 survey_duration = get_or_create_counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
