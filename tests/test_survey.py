@@ -17,7 +17,10 @@ class TestPatientSurveySystem(unittest.TestCase):
     def setUp(self):
         """Set up test environment before each test."""
         try:
-            # Import the app from main
+            # CLEAR PROMETHEUS REGISTRY FIRST - THIS FIXES THE DUPLICATION ERROR
+            self._clear_prometheus_registry()
+            
+            # Import the app from main AFTER clearing registry
             from app.main import app
             
             # Set testing mode
@@ -38,7 +41,17 @@ class TestPatientSurveySystem(unittest.TestCase):
         except Exception as e:
             logging.error(f"Test setup failed: {e}")
             raise
-    
+
+    def _clear_prometheus_registry(self):
+        """Clear Prometheus registry to avoid metric duplication between tests."""
+        from prometheus_client import REGISTRY
+        # Get a copy of collectors to avoid modification during iteration
+        collectors = list(REGISTRY._collector_to_names.keys())
+        for collector in collectors:
+            try:
+                REGISTRY.unregister(collector)
+            except KeyError:
+                pass  # Collector already unregistered
 
     def _clean_database(self):
         """Clean all test data."""
