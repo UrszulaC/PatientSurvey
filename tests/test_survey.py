@@ -222,32 +222,35 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
     def test_get_responses_endpoint(self):
         """Test GET /api/responses endpoint"""
-        # Ensure we have valid question IDs
+        # Ensure we have valid question IDs for ALL required questions
         self.assertIsNotNone(self.questions, "Questions mapping should not be None")
         self.assertGreater(len(self.questions), 0, "Should have questions available")
         
-        # Use the first two question IDs that are available
-        question_ids = list(self.questions.values())[:2]
-        self.assertEqual(len(question_ids), 2, "Should have at least 2 questions")
-        
+        # Create a complete survey submission with all required questions
         survey_data = {
             'answers': [
-                {'question_id': question_ids[0], 'answer_value': '2023-01-01'},
-                {'question_id': question_ids[1], 'answer_value': 'John Doe'}
+                {'question_id': self.questions['Date of visit?'], 'answer_value': '2023-01-01'},
+                {'question_id': self.questions['Which site did you visit?'], 'answer_value': 'Princess Alexandra Hospital'},
+                {'question_id': self.questions['Patient name?'], 'answer_value': 'John Doe'},
+                {'question_id': self.questions['How easy was it to get an appointment?'], 'answer_value': 'Neutral'},
+                {'question_id': self.questions['Were you properly informed about your procedure?'], 'answer_value': 'Yes'},
+                {'question_id': self.questions['Overall satisfaction (1-5)'], 'answer_value': '5'}
+                # Optional question omitted intentionally to test partial submission
             ]
         }
         
         submit_response = self.client.post('/api/survey', 
                                          json=survey_data,
                                          content_type='application/json')
-        self.assertEqual(submit_response.status_code, 201)
-        
-        # Test the endpoint
-        response = self.client.get('/api/responses')
-        self.assertEqual(response.status_code, 200)
-        data = response.get_json()
-        self.assertIsInstance(data, dict)
-        self.assertGreater(len(data), 0)
+        self.assertEqual(submit_response.status_code, 201, 
+                        f"Survey submission failed: {submit_response.get_json()}")
+    
+    # Test the endpoint
+    response = self.client.get('/api/responses')
+    self.assertEqual(response.status_code, 200)
+    data = response.get_json()
+    self.assertIsInstance(data, dict)
+    self.assertGreater(len(data), 0)
     
 
     def test_get_responses_empty(self):
