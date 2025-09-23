@@ -26,10 +26,9 @@ class TestPatientSurveySystem(unittest.TestCase):
             self.app = app
             self.client = self.app.test_client()
 
-            
             # Connect to the test database
             self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
-            self.cursor = self.conn.cursor()  # Fixed typo
+            self.cursor = self.conn.cursor()
 
             # Clean any existing data
             self._clean_database()
@@ -107,6 +106,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         # Create questions mapping
         self.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ?", (self.survey_id,))
         self.questions = {row[1]: row[0] for row in self.cursor.fetchall()}
+        print(f"DEBUG: Created questions mapping: {self.questions}")
 
     def _ensure_tables_exist(self):
         """Ensure the required tables exist with the exact schema from main.py."""
@@ -227,6 +227,8 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.assertIsNotNone(self.questions, "Questions mapping should not be None")
         self.assertGreater(len(self.questions), 0, "Should have questions available")
         
+        print(f"DEBUG: Available questions: {self.questions}")
+        
         # Create a complete survey submission with all required questions
         survey_data = {
             'answers': [
@@ -240,9 +242,14 @@ class TestPatientSurveySystem(unittest.TestCase):
             ]
         }
         
+        print(f"DEBUG: Submitting survey data: {survey_data}")
+        
         submit_response = self.client.post('/api/survey', 
                                          json=survey_data,
                                          content_type='application/json')
+        print(f"DEBUG: Submit response status: {submit_response.status_code}")
+        print(f"DEBUG: Submit response data: {submit_response.get_json()}")
+        
         self.assertEqual(submit_response.status_code, 201, 
                         f"Survey submission failed: {submit_response.get_json()}")
         
