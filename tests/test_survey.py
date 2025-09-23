@@ -220,6 +220,7 @@ class TestPatientSurveySystem(unittest.TestCase):
                                   json={'wrong_key': []},
                                   content_type='application/json')
         self.assertEqual(response.status_code, 400)
+
     def test_get_responses_endpoint(self):
         """Test GET /api/responses endpoint"""
         # Ensure we have valid question IDs for ALL required questions
@@ -244,14 +245,13 @@ class TestPatientSurveySystem(unittest.TestCase):
                                          content_type='application/json')
         self.assertEqual(submit_response.status_code, 201, 
                         f"Survey submission failed: {submit_response.get_json()}")
-    
-    # Test the endpoint
-    response = self.client.get('/api/responses')
-    self.assertEqual(response.status_code, 200)
-    data = response.get_json()
-    self.assertIsInstance(data, dict)
-    self.assertGreater(len(data), 0)
-    
+        
+        # Test the endpoint
+        response = self.client.get('/api/responses')
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertIsInstance(data, dict)
+        self.assertGreater(len(data), 0)
 
     def test_get_responses_empty(self):
         """Test GET /api/responses endpoint works without crashing"""
