@@ -20,13 +20,20 @@ class TestPatientSurveySystem(unittest.TestCase):
             # CLEAR PROMETHEUS REGISTRY FIRST - THIS FIXES THE DUPLICATION ERROR
             self._clear_prometheus_registry()
             
-            # Create app instance
+            # Create app instance with TESTING configuration
             app = create_app()
             app.config['TESTING'] = True
+            app.config['DB_NAME'] = Config.DB_TEST_NAME  # Force test database
+            
+            # Patch the get_db_connection to use test database
+            self.get_db_connection_patcher = patch('app.main.get_db_connection')
+            self.mock_get_db_connection = self.get_db_connection_patcher.start()
+            self.mock_get_db_connection.side_effect = lambda database_name=None: get_db_connection(database_name or Config.DB_TEST_NAME)
+            
             self.app = app
             self.client = self.app.test_client()
 
-            # Connect to the test database
+            # Connect to the test database for test setup
             self.conn = get_db_connection(database_name=Config.DB_TEST_NAME)
             self.cursor = self.conn.cursor()
 
@@ -40,140 +47,17 @@ class TestPatientSurveySystem(unittest.TestCase):
             logging.error(f"Test setup failed: {e}")
             raise
 
-    def _clear_prometheus_registry(self):
-        """Clear Prometheus registry to avoid metric duplication between tests."""
-        from prometheus_client import REGISTRY
-        # Get a copy of collectors to avoid modification during iteration
-        collectors = list(REGISTRY._collector_to_names.keys())
-        for collector in collectors:
-            try:
-                REGISTRY.unregister(collector)
-            except KeyError:
-                pass  # Collector already unregistered
-
-    def _clean_database(self):
-        """Clean all test data."""
-        # Delete in correct order to respect foreign key constraints
-        tables = ['answers', 'responses', 'questions', 'surveys']
-        for table in tables:
-            try:
-                self.cursor.execute(f"DELETE FROM {table}")
-                print(f"Deleted from {table}: {self.cursor.rowcount} rows")
-            except pyodbc.Error as e:
-                print(f"Note: Error deleting {table} (might not exist): {e}")
-        self.conn.commit()
-
-    def _create_default_survey(self):
-        """Create the default survey and questions matching the actual schema."""
-        # First check if tables exist, if not create them
-        self._ensure_tables_exist()
-        
-        # Insert default survey
-        self.cursor.execute(
-            "INSERT INTO surveys (title, description, is_active) VALUES (?, ?, ?)",
-            ('Patient Experience Survey', 'Survey to collect feedback', 1)
-        )
-        self.conn.commit()
-        
-        # Get the survey ID
-        self.cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
-        survey_row = self.cursor.fetchone()
-        self.survey_id = survey_row[0]
-        
-        # Insert questions - matching the exact schema from main.py
-        questions = [
-            {'text': 'Date of visit?', 'type': 'text', 'required': True, 'options': None},
-            {'text': 'Which site did you visit?', 'type': 'multiple_choice', 'required': True,
-             'options': ['Princess Alexandra Hospital', 'St Margaret\'s Hospital', 'Herts & Essex Hospital']},
-            {'text': 'Patient name?', 'type': 'text', 'required': True, 'options': None},
-            {'text': 'How easy was it to get an appointment?', 'type': 'multiple_choice', 'required': True,
-             'options': ['Very difficult', 'Somewhat difficult', 'Neutral', 'Easy', 'Very easy']},
-            {'text': 'Were you properly informed about your procedure?', 'type': 'multiple_choice', 'required': True,
-             'options': ['Yes', 'No', 'Partially']},
-            {'text': 'What went well during your visit?', 'type': 'text', 'required': False, 'options': None},
-            {'text': 'Overall satisfaction (1-5)', 'type': 'multiple_choice', 'required': True,
-             'options': ['1', '2', '3', '4', '5']}
-        ]
-        
-        for q in questions:
-            self.cursor.execute(
-                "INSERT INTO questions (survey_id, question_text, question_type, is_required, options) VALUES (?, ?, ?, ?, ?)",
-                (self.survey_id, q['text'], q['type'], q['required'], json.dumps(q['options']) if q['options'] else None)
-            )
-        
-        self.conn.commit()
-        
-        # Create questions mapping
-        self.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ?", (self.survey_id,))
-        self.questions = {row[1]: row[0] for row in self.cursor.fetchall()}
-        print(f"DEBUG: Created questions mapping: {self.questions}")
-
-    def _ensure_tables_exist(self):
-        """Ensure the required tables exist with the exact schema from main.py."""
-        try:
-            # Create surveys table (if not exists)
-            self.cursor.execute("""
-                IF OBJECT_ID('surveys', 'U') IS NULL
-                CREATE TABLE surveys (
-                    survey_id INT IDENTITY(1,1) PRIMARY KEY,
-                    title NVARCHAR(255) NOT NULL,
-                    description NVARCHAR(MAX),
-                    created_at DATETIME DEFAULT GETDATE(),
-                    is_active BIT DEFAULT 1
-                )
-            """)
-
-            # Create questions table (if not exists)
-            self.cursor.execute("""
-                IF OBJECT_ID('questions', 'U') IS NULL
-                CREATE TABLE questions (
-                    question_id INT IDENTITY(1,1) PRIMARY KEY,
-                    survey_id INT NOT NULL,
-                    question_text NVARCHAR(MAX) NOT NULL,
-                    question_type NVARCHAR(50) NOT NULL,
-                    is_required BIT DEFAULT 0,
-                    options NVARCHAR(MAX),
-                    FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
-                )
-            """)
-
-            # Create responses table (if not exists)
-            self.cursor.execute("""
-                IF OBJECT_ID('responses', 'U') IS NULL
-                CREATE TABLE responses (
-                    response_id INT IDENTITY(1,1) PRIMARY KEY,
-                    survey_id INT NOT NULL,
-                    submitted_at DATETIME DEFAULT GETDATE(),
-                    FOREIGN KEY (survey_id) REFERENCES surveys(survey_id) ON DELETE CASCADE
-                )
-            """)
-
-            # Create answers table (if not exists)
-            self.cursor.execute("""
-                IF OBJECT_ID('answers', 'U') IS NULL
-                CREATE TABLE answers (
-                    answer_id INT IDENTITY(1,1) PRIMARY KEY,
-                    response_id INT NOT NULL,
-                    question_id INT NOT NULL,
-                    answer_value NVARCHAR(MAX),
-                    FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE,
-                    FOREIGN KEY (question_id) REFERENCES questions(question_id) ON DELETE NO ACTION
-                )
-            """)
-            
-            self.conn.commit()
-            
-        except pyodbc.Error as e:
-            print(f"Note: Error creating tables (might already exist): {e}")
-            self.conn.rollback()
-
     def tearDown(self):
         """Close connections after each test."""
+        if hasattr(self, 'get_db_connection_patcher'):
+            self.get_db_connection_patcher.stop()
+            
         if hasattr(self, 'cursor') and self.cursor:
             self.cursor.close()
         if hasattr(self, 'conn') and self.conn:
             self.conn.close()
 
+    # ... rest of your test methods remain the same ...
     # --- API Endpoint Tests ---
     def test_submit_survey_endpoint(self):
         """Test POST /api/survey endpoint"""
