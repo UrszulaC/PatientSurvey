@@ -26,16 +26,7 @@ question_count = Counter('survey_questions_total', 'Total number of questions in
 # Additional metrics for web service
 request_duration = Histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
 active_connections = Gauge('db_active_connections', 'Number of active database connections')
-
-survey_counter = get_or_create_counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
-survey_duration = get_or_create_counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
-survey_failures = get_or_create_counter('patient_survey_failures_total', 'Total failed survey submissions')
-active_surveys = get_or_create_counter('active_surveys_total', 'Number of active surveys initialized')
-question_count = get_or_create_counter('survey_questions_total', 'Total number of questions initialized')
-
-# Additional metrics for web service
-request_duration = get_or_create_histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
-active_connections = get_or_create_gauge('db_active_connections', 'Number of active database connections')
+# === END FIXED METRICS SECTION ===
 
 def create_survey_tables(conn):
     """Create all necessary tables for surveys safely (if not exist)"""
@@ -266,15 +257,19 @@ def conduct_survey_api():
             """, (response_id, answer['question_id'], answer['answer_value']))
         
         conn.commit()
+        
+        # === PERSISTENT COUNTING: Get total from database ===
+        cursor.execute("SELECT COUNT(*) FROM responses")
+        total_submissions = cursor.fetchone()[0]
+        survey_counter.set(total_submissions)  # Set gauge to actual database count
+        # === END PERSISTENT COUNTING ===
+        
         conn.close()
         active_connections.dec()
-        
-        # Update metrics
-        survey_counter.inc()
         survey_duration.inc(time.time() - start_time)
         
-        logger.info(f"New survey response recorded (ID: {response_id})")
-        return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
+        logger.info(f"New survey response recorded (ID: {response_id}, Total: {total_submissions})")
+        return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id, 'total_submissions': total_submissions}), 201
         
     except Exception as e:
         survey_failures.inc()
