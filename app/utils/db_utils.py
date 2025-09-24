@@ -4,48 +4,34 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import pyodbc
-from app.config import Config
-import logging
-
-logger = logging.getLogger(__name__)
-
 def get_db_connection(database_name=None):
     """
     Establishes a pyodbc connection to the SQL Server.
     If database_name is provided, connects directly to that database.
-    Otherwise, uses the appropriate database based on context.
+    Otherwise, connects without specifying a database (e.g., to master)
+    which is useful for DDL operations like CREATE/DROP DATABASE.
     """
     try:
-        # If no database_name provided, determine which one to use
+        # Check if we're in testing mode and use test database if no specific database is provided
         if database_name is None:
-            # Try to detect if we're in a test environment
-            import sys
-            if 'unittest' in sys.modules or 'pytest' in sys.argv[0]:
-                # We're likely in a test environment
-                database_name = Config.DB_TEST_NAME
-            else:
-                # Production environment
+            try:
+                from flask import current_app
+                if current_app and current_app.config.get('TESTING'):
+                    database_name = Config.DB_TEST_NAME
+                else:
+                    database_name = Config.DB_NAME
+            except RuntimeError:
+                # No app context, use production database
                 database_name = Config.DB_NAME
         
-        # Build connection string
-        conn_string = (
-            f"DRIVER={Config.ODBC_DRIVER};"
-            f"SERVER={Config.DB_HOST},1433;"
-            f"UID={Config.DB_USER};"
-            f"PWD={Config.DB_PASSWORD};"
-            f"Encrypt=yes;"
-            f"TrustServerCertificate=no;"
-            f"Connection Timeout=30;"
-        )
-        
+        conn_string = Config.DB_CONNECTION_STRING
         if database_name:
             conn_string += f"DATABASE={database_name};"
 
+        # pyodbc connections default to autocommit=False.
+        # We will manage commits explicitly in the decorated functions.
         connection = pyodbc.connect(conn_string)
-        logger.info(f"Connected to database: {database_name}")
         return connection
-        
     except pyodbc.Error as ex:
         sqlstate = ex.args[0]
         logger.error(f"Database connection error: {sqlstate} - {ex}")

@@ -203,14 +203,19 @@ def conduct_survey_api():
             survey_failures.inc()
             return jsonify({'error': 'No JSON data provided or missing answers field'}), 400
         
-        # Determine which database to use based on testing mode
-        if app.config.get('TESTING'):
-            database_name = Config.DB_TEST_NAME
-        else:
-            database_name = Config.DB_NAME
-            
-        # Connect to database
-        conn = get_db_connection(database_name=database_name)
+        # Validate that answers is a list
+        if not isinstance(data.get('answers'), list):
+            survey_failures.inc()
+            return jsonify({'error': 'Answers must be a list'}), 400
+        
+        # Validate each answer has required fields
+        for answer in data['answers']:
+            if not isinstance(answer, dict) or 'question_id' not in answer or 'answer_value' not in answer:
+                survey_failures.inc()
+                return jsonify({'error': 'Each answer must have question_id and answer_value'}), 400
+        
+        # Connect to database - let get_db_connection decide which DB to use
+        conn = get_db_connection()
         active_connections.inc()
         cursor = conn.cursor()
         
@@ -255,15 +260,12 @@ def conduct_survey_api():
         active_connections.dec()
         
         # Update metrics - SIMPLE INCREMENTS (remove the database counting approach)
-        logger.info("=== DEBUG: Before metric increment ===")
         survey_counter.inc()  # Simple increment
-        logger.info("=== DEBUG: After survey_counter.inc() ===")
         survey_duration.inc(time.time() - start_time)
-        logger.info("=== DEBUG: After survey_duration.inc() ===")
         
         logger.info(f"New survey response recorded (ID: {response_id})")
         return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
-          
+        
     except Exception as e:
         survey_failures.inc()
         logger.error(f"Survey submission failed: {e}")
