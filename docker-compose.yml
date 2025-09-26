@@ -21,7 +21,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infra/monitoring/prometheus-local.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus  # Persistent storage
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
