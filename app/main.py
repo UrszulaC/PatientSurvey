@@ -12,9 +12,8 @@ from app.config import Config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Flask app
-app = Flask(__name__, template_folder='../templates')
-
+# Create a blueprint instead of a Flask app directly
+main_bp = Blueprint('main', __name__, template_folder='../templates')
 
 # Simple direct metric creation - REPLACE your existing metric definitions
 survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
@@ -184,14 +183,14 @@ def initialize_database():
         logger.error(f"Database initialization failed: {e}")
         raise
 
-# Flask Routes
-@app.route('/')
+# Flask Routes - CHANGE all @app.route to @main_bp.route
+@main_bp.route('/')
 def index():
     """Home page"""
     with request_duration.labels(method='GET', endpoint='/').time():
         return render_template('index.html')
 
-@app.route('/api/survey', methods=['POST'])
+@main_bp.route('/api/survey', methods=['POST'])
 def conduct_survey_api():
     """API endpoint to submit a survey"""
     start_time = time.time()
@@ -274,7 +273,7 @@ def conduct_survey_api():
             active_connections.dec()
         return jsonify({'error': str(e)}), 500
         
-@app.route('/api/responses', methods=['GET'])
+@main_bp.route('/api/responses', methods=['GET'])
 def get_responses():
     """API endpoint to get all survey responses"""
     with request_duration.labels(method='GET', endpoint='/api/responses').time():
@@ -322,7 +321,7 @@ def get_responses():
                 active_connections.dec()
             return jsonify({'error': str(e)}), 500
 
-@app.route('/api/questions', methods=['GET'])
+@main_bp.route('/api/questions', methods=['GET'])
 def get_questions():
     """API endpoint to get survey questions"""
     with request_duration.labels(method='GET', endpoint='/api/questions').time():
@@ -365,7 +364,7 @@ def get_questions():
                 active_connections.dec()
             return jsonify({'error': str(e)}), 500
 
-@app.route('/health')
+@main_bp.route('/health')
 def health_check():
     """Health check endpoint"""
     try:
@@ -380,18 +379,24 @@ def health_check():
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}), 500
 
-@app.route('/metrics')
+@main_bp.route('/metrics')
 def metrics():
     """Prometheus metrics endpoint"""
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
+# Update the main execution block
 if __name__ == "__main__":
+    from app import create_app
+    
+    # Create the Flask app using the factory
+    app = create_app()
+    
     # Initialize database
     logger.info("Starting Patient Survey Application")
     initialize_database()
     
     # Run Flask app - make host configurable via environment variable
-    host = os.environ.get('FLASK_HOST', '127.0.0.1')  # Default to localhost for security
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')
     port = int(os.environ.get('FLASK_PORT', 8001))
     
     logger.info(f"Starting server on {host}:{port}")
