@@ -3,7 +3,7 @@ import logging
 import json
 import time
 import pyodbc
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, Blueprint
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram
 from app.utils.db_utils import get_db_connection
 from app.config import Config
