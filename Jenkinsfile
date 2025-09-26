@@ -8,6 +8,7 @@ pipeline {
         TF_STATE_STORAGE = 'mypatientsurveytfstate'
         TF_STATE_CONTAINER = 'tfstate'
         TF_STATE_KEY = 'patient_survey.tfstate'
+        GRAFANA_PASSWORD = credentials('GRAFANA_PASSWORD') 
     }
 
     options {
