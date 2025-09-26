@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 from dotenv import load_dotenv
 from app.config import Config
 from app.utils.db_utils import get_db_connection
-from app import create_app
+from app import create_app  # Import the app factory
 
 # Load .env before using Config
 load_dotenv()
@@ -20,12 +20,11 @@ class TestPatientSurveySystem(unittest.TestCase):
             # CLEAR PROMETHEUS REGISTRY FIRST - THIS FIXES THE DUPLICATION ERROR
             self._clear_prometheus_registry()
             
-            # Import the app from main AFTER clearing registry
-            from app.main import app
+            # Create the app using the factory function
+            self.app = create_app()
             
             # Set testing mode
-            app.config['TESTING'] = True
-            self.app = app
+            self.app.config['TESTING'] = True
             self.client = self.app.test_client()
             
             # Connect to the test database
