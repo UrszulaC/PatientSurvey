@@ -5,7 +5,7 @@ services:
     build: .
     container_name: myapp
     ports:
-      - "9100:9100"    # Keep existing port for external access
+      - "9100:9100"  
     restart: always
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9100/metrics"]
@@ -21,7 +21,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./infra/monitoring/prometheus-local.yml:/etc/prometheus/prometheus.yml
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus  # Persistent storage
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -39,7 +39,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
     volumes:
       - grafana_data:/var/lib/grafana
     restart: always
