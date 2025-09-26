@@ -12,6 +12,8 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    networks:
+      - monitoring-net
 
   prometheus:
     image: prom/prometheus
@@ -20,4 +22,38 @@ services:
       - "9090:9090"
     volumes:
       - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus  # Add persistent volume
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'  # Keep data for 30 days
     restart: always
+    networks:
+      - monitoring-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana  # Persistent volume for Grafana
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning  # For automated setup
+    restart: always
+    networks:
+      - monitoring-net
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:  # Named volume for Prometheus persistence
+  grafana_data:     # Named volume for Grafana persistence
+
+networks:
+  monitoring-net:
+    driver: bridge
