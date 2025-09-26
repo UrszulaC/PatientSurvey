@@ -1,0 +1,39 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Patient Survey Metrics",
+    "tags": ["patient-survey"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Survey Submissions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "patient_survey_submissions_total",
+            "legendFormat": "Total Surveys",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Survey Submission Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(patient_survey_submissions_total[5m])",
+            "legendFormat": "Submissions/sec",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      }
+    ],
+    "time": {"from": "now-6h", "to": "now"},
+    "version": 1
+  },
+  "overwrite": true
+}
