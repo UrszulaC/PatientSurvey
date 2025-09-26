@@ -80,6 +80,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         self.cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
         survey_row = self.cursor.fetchone()
         self.survey_id = survey_row[0]
+        print(f"DEBUG: Created survey with ID: {self.survey_id}")  # ADD THIS LINE
         
         # Insert questions - matching the exact schema from main.py
         questions = [
@@ -96,17 +97,21 @@ class TestPatientSurveySystem(unittest.TestCase):
              'options': ['1', '2', '3', '4', '5']}
         ]
         
-        for q in questions:
+        for i, q in enumerate(questions):
             self.cursor.execute(
                 "INSERT INTO questions (survey_id, question_text, question_type, is_required, options) VALUES (?, ?, ?, ?, ?)",
                 (self.survey_id, q['text'], q['type'], q['required'], json.dumps(q['options']) if q['options'] else None)
             )
+            print(f"DEBUG: Inserted question {i+1}: {q['text']}")  # ADD THIS LINE
         
         self.conn.commit()
         
         # Create questions mapping
         self.cursor.execute("SELECT question_id, question_text FROM questions WHERE survey_id = ?", (self.survey_id,))
-        self.questions = {row[1]: row[0] for row in self.cursor.fetchall()}
+        questions_data = self.cursor.fetchall()
+        print(f"DEBUG: Retrieved {len(questions_data)} questions from database")  # ADD THIS LINE
+        self.questions = {row[1]: row[0] for row in questions_data}
+        print(f"DEBUG: Questions mapping: {self.questions}")  # ADD THIS LINE
 
     def _ensure_tables_exist(self):
         """Ensure the required tables exist with the exact schema from main.py."""
