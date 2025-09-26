@@ -3,10 +3,27 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # Local development target (for docker-compose)
+  - job_name: 'patient-survey-local'
+    static_configs:
+      - targets: ['app:9100']  # Internal docker network
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Keep your existing external Azure targets
   - job_name: 'myapp-node'
     static_configs:
       - targets: ['survey-app.uksouth.azurecontainer.io:9100']
+    scrape_interval: 30s
+    metrics_path: /metrics
 
   - job_name: 'patient-survey-app'
     static_configs:
       - targets: ['survey-app.uksouth.azurecontainer.io:8001']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
