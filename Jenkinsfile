@@ -285,6 +285,7 @@ pipeline {
             -var="docker_user=${TF_VAR_docker_user}" \
             -var="docker_password=${TF_VAR_docker_password}" \
             -var="prometheus_image_tag=${BUILD_NUMBER}" \
+            -var="app_image_tag=${BUILD_NUMBER}" \
             -var="resource_group_name=MyPatientSurveyRG" \
             -var="location=uksouth"
         
