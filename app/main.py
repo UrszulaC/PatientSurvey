@@ -3,7 +3,7 @@ import logging
 import json
 import time
 import pyodbc
-from flask import Flask, request, jsonify, render_template, Blueprint
+from flask import Flask, request, jsonify, render_template
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram
 from app.utils.db_utils import get_db_connection
 from app.config import Config
@@ -12,10 +12,10 @@ from app.config import Config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create a blueprint instead of a Flask app directly
-main_bp = Blueprint('main', __name__, template_folder='../templates')
+# Initialize Flask app directly
+app = Flask(__name__, template_folder='../templates')
 
-# Simple direct metric creation - REPLACE your existing metric definitions
+# Simple direct metric creation
 survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
 survey_duration = Counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
 survey_failures = Counter('patient_survey_failures_total', 'Total failed survey submissions')
@@ -183,14 +183,14 @@ def initialize_database():
         logger.error(f"Database initialization failed: {e}")
         raise
 
-# Flask Routes - CHANGE all @app.route to @main_bp.route
-@main_bp.route('/')
+# Flask Routes - using @app.route instead of @main_bp.route
+@app.route('/')
 def index():
     """Home page"""
     with request_duration.labels(method='GET', endpoint='/').time():
         return render_template('index.html')
 
-@main_bp.route('/api/survey', methods=['POST'])
+@app.route('/api/survey', methods=['POST'])
 def conduct_survey_api():
     """API endpoint to submit a survey"""
     start_time = time.time()
@@ -213,8 +213,8 @@ def conduct_survey_api():
                 survey_failures.inc()
                 return jsonify({'error': 'Each answer must have question_id and answer_value'}), 400
         
-        # Connect to database - let get_db_connection decide which DB to use
-        conn = get_db_connection()
+        # Connect to database - explicit database name
+        conn = get_db_connection(database_name=Config.DB_NAME)
         active_connections.inc()
         cursor = conn.cursor()
         
@@ -258,9 +258,12 @@ def conduct_survey_api():
         conn.close()
         active_connections.dec()
         
-        # Update metrics - SIMPLE INCREMENTS (remove the database counting approach)
+        # Update metrics with debug logging (NO DUPLICATES)
+        logger.info("=== DEBUG: Before metric increment ===")
         survey_counter.inc()  # Simple increment
+        logger.info("=== DEBUG: After survey_counter.inc() ===")
         survey_duration.inc(time.time() - start_time)
+        logger.info("=== DEBUG: After survey_duration.inc() ===")
         
         logger.info(f"New survey response recorded (ID: {response_id})")
         return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
@@ -272,13 +275,13 @@ def conduct_survey_api():
             conn.close()
             active_connections.dec()
         return jsonify({'error': str(e)}), 500
-        
-@main_bp.route('/api/responses', methods=['GET'])
+
+@app.route('/api/responses', methods=['GET'])
 def get_responses():
     """API endpoint to get all survey responses"""
     with request_duration.labels(method='GET', endpoint='/api/responses').time():
         try:
-            conn = get_db_connection()
+            conn = get_db_connection(database_name=Config.DB_NAME)
             active_connections.inc()
             cursor = conn.cursor()
             
@@ -321,12 +324,12 @@ def get_responses():
                 active_connections.dec()
             return jsonify({'error': str(e)}), 500
 
-@main_bp.route('/api/questions', methods=['GET'])
+@app.route('/api/questions', methods=['GET'])
 def get_questions():
     """API endpoint to get survey questions"""
     with request_duration.labels(method='GET', endpoint='/api/questions').time():
         try:
-            conn = get_db_connection()
+            conn = get_db_connection(database_name=Config.DB_NAME)
             active_connections.inc()
             cursor = conn.cursor()
             
@@ -364,11 +367,11 @@ def get_questions():
                 active_connections.dec()
             return jsonify({'error': str(e)}), 500
 
-@main_bp.route('/health')
+@app.route('/health')
 def health_check():
     """Health check endpoint"""
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(database_name=Config.DB_NAME)
         active_connections.inc()
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
@@ -379,18 +382,12 @@ def health_check():
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}), 500
 
-@main_bp.route('/metrics')
+@app.route('/metrics')
 def metrics():
     """Prometheus metrics endpoint"""
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
-# Update the main execution block
 if __name__ == "__main__":
-    from app import create_app
-    
-    # Create the Flask app using the factory
-    app = create_app()
-    
     # Initialize database
     logger.info("Starting Patient Survey Application")
     initialize_database()
