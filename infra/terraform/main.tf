@@ -22,16 +22,6 @@ variable "app_image_tag" {
   default = "latest"
 }
 
-variable "docker_user" {
-  type    = string
-  default = ""
-}
-
-variable "docker_password" {
-  type    = string
-  sensitive = true
-  default = ""
-}
 
 resource "azurerm_container_group" "survey_app" {
   name                = "survey-app-cg"
