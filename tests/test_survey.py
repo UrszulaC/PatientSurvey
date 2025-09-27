@@ -180,14 +180,19 @@ class TestPatientSurveySystem(unittest.TestCase):
     # --- API Endpoint Tests ---
     def test_submit_survey_endpoint(self):
         """Test POST /api/survey endpoint"""
-        # Use the actual question IDs that were created (first 3 questions)
-        question_ids = list(self.questions.values())[:3]
+        # Get ALL question IDs that were created, not just first 3
+        question_ids = list(self.questions.values())
         
+        # Create answers for ALL required questions (not just first 3)
         survey_data = {
             'answers': [
-                {'question_id': question_ids[0], 'answer_value': '2023-01-01'},
-                {'question_id': question_ids[1], 'answer_value': 'Princess Alexandra Hospital'},
-                {'question_id': question_ids[2], 'answer_value': 'John Doe'}
+                {'question_id': self.questions['Date of visit?'], 'answer_value': '2023-01-01'},
+                {'question_id': self.questions['Which site did you visit?'], 'answer_value': 'Princess Alexandra Hospital'},
+                {'question_id': self.questions['Patient name?'], 'answer_value': 'John Doe'},
+                {'question_id': self.questions['How easy was it to get an appointment?'], 'answer_value': 'Easy'},
+                {'question_id': self.questions['Were you properly informed about your procedure?'], 'answer_value': 'Yes'},
+                {'question_id': self.questions['Overall satisfaction (1-5)'], 'answer_value': '5'}
+                # Optional question 'What went well during your visit?' is skipped
             ]
         }
         
@@ -207,7 +212,7 @@ class TestPatientSurveySystem(unittest.TestCase):
         
         self.cursor.execute("SELECT COUNT(*) FROM answers")
         answers_count = self.cursor.fetchone()[0]
-        self.assertEqual(answers_count, 3)   
+        self.assertEqual(answers_count, 6)  # Updated to 6 answers  
 
     def test_get_responses_empty(self):
         """Test GET /api/responses endpoint works without crashing"""
