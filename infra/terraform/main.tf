@@ -79,9 +79,9 @@ resource "azurerm_container_group" "survey_app" {
   }
 
   # Force recreation when image tag changes
-  lifecycle {
-    create_before_destroy = true
-  }
+  #lifecycle {
+    #create_before_destroy = true
+  #}
 }
 
 output "survey_app_fqdn" {
