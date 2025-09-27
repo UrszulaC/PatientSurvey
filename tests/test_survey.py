@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 from dotenv import load_dotenv
 from app.config import Config
 from app.utils.db_utils import get_db_connection
-from app import create_app  # Import the app factory
+from app.main import app
 
 # Load .env before using Config
 load_dotenv()
