@@ -352,16 +352,16 @@ class TestPatientSurveySystem(unittest.TestCase):
         else:
             # Unexpected behavior
             self.fail(f"Unexpected status code: {response.status_code}")
-
-    def test_database_constraints(self):
-        """Test that database constraints work"""
-        # This should fail due to foreign key constraint
-        with self.assertRaises(pyodbc.Error):
-            self.cursor.execute(
-                "INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
-                (99999, 99999, 'test')  # Non-existent IDs
-            )
-            self.conn.commit()
+    
+        def test_database_constraints(self):
+            """Test that database constraints work"""
+            # This should fail due to foreign key constraint
+            with self.assertRaises(pyodbc.Error):
+                self.cursor.execute(
+                    "INSERT INTO answers (response_id, question_id, answer_value) VALUES (?, ?, ?)",
+                    (99999, 99999, 'test')  # Non-existent IDs
+                )
+                self.conn.commit()
 
     def test_get_questions_endpoint(self):
         """Test GET /api/questions endpoint"""
