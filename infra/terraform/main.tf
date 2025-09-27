@@ -27,8 +27,7 @@ resource "azurerm_container_group" "survey_app" {
 
   container {
     name  = "survey-app"
-    // image = "urszulach/epa-feedback-app:latest"
-    image = "urszulach/epa-feedback-app:${var.app_image_tag}"
+    image = "urszulach/epa-feedback-app:latest"
     cpu   = "0.5"
     memory = "1.0"
 
