@@ -17,11 +17,10 @@ app = Flask(__name__, template_folder='../templates')
 
 # Simple direct metric creation
 survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
-survey_duration = Counter('patient_survey_duration_seconds_total', 'Total time spent completing surveys')
+survey_duration = Histogram('patient_survey_duration_seconds', 'Time spent completing surveys')
 survey_failures = Counter('patient_survey_failures_total', 'Total failed survey submissions')
-active_surveys = Counter('active_surveys_total', 'Number of active surveys initialized')
-question_count = Counter('survey_questions_total', 'Total number of questions initialized')
-
+active_surveys = Gauge('active_surveys_total', 'Number of active surveys initialized')
+question_count = Gauge('survey_questions_total', 'Total number of questions initialized')
 request_duration = Histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
 active_connections = Gauge('db_active_connections', 'Number of active database connections')
 
@@ -92,19 +91,18 @@ def create_survey_tables(conn):
             """, ('Patient Experience Survey', 'Survey to collect feedback', True))
             conn.commit()
 
-            # Try to get survey_id from SCOPE_IDENTITY first
-            survey_id_row = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()
-            if survey_id_row is None or survey_id_row[0] is None:
-                # Fallback: query the row directly
-                cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
-                survey_id_row = cursor.fetchone()
-                if survey_id_row is None:
-                    raise Exception("Failed to create or retrieve default survey in create_survey_tables")
+            # Get survey ID
+            cursor.execute("SELECT survey_id FROM surveys WHERE title = ?", ('Patient Experience Survey',))
+            survey_id_row = cursor.fetchone()
+            if survey_id_row is None:
+                raise Exception("Failed to create or retrieve default survey")
 
             survey_id = int(survey_id_row[0])
             active_surveys.inc()  # Increment active surveys metric
         else:
             survey_id = survey[0]
+            # Set the gauge to 1 since a survey exists
+            active_surveys.set(1)
 
         # Insert default questions only if they do not exist
         cursor.execute("SELECT COUNT(*) FROM questions WHERE survey_id = ?", (survey_id,))
@@ -136,17 +134,17 @@ def create_survey_tables(conn):
                     q.get('required', False),
                     json.dumps(q['options']) if 'options' in q else None
                 ))
-                question_count.inc()  # Increment question count metric
+            
+            # Set the question count after inserting all questions
+            question_count.set(len(questions))
 
         conn.commit()
         logger.info("Database tables initialized safely.")
 
     except Exception as e:
-        survey_failures.inc()
         conn.rollback()
         logger.error(f"Database initialization failed: {e}")
         raise
-
 def initialize_database():
     """Initialize the database tables"""
     try:
@@ -213,7 +211,7 @@ def conduct_survey_api():
                 survey_failures.inc()
                 return jsonify({'error': 'Each answer must have question_id and answer_value'}), 400
         
-        # Connect to database - explicit database name
+        # Connect to database
         conn = get_db_connection(database_name=Config.DB_NAME)
         active_connections.inc()
         cursor = conn.cursor()
@@ -258,12 +256,9 @@ def conduct_survey_api():
         conn.close()
         active_connections.dec()
         
-        # Update metrics with debug logging (NO DUPLICATES)
-        logger.info("=== DEBUG: Before metric increment ===")
-        survey_counter.inc()  # Simple increment
-        logger.info("=== DEBUG: After survey_counter.inc() ===")
-        survey_duration.inc(time.time() - start_time)
-        logger.info("=== DEBUG: After survey_duration.inc() ===")
+        # Update metrics - FIXED: Simple increments without duplicates
+        survey_counter.inc()
+        survey_duration.observe(time.time() - start_time)
         
         logger.info(f"New survey response recorded (ID: {response_id})")
         return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
@@ -366,6 +361,21 @@ def get_questions():
                 conn.close()
                 active_connections.dec()
             return jsonify({'error': str(e)}), 500
+
+@app.route('/api/test-metrics', methods=['POST'])
+def test_metrics():
+    """Test endpoint to verify metrics are working"""
+    try:
+        # Increment all metrics for testing
+        survey_counter.inc()
+        survey_failures.inc()
+        active_surveys.inc()
+        question_count.inc(7)
+        survey_duration.observe(2.5)  # Example duration
+        
+        return jsonify({'message': 'Metrics incremented for testing'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
 def health_check():
