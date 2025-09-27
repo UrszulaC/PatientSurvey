@@ -244,7 +244,6 @@ pipeline {
                 }
             }
         }
-
         stage('Deploy Complete Infrastructure') {
             steps {
                 script {
@@ -271,14 +270,18 @@ pipeline {
         export TF_VAR_tenant_id="${ARM_TENANT_ID}"
         export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
         
+        # Use unique tag if available, otherwise fallback to latest
+        export TF_VAR_app_image_tag="${APP_IMAGE_TAG:-latest}"
+        
         # Initialize Terraform with backend
         terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
                        -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
                        -backend-config="container_name=${TF_STATE_CONTAINER}" \
                        -backend-config="key=${TF_STATE_KEY}"
         
-        # Terraform plan with all required variables
+        # Terraform plan with all required variables (added app_image_tag)
         terraform plan -out=complete_plan.out \
+            -var="app_image_tag=${TF_VAR_app_image_tag}" \
             -var="db_user=${TF_VAR_db_user}" \
             -var="db_password=${TF_VAR_db_password}" \
             -var="grafana_password=${TF_VAR_grafana_password}" \
@@ -291,7 +294,7 @@ pipeline {
         # Apply plan
         terraform apply -auto-approve complete_plan.out
         
-        # Export outputs to monitoring.env
+        # Export outputs to monitoring.env (everything remains exactly the same)
         echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > "$WORKSPACE/monitoring.env"
         echo "DB_USER=${TF_VAR_db_user}" >> "$WORKSPACE/monitoring.env"
         echo "DB_PASSWORD=${TF_VAR_db_password}" >> "$WORKSPACE/monitoring.env"
@@ -300,12 +303,14 @@ pipeline {
         echo "GRAFANA_CREDS=admin:${TF_VAR_grafana_password}" >> "$WORKSPACE/monitoring.env"
         
         echo "✅ Complete infrastructure applied successfully"
+        echo "📦 Deployed app image tag: ${TF_VAR_app_image_tag}"
         '''
                         }
                     }
                 }
             }
         }
+        
         
         stage('Create .env File') {
             steps {
