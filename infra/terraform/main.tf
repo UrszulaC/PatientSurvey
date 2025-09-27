@@ -16,6 +16,23 @@ data "azurerm_resource_group" "existing" {
   name = "MyPatientSurveyRG"
 }
 
+# New variable for image tag with default fallback to "latest"
+variable "app_image_tag" {
+  type    = string
+  default = "latest"
+}
+
+variable "docker_user" {
+  type    = string
+  default = ""
+}
+
+variable "docker_password" {
+  type    = string
+  sensitive = true
+  default = ""
+}
+
 resource "azurerm_container_group" "survey_app" {
   name                = "survey-app-cg"
   resource_group_name = data.azurerm_resource_group.existing.name
@@ -25,9 +42,16 @@ resource "azurerm_container_group" "survey_app" {
   ip_address_type     = "Public"
   dns_name_label      = "survey-app"
 
+  # Add registry credentials to ensure image pull
+  image_registry_credential {
+    server   = "index.docker.io"
+    username = var.docker_user
+    password = var.docker_password
+  }
+
   container {
     name  = "survey-app"
-    image = "urszulach/epa-feedback-app:latest"
+    image = "urszulach/epa-feedback-app:${var.app_image_tag}"  # Use variable instead of hardcoded "latest"
     cpu   = "0.5"
     memory = "1.0"
 
@@ -60,6 +84,13 @@ resource "azurerm_container_group" "survey_app" {
 
   tags = {
     purpose = "EPA Patient Survey App + Node Exporter"
+    deployment = "terraform"
+    image-tag  = var.app_image_tag
+  }
+
+  # Force recreation when image tag changes
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -70,6 +101,7 @@ output "survey_app_fqdn" {
 output "survey_app_public_ip" {
   value = azurerm_container_group.survey_app.ip_address
 }
+
 output "docker_user_set" {
   value     = var.docker_user != "" ? "SET" : "MISSING"
   sensitive = false
@@ -78,5 +110,10 @@ output "docker_user_set" {
 output "docker_password_set" {
   value     = var.docker_password != "" ? "SET" : "MISSING"
   sensitive = false
+}
+
+output "deployed_image_tag" {
+  value = var.app_image_tag
+  description = "The image tag that was deployed"
 }
 
