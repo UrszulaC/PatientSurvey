@@ -178,7 +178,7 @@ class TestPatientSurveySystem(unittest.TestCase):
             self.conn.close()
 
     # --- API Endpoint Tests ---
-   def test_submit_survey_endpoint(self):
+    def test_submit_survey_endpoint(self):
         """Test POST /api/survey endpoint - use application's actual survey"""
         try:
             # First, let the application initialize its own survey
