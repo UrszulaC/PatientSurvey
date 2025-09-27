@@ -1,12 +1,17 @@
 from flask import Flask
 
 def create_app():
+    """Create and configure the Flask app."""
     app = Flask(__name__)
     app.config.from_object('app.config.Config')
     
-    # Register blueprints
-    from app.main import main_bp
-    app.register_blueprint(main_bp)
+    # Import and register routes from main.py
+    from app.main import app as main_app
+    
+    # Copy all routes from main.py to this app
+    for rule in main_app.url_map.iter_rules():
+        if rule.endpoint != 'static':  # Skip static files
+            view_func = main_app.view_functions[rule.endpoint]
+            app.add_url_rule(rule.rule, endpoint=rule.endpoint, view_func=view_func, methods=rule.methods)
     
     return app
-
