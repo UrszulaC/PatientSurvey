@@ -25,37 +25,40 @@ request_duration = Histogram('http_request_duration_seconds', 'HTTP request dura
 active_connections = Gauge('db_active_connections', 'Number of active database connections')
 
 def initialize_metrics_from_db():
-    """Set Prometheus metrics from existing DB data to reflect absolute totals"""
+    """Initialize Prometheus metrics from the database for absolute totals"""
     try:
         conn = get_db_connection(database_name=Config.DB_NAME)
         cursor = conn.cursor()
 
         # Total survey submissions
         cursor.execute("SELECT COUNT(*) FROM responses")
-        total_submissions = cursor.fetchone()[0]
-        survey_counter._value.set(total_submissions)  # Set the counter to DB total
+        total_submissions = cursor.fetchone()[0] or 0
+        survey_counter._value.set(total_submissions)  # Absolute value
 
         # Total survey failures
-        cursor.execute("SELECT COUNT(*) FROM responses WHERE response_id IS NULL")  # Adjust if needed
-        total_failures = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM responses WHERE response_id IN (SELECT response_id FROM answers WHERE answer_value IS NULL)")
+        total_failures = cursor.fetchone()[0] or 0
         survey_failures._value.set(total_failures)
 
         # Total active surveys
         cursor.execute("SELECT COUNT(*) FROM surveys WHERE is_active = 1")
-        active = cursor.fetchone()[0]
-        active_surveys.set(active)
+        total_active = cursor.fetchone()[0] or 0
+        active_surveys.set(total_active)
 
-        # Total questions
+        # Total survey questions
         cursor.execute("SELECT COUNT(*) FROM questions")
-        total_questions = cursor.fetchone()[0]
+        total_questions = cursor.fetchone()[0] or 0
         question_count.set(total_questions)
 
+        # Optional: log the values for debugging
+        logger.info(f"Metrics initialized from DB: submissions={total_submissions}, failures={total_failures}, active_surveys={total_active}, questions={total_questions}")
+
         conn.close()
-        logger.info(f"Metrics initialized from DB: submissions={total_submissions}, failures={total_failures}, active_surveys={active}, questions={total_questions}")
 
     except Exception as e:
         logger.error(f"Failed to initialize metrics from DB: {e}")
-
+        if 'conn' in locals():
+            conn.close()
 
 def create_survey_tables(conn):
     """Create all necessary tables for surveys safely (if not exist)"""
