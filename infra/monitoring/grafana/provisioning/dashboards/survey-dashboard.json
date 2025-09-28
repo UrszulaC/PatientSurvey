@@ -1,62 +1,110 @@
-{
+  {
   "id": null,
-  "title": "Patient Survey Metrics",
+  "title": "Patient Survey Lifetime Metrics",
   "tags": ["patient-survey"],
   "timezone": "browser",
   "panels": [
     {
       "id": 1,
-      "title": "Total Survey Submissions",
+      "title": "Total Survey Submissions (Lifetime)",
       "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
-      "targets": [{ "expr": "patient_survey_submissions_total", "legendFormat": "Total Surveys", "refId": "A" }],
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 }
+      "datasource": {"type": "prometheus","uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr": "patient_survey_submissions_total","legendFormat":"Total Surveys","refId":"A"}],
+      "gridPos":{"h":6,"w":6,"x":0,"y":0}
     },
     {
       "id": 2,
-      "title": "Survey Submission Rate (90d)",
-      "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
-      "targets": [{ "expr": "increase(patient_survey_submissions_total[90d])", "legendFormat": "Total Increase", "refId": "A" }],
-      "gridPos": { "h": 6, "w": 12, "x": 6, "y": 0 }
+      "title": "Survey Failures (Lifetime)",
+      "type": "stat",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr": "patient_survey_failures_total","legendFormat":"Failures","refId":"A"}],
+      "gridPos":{"h":6,"w":6,"x":6,"y":0}
     },
     {
       "id": 3,
-      "title": "Average Survey Duration (seconds)",
-      "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
-      "targets": [{ "expr": "rate(patient_survey_duration_seconds_sum[5m]) / rate(patient_survey_duration_seconds_count[5m])", "legendFormat": "Avg Duration", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 }
+      "title": "Survey Questions Total (Lifetime)",
+      "type": "stat",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr": "survey_questions_total","legendFormat":"Questions","refId":"A"}],
+      "gridPos":{"h":6,"w":6,"x":12,"y":0}
     },
     {
       "id": 4,
-      "title": "Survey Failures",
-      "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
-      "targets": [{ "expr": "patient_survey_failures_total", "legendFormat": "Failures", "refId": "A" }],
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 12 }
+      "title": "Active Surveys",
+      "type": "gauge",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr": "active_surveys_total","legendFormat":"Active","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"none","min":0},"overrides":[]},
+      "gridPos":{"h":6,"w":6,"x":0,"y":6}
     },
     {
       "id": 5,
-      "title": "Active Surveys",
-      "type": "gauge",
-      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
-      "targets": [{ "expr": "active_surveys_total", "legendFormat": "Active", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "none", "min": 0 }, "overrides": [] },
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 12 }
+      "title": "Average Survey Duration (Lifetime, seconds)",
+      "type": "stat",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr":"patient_survey_duration_seconds_total / patient_survey_duration_seconds_count","legendFormat":"Avg Duration","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"s"},"overrides":[]},
+      "gridPos":{"h":6,"w":6,"x":6,"y":6}
     },
     {
       "id": 6,
-      "title": "Survey Questions Total",
-      "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
-      "targets": [{ "expr": "survey_questions_total", "legendFormat": "Questions", "refId": "A" }],
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 12 }
+      "title": "Survey Submission Rate (5m Window)",
+      "type": "timeseries",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr": "rate(patient_survey_submissions_total[5m])","legendFormat":"Submissions/sec","refId":"A"}],
+      "gridPos":{"h":6,"w":12,"x":0,"y":12}
     }
   ],
-  "time": { "from": "now-90d", "to": "now" },
+  "time": {"from": "now-6h","to": "now"},
   "version": 1,
   "schemaVersion": 37,
   "refresh": "30s"
+},
+    // ===== ROW 2: Infrastructure Resources =====
+    {
+      "id": 7,
+      "title": "CPU Usage (%)",
+      "type": "timeseries",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr":"100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)","legendFormat":"{{instance}}","refId":"A"}],
+      "gridPos":{"h":8,"w":12,"x":0,"y":18}
+    },
+    {
+      "id": 8,
+      "title": "Memory Usage (%)",
+      "type": "timeseries",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr":"100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))","legendFormat":"{{instance}}","refId":"A"}],
+      "gridPos":{"h":8,"w":12,"x":12,"y":18}
+    },
+    {
+      "id": 9,
+      "title": "Disk Usage (%)",
+      "type": "timeseries",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr":"100 * (1 - (node_filesystem_free_bytes{fstype!=\"tmpfs\"} / node_filesystem_size_bytes{fstype!=\"tmpfs\"}))","legendFormat":"{{instance}} - {{mountpoint}}","refId":"A"}],
+      "gridPos":{"h":8,"w":12,"x":0,"y":26}
+    },
+    {
+      "id": 10,
+      "title": "Docker Container Count",
+      "type": "stat",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[{"expr":"count(container_last_seen{container_label_com_docker_swarm_service_name!=\"\"})","legendFormat":"Containers","refId":"A"}],
+      "gridPos":{"h":6,"w":6,"x":12,"y":26}
+    },
+    {
+      "id": 11,
+      "title": "Network Traffic (bytes/sec)",
+      "type": "timeseries",
+      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
+      "targets":[
+        {"expr":"rate(node_network_receive_bytes_total[5m])","legendFormat":"{{instance}} RX","refId":"A"},
+        {"expr":"rate(node_network_transmit_bytes_total[5m])","legendFormat":"{{instance}} TX","refId":"B"}
+      ],
+      "gridPos":{"h":6,"w":12,"x":0,"y":32}
+    }
+  ],
+  "time":{"from":"now-6h","to":"now"}
 }
+
