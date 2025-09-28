@@ -8,179 +8,54 @@
       "id": 1,
       "title": "Total Survey Submissions",
       "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
-      },
-      "targets": [
-        {
-          "expr": "patient_survey_submissions_total",
-          "legendFormat": "Total Surveys",
-          "refId": "A"
-        }
-      ],
+      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
+      "targets": [{ "expr": "patient_survey_submissions_total", "legendFormat": "Total Surveys", "refId": "A" }],
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 }
     },
     {
       "id": 2,
-      "title": "Survey Submission Rate",
+      "title": "Survey Submission Rate (90d)",
       "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
-      },
-      "targets": [
-        {
-          "expr": "rate(patient_survey_submissions_total[5m])",
-          "legendFormat": "Submissions/sec",
-          "refId": "A"
-        }
-      ],
+      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
+      "targets": [{ "expr": "increase(patient_survey_submissions_total[90d])", "legendFormat": "Total Increase", "refId": "A" }],
       "gridPos": { "h": 6, "w": 12, "x": 6, "y": 0 }
     },
     {
       "id": 3,
       "title": "Average Survey Duration (seconds)",
       "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
-      },
-      "targets": [
-        {
-          "expr": "rate(patient_survey_duration_seconds_sum[5m]) / rate(patient_survey_duration_seconds_count[5m])",
-          "legendFormat": "Avg Duration",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
-      "alert": {
-        "alertRuleTags": {},
-        "conditions": [
-          {
-            "evaluator": {
-              "params": [10],
-              "type": "gt"
-            },
-            "operator": {
-              "type": "and"
-            },
-            "query": {
-              "params": ["A", "5m", "now"]
-            },
-            "reducer": {
-              "params": [],
-              "type": "avg"
-            },
-            "type": "query"
-          }
-        ],
-        "executionErrorState": "alerting",
-        "for": "5m",
-        "frequency": "1m",
-        "handler": 1,
-        "message": "Average survey duration is too high (>10s)",
-        "name": "High Survey Duration",
-        "noDataState": "no_data",
-        "notifications": []
-      }
+      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
+      "targets": [{ "expr": "rate(patient_survey_duration_seconds_sum[5m]) / rate(patient_survey_duration_seconds_count[5m])", "legendFormat": "Avg Duration", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 }
     },
     {
       "id": 4,
       "title": "Survey Failures",
       "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
-      },
-      "targets": [
-        {
-          "expr": "patient_survey_failures_total",
-          "legendFormat": "Failures",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 12 },
-      "alert": {
-        "alertRuleTags": {},
-        "conditions": [
-          {
-            "evaluator": {
-              "params": [0],
-              "type": "gt"
-            },
-            "operator": {
-              "type": "and"
-            },
-            "query": {
-              "params": ["A", "5m", "now"]
-            },
-            "reducer": {
-              "params": [],
-              "type": "last"
-            },
-            "type": "query"
-          }
-        ],
-        "executionErrorState": "alerting",
-        "for": "1m",
-        "frequency": "1m",
-        "handler": 1,
-        "message": "Survey failures detected (>0)",
-        "name": "Survey Failures Alert",
-        "noDataState": "no_data",
-        "notifications": []
-      }
+      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
+      "targets": [{ "expr": "patient_survey_failures_total", "legendFormat": "Failures", "refId": "A" }],
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 12 }
     },
     {
       "id": 5,
       "title": "Active Surveys",
       "type": "gauge",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
-      },
-      "targets": [
-        {
-          "expr": "active_surveys_total",
-          "legendFormat": "Active",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "min": 0
-        },
-        "overrides": []
-      },
+      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
+      "targets": [{ "expr": "active_surveys_total", "legendFormat": "Active", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "min": 0 }, "overrides": [] },
       "gridPos": { "h": 6, "w": 6, "x": 6, "y": 12 }
     },
     {
       "id": 6,
       "title": "Survey Questions Total",
       "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
-      },
-      "targets": [
-        {
-          "expr": "survey_questions_total",
-          "legendFormat": "Questions",
-          "refId": "A"
-        }
-      ],
+      "datasource": { "type": "prometheus", "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e" },
+      "targets": [{ "expr": "survey_questions_total", "legendFormat": "Questions", "refId": "A" }],
       "gridPos": { "h": 6, "w": 6, "x": 12, "y": 12 }
     }
   ],
-  "time": { "from": "now-6h", "to": "now" },
+  "time": { "from": "now-90d", "to": "now" },
   "version": 1,
   "schemaVersion": 37,
   "refresh": "30s"
