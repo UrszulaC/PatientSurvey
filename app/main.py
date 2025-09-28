@@ -25,41 +25,37 @@ request_duration = Histogram('http_request_duration_seconds', 'HTTP request dura
 active_connections = Gauge('db_active_connections', 'Number of active database connections')
 
 def initialize_metrics_from_db():
+    """Set Prometheus metrics from existing DB data to reflect absolute totals"""
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(database_name=Config.DB_NAME)
         cursor = conn.cursor()
 
-        # Restore submissions
-        cursor.execute("SELECT COUNT(*) FROM submissions")
+        # Total survey submissions
+        cursor.execute("SELECT COUNT(*) FROM responses")
         total_submissions = cursor.fetchone()[0]
-        patient_survey_submissions_total.inc(total_submissions)
+        survey_counter._value.set(total_submissions)  # Set the counter to DB total
 
-        # Restore survey duration (if you store duration in DB)
-        cursor.execute("SELECT COALESCE(SUM(duration_seconds), 0) FROM submissions")
-        total_duration = cursor.fetchone()[0]
-        patient_survey_duration_seconds_total.inc(total_duration)
-
-        # Restore failures
-        cursor.execute("SELECT COUNT(*) FROM submissions WHERE status = 'FAILED'")
+        # Total survey failures
+        cursor.execute("SELECT COUNT(*) FROM responses WHERE response_id IS NULL")  # Adjust if needed
         total_failures = cursor.fetchone()[0]
-        patient_survey_failures_total.inc(total_failures)
+        survey_failures._value.set(total_failures)
 
-        # Restore active surveys
-        cursor.execute("SELECT COUNT(*) FROM surveys WHERE status = 'ACTIVE'")
-        active_surveys = cursor.fetchone()[0]
-        active_surveys_total.inc(active_surveys)
+        # Total active surveys
+        cursor.execute("SELECT COUNT(*) FROM surveys WHERE is_active = 1")
+        active = cursor.fetchone()[0]
+        active_surveys.set(active)
 
-        # Restore survey questions
+        # Total questions
         cursor.execute("SELECT COUNT(*) FROM questions")
         total_questions = cursor.fetchone()[0]
-        survey_questions_total.inc(total_questions)
+        question_count.set(total_questions)
 
-        cursor.close()
         conn.close()
-        logger.info("Metrics successfully initialized from database")
+        logger.info(f"Metrics initialized from DB: submissions={total_submissions}, failures={total_failures}, active_surveys={active}, questions={total_questions}")
 
     except Exception as e:
         logger.error(f"Failed to initialize metrics from DB: {e}")
+
 
 def create_survey_tables(conn):
     """Create all necessary tables for surveys safely (if not exist)"""
