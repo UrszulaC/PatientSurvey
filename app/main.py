@@ -4,7 +4,7 @@ import json
 import time
 import pyodbc
 from flask import Flask, request, jsonify, render_template
-from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram
+from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram, Summary
 from app.utils.db_utils import get_db_connection
 from app.config import Config
 
@@ -17,7 +17,7 @@ app = Flask(__name__, template_folder='../templates')
 
 # Simple direct metric creation
 survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
-survey_duration = Histogram('patient_survey_duration_seconds', 'Time spent completing surveys')
+survey_duration = Summary('patient_survey_duration_seconds', 'Time spent completing surveys')
 survey_failures = Counter('patient_survey_failures_total', 'Total failed survey submissions')
 active_surveys = Gauge('active_surveys_total', 'Number of active surveys initialized')
 question_count = Gauge('survey_questions_total', 'Total number of questions initialized')
