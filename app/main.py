@@ -227,7 +227,7 @@ def index():
 def conduct_survey_api():
     """API endpoint to submit a survey"""
     start_time = time.time()
-    
+    conn = None
     try:
         # Get JSON data from request
         data = request.get_json()
@@ -235,18 +235,16 @@ def conduct_survey_api():
             survey_failures.inc()
             return jsonify({'error': 'No JSON data provided or missing answers field'}), 400
         
-        # Validate that answers is a list
+        # Validate each answer
         if not isinstance(data.get('answers'), list):
             survey_failures.inc()
             return jsonify({'error': 'Answers must be a list'}), 400
-        
-        # Validate each answer has required fields
         for answer in data['answers']:
             if not isinstance(answer, dict) or 'question_id' not in answer or 'answer_value' not in answer:
                 survey_failures.inc()
                 return jsonify({'error': 'Each answer must have question_id and answer_value'}), 400
         
-        # Connect to database
+        # Database operations
         conn = get_db_connection(database_name=Config.DB_NAME)
         active_connections.inc()
         cursor = conn.cursor()
@@ -255,8 +253,6 @@ def conduct_survey_api():
         cursor.execute("SELECT survey_id FROM surveys WHERE title = 'Patient Experience Survey'")
         survey = cursor.fetchone()
         if not survey:
-            conn.close()
-            active_connections.dec()
             survey_failures.inc()
             return jsonify({'error': 'Survey not found'}), 404
         
@@ -265,20 +261,8 @@ def conduct_survey_api():
         # Insert response
         cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey_id,))
         conn.commit()
-        
-        # Get response ID
         cursor.execute("SELECT SCOPE_IDENTITY()")
-        response_id_row = cursor.fetchone()
-        if response_id_row is None or response_id_row[0] is None:
-            cursor.execute("SELECT @@IDENTITY")
-            response_id_row = cursor.fetchone()
-            if response_id_row is None or response_id_row[0] is None:
-                conn.close()
-                active_connections.dec()
-                survey_failures.inc()
-                return jsonify({'error': 'Failed to create response'}), 500
-        
-        response_id = int(response_id_row[0])
+        response_id = int(cursor.fetchone()[0])
         
         # Insert answers
         for answer in data.get('answers', []):
@@ -286,25 +270,25 @@ def conduct_survey_api():
                 INSERT INTO answers (response_id, question_id, answer_value)
                 VALUES (?, ?, ?)
             """, (response_id, answer['question_id'], answer['answer_value']))
-        
         conn.commit()
-        conn.close()
-        active_connections.dec()
         
-        # Update metrics - FIXED: Simple increments without duplicates
+        # Increment submission counter
         survey_counter.inc()
-        survey_duration.observe(time.time() - start_time)
         
-        logger.info(f"New survey response recorded (ID: {response_id})")
         return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
-        
+
     except Exception as e:
         survey_failures.inc()
         logger.error(f"Survey submission failed: {e}")
-        if 'conn' in locals():
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        # Always observe duration
+        survey_duration.observe(time.time() - start_time)
+        if conn:
             conn.close()
             active_connections.dec()
-        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/responses', methods=['GET'])
 def get_responses():
