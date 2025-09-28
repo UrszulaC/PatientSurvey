@@ -49,15 +49,12 @@ services:
       - prometheus
 
   node-exporter:
-    image: quay.io/prometheus/node-exporter:latest
+    image: prom/node-exporter:latest
     container_name: node-exporter
-    pid: "host"
-    network_mode: "host"   # exposes metrics on host network
-    volumes:
-      - /:/host:ro,rslave
-    command:
-      - '--path.rootfs=/host'
-      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|run)($|/)'
+    ports:
+      - "9101:9100"   # expose on host if you want, but internal port stays 9100
+    networks:
+      - monitoring-net
     restart: always
 
 volumes:
