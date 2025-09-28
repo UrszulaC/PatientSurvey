@@ -1,8 +1,11 @@
-  {
+{
   "id": null,
-  "title": "Patient Survey Lifetime Metrics",
-  "tags": ["patient-survey"],
+  "title": "Patient Survey & Resource Metrics",
+  "tags": ["patient-survey","infrastructure"],
   "timezone": "browser",
+  "schemaVersion": 37,
+  "version": 1,
+  "refresh": "30s",
   "panels": [
     {
       "id": 1,
@@ -53,14 +56,7 @@
       "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
       "targets":[{"expr": "rate(patient_survey_submissions_total[5m])","legendFormat":"Submissions/sec","refId":"A"}],
       "gridPos":{"h":6,"w":12,"x":0,"y":12}
-    }
-  ],
-  "time": {"from": "now-6h","to": "now"},
-  "version": 1,
-  "schemaVersion": 37,
-  "refresh": "30s"
-},
-    // ===== ROW 2: Infrastructure Resources =====
+    },
     {
       "id": 7,
       "title": "CPU Usage (%)",
@@ -107,4 +103,3 @@
   ],
   "time":{"from":"now-6h","to":"now"}
 }
-
