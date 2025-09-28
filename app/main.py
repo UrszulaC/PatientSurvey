@@ -24,6 +24,42 @@ question_count = Gauge('survey_questions_total', 'Total number of questions init
 request_duration = Histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
 active_connections = Gauge('db_active_connections', 'Number of active database connections')
 
+def initialize_metrics_from_db():
+    try:
+        conn = get_db_connection(database_name=Config.DB_NAME)
+        cursor = conn.cursor()
+
+        # 1. Resume total survey submissions
+        cursor.execute("SELECT COUNT(*) FROM responses")
+        total_responses = cursor.fetchone()[0]
+        survey_counter._value.set(total_responses)
+
+        # 2. Resume failures (assuming you log failed responses separately or flag them)
+        cursor.execute("SELECT COUNT(*) FROM responses WHERE status = 'failed'")
+        total_failures = cursor.fetchone()[0]
+        survey_failures._value.set(total_failures)
+
+        # 3. Resume active surveys
+        cursor.execute("SELECT COUNT(*) FROM surveys WHERE is_active = 1")
+        total_active = cursor.fetchone()[0]
+        active_surveys.set(total_active)
+
+        # 4. Resume question count
+        cursor.execute("SELECT COUNT(*) FROM questions")
+        total_questions = cursor.fetchone()[0]
+        question_count.set(total_questions)
+
+        # 5. Resume total survey duration (sum of all durations)
+        cursor.execute("SELECT COALESCE(SUM(duration_seconds), 0) FROM responses")
+        total_duration = cursor.fetchone()[0]
+        survey_duration.observe(total_duration)  # histogram bucket
+        # also push into counter if you’ve defined survey_duration_seconds_total
+        survey_duration_counter._value.set(total_duration)
+
+        conn.close()
+        logger.info("✅ Metrics initialized from DB.")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize metrics from DB: {e}")
 
 def create_survey_tables(conn):
     """Create all necessary tables for surveys safely (if not exist)"""
@@ -401,6 +437,7 @@ if __name__ == "__main__":
     # Initialize database
     logger.info("Starting Patient Survey Application")
     initialize_database()
+    initialize_metrics_from_db()  
     
     # Run Flask app - make host configurable via environment variable
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
