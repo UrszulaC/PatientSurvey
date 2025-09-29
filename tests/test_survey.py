@@ -11,6 +11,9 @@ from app.config import Config
 from app.utils.db_utils import get_db_connection
 from app.main import app
 
+BASE_URL = "http://localhost:5000"
+
+
 # Load .env before using Config
 load_dotenv()
 
