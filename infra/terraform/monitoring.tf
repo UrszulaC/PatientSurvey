@@ -103,7 +103,7 @@ output "grafana_url" {
   value = "http://${azurerm_container_group.grafana.fqdn}:3000"
 }
 output "metrics_exporter_url" {
-  value = "http://${azurerm_container_group.metrics_exporter.fqdn}:9273"
+  value = "http://survey-app.uksouth.azurecontainer.io:9100"
 }
 
 
