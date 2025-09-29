@@ -181,73 +181,57 @@ class TestPatientSurveySystem(unittest.TestCase):
     def test_submit_survey_endpoint(self):
         """Test POST /api/survey endpoint - use application's actual survey"""
         try:
-            # First, let the application initialize its own survey
-            # Make a health check to trigger database initialization if needed
+            # Health check to ensure DB is initialized
             health_response = self.client.get('/health')
             print(f"DEBUG: Health check status: {health_response.status_code}")
-            
-            # Now get the questions that the application actually uses
+    
+            # Get the questions that the application actually uses
             questions_response = self.client.get('/api/questions')
             print(f"DEBUG: Questions API status: {questions_response.status_code}")
-            
+    
+            survey_data = {'answers': []}
+    
             if questions_response.status_code == 200:
                 app_questions = questions_response.get_json()
                 print(f"DEBUG: Application questions: {app_questions}")
-                
-                # Use the question IDs from the application, not our test ones
-                if app_questions:
-                    survey_data = {
-                        'answers': [
-                            {'question_id': app_questions[0]['question_id'], 'answer_value': '2023-01-01'},
-                            {'question_id': app_questions[1]['question_id'], 'answer_value': 'Princess Alexandra Hospital'},
-                            {'question_id': app_questions[2]['question_id'], 'answer_value': 'John Doe'},
-                            {'question_id': app_questions[3]['question_id'], 'answer_value': 'Easy'},
-                            {'question_id': app_questions[4]['question_id'], 'answer_value': 'Yes'},
-                            {'question_id': app_questions[5]['question_id'], 'answer_value': ''},
-                            {'question_id': app_questions[6]['question_id'], 'answer_value': '5'} 
-                        ]
-                    }
-                else:
-                    # Fallback if no questions returned
-                    survey_data = {
-                        'answers': [
-                            {'question_id': 1, 'answer_value': '2023-01-01'},
-                            {'question_id': 2, 'answer_value': 'Princess Alexandra Hospital'},
-                            {'question_id': 3, 'answer_value': 'John Doe'}
-                        ]
-                    }
-            else:
-                # Fallback if questions endpoint fails
-                survey_data = {
-                    'answers': [
-                        {'question_id': 1, 'answer_value': '2023-01-01'},
-                        {'question_id': 2, 'answer_value': 'Princess Alexandra Hospital'},
-                        {'question_id': 3, 'answer_value': 'John Doe'}
-                    ]
-                }
-            
+    
+                for q in app_questions:
+                    # Only send answers for required questions or when you want to provide one
+                    if q['is_required']:
+                        if q['question_type'] == 'text':
+                            survey_data['answers'].append({
+                                'question_id': q['question_id'],
+                                'answer_value': 'Sample answer'
+                            })
+                        elif q['question_type'] == 'multiple_choice':
+                            # Pick the first option as default
+                            survey_data['answers'].append({
+                                'question_id': q['question_id'],
+                                'answer_value': q['options'][0] if q['options'] else '1'
+                            })
+    
             print(f"DEBUG: Submitting survey data: {survey_data}")
-            
-            response = self.client.post('/api/survey', 
-                                      json=survey_data,
-                                      content_type='application/json')
-            
+    
+            response = self.client.post('/api/survey',
+                                        json=survey_data,
+                                        content_type='application/json')
+    
             print(f"DEBUG: Response status: {response.status_code}")
-            
             if response.status_code != 201:
                 error_data = response.get_json()
                 print(f"DEBUG: Error response: {error_data}")
-            
+    
             self.assertEqual(response.status_code, 201)
-            
+    
             # Verify the response
             data = response.get_json()
             self.assertIn('response_id', data)
             self.assertIn('message', data)
-            
+    
         except Exception as e:
             print(f"DEBUG: Test exception: {e}")
             raise
+
 
     def test_get_responses_empty(self):
         """Test GET /api/responses endpoint works without crashing"""
