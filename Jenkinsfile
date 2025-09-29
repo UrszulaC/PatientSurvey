@@ -296,7 +296,8 @@ pipeline {
         
         # Inject metrics exporter URL
         METRICS_EXPORTER_URL=$(terraform output -raw metrics_exporter_url)
-        sed -i "s|<exporter-ip-or-host>:9273|${METRICS_EXPORTER_URL}|g" infra/monitoring/prometheus.yml
+        sed -i "s|<exporter-ip-or-host>:9100|${METRICS_EXPORTER_URL}|g" infra/monitoring/prometheus.yml
+
         
         # Export outputs to monitoring.env
         echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > "$WORKSPACE/monitoring.env"
