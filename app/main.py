@@ -258,11 +258,15 @@ def conduct_survey_api():
         
         survey_id = survey[0]
         
-        # Insert response
-        cursor.execute("INSERT INTO responses (survey_id) VALUES (?)", (survey_id,))
+        # Insert response - FIXED: Use explicit parameter passing
+        cursor.execute("INSERT INTO responses (survey_id) OUTPUT INSERTED.response_id VALUES (?)", (survey_id,))
+        result = cursor.fetchone()
+        if not result:
+            survey_failures.inc()
+            return jsonify({'error': 'Failed to create response record'}), 500
+            
+        response_id = int(result[0])
         conn.commit()
-        cursor.execute("SELECT SCOPE_IDENTITY()")
-        response_id = int(cursor.fetchone()[0])
         
         # Insert answers
         for answer in data.get('answers', []):
@@ -278,6 +282,8 @@ def conduct_survey_api():
         return jsonify({'message': 'Survey submitted successfully', 'response_id': response_id}), 201
 
     except Exception as e:
+        if conn:
+            conn.rollback()
         survey_failures.inc()
         logger.error(f"Survey submission failed: {e}")
         return jsonify({'error': str(e)}), 500
