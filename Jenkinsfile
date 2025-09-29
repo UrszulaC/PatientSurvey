@@ -294,6 +294,9 @@ pipeline {
         # Apply plan
         terraform apply -auto-approve complete_plan.out
         
+        METRICS_EXPORTER_URL=$(terraform output -raw metrics_exporter_url)
+        sed -i "s|<exporter-ip-or-host>:9273|${METRICS_EXPORTER_URL}|g" infra/monitoring/prometheus.yml
+        
         # Export outputs to monitoring.env (everything remains exactly the same)
         echo "DB_HOST=$(terraform output -raw sql_server_fqdn)" > "$WORKSPACE/monitoring.env"
         echo "DB_USER=${TF_VAR_db_user}" >> "$WORKSPACE/monitoring.env"
