@@ -37,14 +37,6 @@ variable "client_secret" {
   default = ""
 }
 
-variable "azure_subscription_id" {}
-variable "azure_tenant_id" {}
-variable "azure_client_id" {}
-variable "azure_client_secret" {
-  sensitive = true
-}
-
-
 variable "tenant_id" {
   type    = string
   default = ""
