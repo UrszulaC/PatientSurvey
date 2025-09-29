@@ -1,6 +1,5 @@
 import os
 import unittest
-import requests
 import logging
 import pyodbc
 import json
@@ -11,7 +10,6 @@ from app.config import Config
 from app.utils.db_utils import get_db_connection
 from app.main import app
 
-BASE_URL = "http://localhost:5000"
 
 
 # Load .env before using Config
@@ -183,11 +181,11 @@ class TestPatientSurveySystem(unittest.TestCase):
 
     # --- API Endpoint Tests ---
     def test_submit_survey_endpoint(self):
-        # 1. Get questions from API
-        questions_response = requests.get(f"{self.base_url}/api/questions")
+        # 1. Get questions from API using self.client
+        questions_response = self.client.get('/api/questions')  # CHANGED
         self.assertEqual(questions_response.status_code, 200)
-        questions = questions_response.json()
-    
+        questions = questions_response.get_json()  # CHANGED: use get_json() for test client
+        
         # 2. Dynamically build valid survey answers
         survey_data = {"answers": []}
         for q in questions:
@@ -208,13 +206,12 @@ class TestPatientSurveySystem(unittest.TestCase):
                         "question_id": q["question_id"],
                         "answer_value": "Default"
                     })
-    
-        # 3. Submit survey
-        response = requests.post(f"{self.base_url}/api/survey", json=survey_data)
-    
+        
+        # 3. Submit survey using self.client
+        response = self.client.post('/api/survey', json=survey_data)  # CHANGED
+        
         # 4. Check response
         self.assertEqual(response.status_code, 201, f"Unexpected error: {response.get_json()}")
-
     def test_get_responses_empty(self):
         """Test GET /api/responses endpoint works without crashing"""
         response = self.client.get('/api/responses')
