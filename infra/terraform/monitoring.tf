@@ -19,6 +19,10 @@ resource "azurerm_storage_share" "grafana" {
   quota              = 50
 }
 
+output "metrics_exporter_url" {
+  value = "http://survey-app.uksouth.azurecontainer.io:9100"
+}
+
 # ===== PROMETHEUS =====
 resource "azurerm_container_group" "prometheus" {
   name                = "prometheus-cg"
