@@ -1,5 +1,6 @@
 import os
 import unittest
+import requests
 import logging
 import pyodbc
 import json
@@ -8,7 +9,7 @@ from unittest.mock import patch, MagicMock
 from dotenv import load_dotenv
 from app.config import Config
 from app.utils.db_utils import get_db_connection
-from app.main import app  # Import the app directly
+from app.main import app
 
 # Load .env before using Config
 load_dotenv()
