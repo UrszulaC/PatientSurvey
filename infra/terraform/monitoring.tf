@@ -102,6 +102,10 @@ output "prometheus_url" {
 output "grafana_url" {
   value = "http://${azurerm_container_group.grafana.fqdn}:3000"
 }
+output "metrics_exporter_url" {
+  value = "http://${azurerm_container_group.metrics_exporter.fqdn}:9273"
+}
+
 
 # ===== VARIABLES =====
 variable "resource_group_name" {
