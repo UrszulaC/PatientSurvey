@@ -1,12 +1,3 @@
-# Variables you already have from Jenkins
-variable "azure_client_id" {}
-variable "azure_client_secret" {}
-variable "azure_tenant_id" {}
-variable "azure_subscription_id" {}
-variable "resource_group_name" {}
-variable "location" {}
-
-# Create a container group for azure-metrics-exporter
 resource "azurerm_container_group" "azure_metrics_exporter" {
   name                = "azure-metrics-exporter"
   location            = var.location
@@ -25,11 +16,11 @@ resource "azurerm_container_group" "azure_metrics_exporter" {
     }
 
     environment_variables = {
-      AZURE_SUBSCRIPTION_ID = var.azure_subscription_id
-      AZURE_TENANT_ID       = var.azure_tenant_id
-      AZURE_CLIENT_ID       = var.azure_client_id
-      AZURE_CLIENT_SECRET   = var.azure_client_secret
-      # Optional: restrict exporter to only VM metrics
+      AZURE_SUBSCRIPTION_ID = var.subscription_id
+      AZURE_TENANT_ID       = var.tenant_id
+      AZURE_CLIENT_ID       = var.client_id
+      AZURE_CLIENT_SECRET   = var.client_secret
+      # restrict to VM metrics
       AZURE_RESOURCE_TYPE   = "Microsoft.Compute/virtualMachines"
     }
   }
