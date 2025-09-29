@@ -289,11 +289,7 @@ pipeline {
             -var="docker_password=${TF_VAR_docker_password}" \
             -var="prometheus_image_tag=${BUILD_NUMBER}" \
             -var="resource_group_name=MyPatientSurveyRG" \
-            -var="location=uksouth
-            -var="azure_subscription_id=${TF_VAR_subscription_id}" \
-            -var="azure_tenant_id=${TF_VAR_tenant_id}" \
-            -var="azure_client_id=${TF_VAR_client_id}" \
-            -var="azure_client_secret=${TF_VAR_client_secret}"
+            -var="location=uksouth"
         
         # Apply plan
         terraform apply -auto-approve complete_plan.out
