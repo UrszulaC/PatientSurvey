@@ -182,36 +182,46 @@ class TestPatientSurveySystem(unittest.TestCase):
     # --- API Endpoint Tests ---
     def test_submit_survey_endpoint(self):
         # 1. Get questions from API using self.client
-        questions_response = self.client.get('/api/questions')  # CHANGED
+        questions_response = self.client.get('/api/questions')
         self.assertEqual(questions_response.status_code, 200)
-        questions = questions_response.get_json()  # CHANGED: use get_json() for test client
+        questions = questions_response.get_json()
         
-        # 2. Dynamically build valid survey answers
+        # 2. Dynamically build valid survey answers - ENSURE question_id is int
         survey_data = {"answers": []}
         for q in questions:
+            # Ensure question_id is integer
+            question_id = int(q["question_id"])
+            
             if q["question_type"] == "text":
                 survey_data["answers"].append({
-                    "question_id": q["question_id"],
+                    "question_id": question_id,  # Ensure this is int
                     "answer_value": "Sample answer"
                 })
             elif q["question_type"] == "multiple_choice":
                 if q.get("options"):  # pick first valid option
                     survey_data["answers"].append({
-                        "question_id": q["question_id"],
+                        "question_id": question_id,  # Ensure this is int
                         "answer_value": q["options"][0]
                     })
                 else:
                     # fallback if no options present
                     survey_data["answers"].append({
-                        "question_id": q["question_id"],
+                        "question_id": question_id,  # Ensure this is int
                         "answer_value": "Default"
                     })
         
         # 3. Submit survey using self.client
-        response = self.client.post('/api/survey', json=survey_data)  # CHANGED
+        response = self.client.post('/api/survey', 
+                                  json=survey_data,
+                                  content_type='application/json')
         
         # 4. Check response
         self.assertEqual(response.status_code, 201, f"Unexpected error: {response.get_json()}")
+        
+        # Additional verification
+        data = response.get_json()
+        self.assertIn('response_id', data)
+        self.assertIn('message', data)
     def test_get_responses_empty(self):
         """Test GET /api/responses endpoint works without crashing"""
         response = self.client.get('/api/responses')
