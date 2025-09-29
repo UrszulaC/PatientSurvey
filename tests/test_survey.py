@@ -203,7 +203,8 @@ class TestPatientSurveySystem(unittest.TestCase):
                             {'question_id': app_questions[2]['question_id'], 'answer_value': 'John Doe'},
                             {'question_id': app_questions[3]['question_id'], 'answer_value': 'Easy'},
                             {'question_id': app_questions[4]['question_id'], 'answer_value': 'Yes'},
-                            {'question_id': app_questions[6]['question_id'], 'answer_value': '5'}  # Skip optional question at index 5
+                            {'question_id': app_questions[5]['question_id'], 'answer_value': ''},
+                            {'question_id': app_questions[6]['question_id'], 'answer_value': '5'} 
                         ]
                     }
                 else:
