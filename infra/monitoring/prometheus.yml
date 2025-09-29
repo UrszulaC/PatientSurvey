@@ -20,7 +20,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # local node-exporter
-  - job_name: 'node-exporter'
+  - job_name: 'azure-metrics'
     static_configs:
-      - targets: ['172.167.120.70:9100']
+      - targets: ['${AZURE_EXPORTER_URL}']
+
