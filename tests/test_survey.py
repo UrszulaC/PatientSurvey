@@ -180,9 +180,9 @@ class TestPatientSurveySystem(unittest.TestCase):
     # --- API Endpoint Tests ---
     def test_submit_survey_endpoint(self):
         # 1. Get real questions from the API
-        questions_response = requests.get(f"{self.base_url}/api/questions")
+        questions_response = self.client.get('/api/questions')
         self.assertEqual(questions_response.status_code, 200)
-        questions = questions_response.json()
+        questions = questions_response.get_json()
     
         # Build a mapping of question text -> actual DB question_id
         questions_mapping = {q["question_text"]: q["question_id"] for q in questions}
@@ -195,16 +195,15 @@ class TestPatientSurveySystem(unittest.TestCase):
                 {"question_id": questions_mapping["Patient name?"], "answer_value": "John Doe"},
                 {"question_id": questions_mapping["How easy was it to get an appointment?"], "answer_value": "Easy"},
                 {"question_id": questions_mapping["Were you properly informed about your procedure?"], "answer_value": "Yes"},
-                # Optional free-text question skipped (can add if needed)
                 {"question_id": questions_mapping["Overall satisfaction (1-5)"], "answer_value": "5"}
             ]
         }
     
-        # 3. Submit survey
-        response = requests.post(f"{self.base_url}/api/survey", json=survey_data)
+        # 3. Submit survey using self.client
+        response = self.client.post('/api/survey', json=survey_data)
     
         # 4. Assert correct response
-        self.assertEqual(response.status_code, 201, f"Unexpected error: {response.json()}")
+        self.assertEqual(response.status_code, 201, f"Unexpected error: {response.get_json()}")
 
 
 
