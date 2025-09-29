@@ -179,33 +179,37 @@ class TestPatientSurveySystem(unittest.TestCase):
 
     # --- API Endpoint Tests ---
     def test_submit_survey_endpoint(self):
-        # 1. Get real questions from the API
-        questions_response = self.client.get('/api/questions')
+        # 1. Get questions from API
+        questions_response = requests.get(f"{self.base_url}/api/questions")
         self.assertEqual(questions_response.status_code, 200)
-        questions = questions_response.get_json()
+        questions = questions_response.json()
     
-        # Build a mapping of question text -> actual DB question_id
-        questions_mapping = {q["question_text"]: q["question_id"] for q in questions}
+        # 2. Dynamically build valid survey answers
+        survey_data = {"answers": []}
+        for q in questions:
+            if q["question_type"] == "text":
+                survey_data["answers"].append({
+                    "question_id": q["question_id"],
+                    "answer_value": "Sample answer"
+                })
+            elif q["question_type"] == "multiple_choice":
+                if q.get("options"):  # pick first valid option
+                    survey_data["answers"].append({
+                        "question_id": q["question_id"],
+                        "answer_value": q["options"][0]
+                    })
+                else:
+                    # fallback if no options present
+                    survey_data["answers"].append({
+                        "question_id": q["question_id"],
+                        "answer_value": "Default"
+                    })
     
-        # 2. Build answers dynamically using the mapping
-        survey_data = {
-            "answers": [
-                {"question_id": questions_mapping["Date of visit?"], "answer_value": "2023-01-01"},
-                {"question_id": questions_mapping["Which site did you visit?"], "answer_value": "Princess Alexandra Hospital"},
-                {"question_id": questions_mapping["Patient name?"], "answer_value": "John Doe"},
-                {"question_id": questions_mapping["How easy was it to get an appointment?"], "answer_value": "Very easy"},
-                {"question_id": questions_mapping["Were you properly informed about your procedure?"], "answer_value": "Yes"},
-                {"question_id": questions_mapping["Overall satisfaction (1-5)"], "answer_value": "5"}
-            ]
-        }
+        # 3. Submit survey
+        response = requests.post(f"{self.base_url}/api/survey", json=survey_data)
     
-        # 3. Submit survey using self.client
-        response = self.client.post('/api/survey', json=survey_data)
-    
-        # 4. Assert correct response
+        # 4. Check response
         self.assertEqual(response.status_code, 201, f"Unexpected error: {response.get_json()}")
-
-
 
     def test_get_responses_empty(self):
         """Test GET /api/responses endpoint works without crashing"""
