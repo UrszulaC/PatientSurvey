@@ -22,5 +22,5 @@ scrape_configs:
 
   - job_name: 'app-metrics'
     static_configs:
-      - targets: ['<exporter-ip-or-host>:9273']
+      - targets: ['survey-app.uksouth.azurecontainer.io:9273']
 
