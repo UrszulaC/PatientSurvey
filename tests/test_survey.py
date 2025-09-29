@@ -193,7 +193,7 @@ class TestPatientSurveySystem(unittest.TestCase):
                 {"question_id": questions_mapping["Date of visit?"], "answer_value": "2023-01-01"},
                 {"question_id": questions_mapping["Which site did you visit?"], "answer_value": "Princess Alexandra Hospital"},
                 {"question_id": questions_mapping["Patient name?"], "answer_value": "John Doe"},
-                {"question_id": questions_mapping["How easy was it to get an appointment?"], "answer_value": "Easy"},
+                {"question_id": questions_mapping["How easy was it to get an appointment?"], "answer_value": "Very easy"},
                 {"question_id": questions_mapping["Were you properly informed about your procedure?"], "answer_value": "Yes"},
                 {"question_id": questions_mapping["Overall satisfaction (1-5)"], "answer_value": "5"}
             ]
