@@ -18,3 +18,4 @@ PyYAML==6.0
 
 #monitoring
 prometheus_client>=0.17.1
+psutil==5.9.5
