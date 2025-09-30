@@ -3,6 +3,8 @@ import logging
 import json
 import time
 import pyodbc
+import psutil
+import platform
 from flask import Flask, request, jsonify, render_template
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge, Histogram, Summary
 from app.utils.db_utils import get_db_connection
@@ -23,6 +25,11 @@ active_surveys = Gauge('active_surveys_total', 'Number of active surveys initial
 question_count = Gauge('survey_questions_total', 'Total number of questions initialized')
 request_duration = Histogram('http_request_duration_seconds', 'HTTP request duration in seconds', ['method', 'endpoint'])
 active_connections = Gauge('db_active_connections', 'Number of active database connections')
+
+system_cpu_usage = Gauge('app_cpu_usage_percent', 'Application CPU usage percentage')
+system_memory_usage = Gauge('app_memory_usage_bytes', 'Application memory usage in bytes')
+system_uptime = Gauge('app_uptime_seconds', 'Application uptime in seconds')
+start_time = time.time()
 
 def initialize_metrics_from_db():
     """Initialize Prometheus metrics from the database for absolute totals"""
@@ -216,7 +223,7 @@ def initialize_database():
         logger.error(f"Database initialization failed: {e}")
         raise
 
-# Flask Routes - using @app.route instead of @main_bp.route
+# Flask Routes
 @app.route('/')
 def index():
     """Home page"""
@@ -387,6 +394,21 @@ def get_questions():
                 active_connections.dec()
             return jsonify({'error': str(e)}), 500
 
+@app.route('/system-metrics')
+def system_metrics():
+    """Endpoint to update system metrics"""
+    # CPU usage
+    system_cpu_usage.set(psutil.cpu_percent())
+    
+    # Memory usage
+    process = psutil.Process()
+    system_memory_usage.set(process.memory_info().rss)
+    
+    # Uptime
+    system_uptime.set(time.time() - start_time)
+    
+    return jsonify({'status': 'system metrics updated'})
+
 @app.route('/api/test-metrics', methods=['POST'])
 def test_metrics():
     """Test endpoint to verify metrics are working"""
@@ -417,6 +439,32 @@ def health_check():
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}), 500
 
+@app.route('/api/debug-metrics')
+def debug_metrics():
+    """Debug endpoint to check current metric values"""
+    try:
+        metrics_data = {
+            'survey_counter': survey_counter._value.get(),
+            'survey_failures': survey_failures._value.get(),
+            'active_surveys': active_surveys._value.get(),
+            'question_count': question_count._value.get(),
+        }
+        
+        # Get raw metrics for verification
+        import io
+        from prometheus_client import exposition
+        
+        output = io.StringIO()
+        exposition.generate_latest(exposition.REGISTRY, output)
+        raw_metrics = output.getvalue()
+        
+        return jsonify({
+            'current_values': metrics_data,
+            'raw_metrics_sample': raw_metrics[:1000]  # First 1000 chars
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 @app.route('/metrics')
 def metrics():
     """Prometheus metrics endpoint"""
