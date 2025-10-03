@@ -34,11 +34,6 @@
         <div style="max-width: 960px; margin: 0 auto; padding: 20px;">
             <h1 style="font-family: 'Frutiger W01', Arial, sans-serif; font-size: 28pt; font-weight: bold; color: #231f20; margin-bottom: 32px; margin-top: 0;">Patient Experience Survey</h1>
             
-            <!-- Test NHS styling -->
-            <div style="background-color: #005eb8; color: white; padding: 10px; margin: 10px 0; border-radius: 4px;">
-                <span style="color: white;">NHS styling is working</span>
-            </div>
-            
             <div id="loading" style="padding: 24px; text-align: center; font-size: 14pt;">Loading survey questions...</div>
             
             <form id="surveyForm" style="margin-bottom: 40px; display: none;">
@@ -111,6 +106,70 @@
                 const form = document.getElementById('surveyForm');
                 const loading = document.getElementById('loading');
                 
+                // Add radio button styles once
+                const radioStyles = document.createElement('style');
+                radioStyles.textContent = `
+                    .nhs-radio-item {
+                        position: relative;
+                        margin-bottom: 8px;
+                        padding-left: 36px;
+                        display: block;
+                    }
+                    .nhs-radio-input {
+                        position: absolute;
+                        z-index: 1;
+                        top: 0;
+                        left: 0;
+                        width: 24px;
+                        height: 24px;
+                        opacity: 0;
+                        cursor: pointer;
+                    }
+                    .nhs-radio-label {
+                        font-weight: 400;
+                        padding: 0;
+                        cursor: pointer;
+                        display: block;
+                        font-size: 14pt;
+                        font-family: 'Frutiger W01', Arial, sans-serif;
+                    }
+                    .nhs-radio-label::before {
+                        content: "";
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        width: 24px;
+                        height: 24px;
+                        border: 2px solid #425563;
+                        border-radius: 50%;
+                        background: #ffffff;
+                        box-sizing: border-box;
+                    }
+                    .nhs-radio-label::after {
+                        content: "";
+                        position: absolute;
+                        top: 6px;
+                        left: 6px;
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 50%;
+                        background: #005eb8;
+                        opacity: 0;
+                        transition: opacity 0.2s;
+                    }
+                    .nhs-radio-input:checked + .nhs-radio-label::after {
+                        opacity: 1;
+                    }
+                    .nhs-radio-input:focus + .nhs-radio-label::before {
+                        border-width: 4px;
+                        box-shadow: 0 0 0 3px #ffeb3b;
+                    }
+                    .nhs-radio-input:hover + .nhs-radio-label::before {
+                        border-color: #005eb8;
+                    }
+                `;
+                document.head.appendChild(radioStyles);
+                
                 questions.forEach((question, index) => {
                     const questionDiv = document.createElement('div');
                     questionDiv.style.marginBottom = '32px';
@@ -132,21 +191,13 @@
                         const radioGroup = document.createElement('div');
                         radioGroup.style.marginBottom = '24px';
                         
+                        // Create radio buttons for ALL options
                         question.options.forEach(option => {
                             const radioItem = document.createElement('div');
-                            radioItem.style.position = 'relative';
-                            radioItem.style.marginBottom = '8px';
-                            radioItem.style.paddingLeft = '36px';
-                            radioItem.style.display = 'block';
+                            radioItem.className = 'nhs-radio-item';
                             
                             const radioInput = document.createElement('input');
-                            radioInput.style.position = 'absolute';
-                            radioInput.style.zIndex = '1';
-                            radioInput.style.top = '0';
-                            radioInput.style.left = '0';
-                            radioInput.style.width = '24px';
-                            radioInput.style.height = '24px';
-                            radioInput.style.opacity = '0';
+                            radioInput.className = 'nhs-radio-input';
                             radioInput.type = 'radio';
                             radioInput.name = `question_${question.question_id}`;
                             radioInput.value = option;
@@ -154,49 +205,9 @@
                             radioInput.required = question.is_required;
                             
                             const radioLabel = document.createElement('label');
-                            radioLabel.style.fontWeight = '400';
-                            radioLabel.style.padding = '0';
-                            radioLabel.style.cursor = 'pointer';
-                            radioLabel.style.display = 'block';
-                            radioLabel.style.fontSize = '14pt';
+                            radioLabel.className = 'nhs-radio-label';
                             radioLabel.htmlFor = radioInput.id;
                             radioLabel.textContent = option;
-                            
-                            // Create custom radio button appearance
-                            const radioStyle = document.createElement('style');
-                            radioStyle.textContent = `
-                                #${radioInput.id} + label::before {
-                                    content: "";
-                                    position: absolute;
-                                    top: 0;
-                                    left: 0;
-                                    width: 24px;
-                                    height: 24px;
-                                    border: 2px solid #425563;
-                                    border-radius: 50%;
-                                    background: #ffffff;
-                                }
-                                #${radioInput.id} + label::after {
-                                    content: "";
-                                    position: absolute;
-                                    top: 5px;
-                                    left: 5px;
-                                    width: 0;
-                                    height: 0;
-                                    border: 7px solid;
-                                    border-radius: 50%;
-                                    opacity: 0;
-                                    background: #005eb8;
-                                }
-                                #${radioInput.id}:checked + label::after {
-                                    opacity: 1;
-                                }
-                                #${radioInput.id}:focus + label::before {
-                                    border-width: 4px;
-                                    box-shadow: 0 0 0 3px #ffeb3b;
-                                }
-                            `;
-                            document.head.appendChild(radioStyle);
                             
                             radioItem.appendChild(radioInput);
                             radioItem.appendChild(radioLabel);
