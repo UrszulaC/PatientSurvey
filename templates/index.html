@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Patient Survey System - NHS</title>
+    <title>Patient Survey System</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -36,7 +36,9 @@
             width: auto;
             max-width: 200px;
         }
-        
+        header {
+            background-color: #005eb8 !important;
+        }
         /* Survey specific styles */
         .survey-form {
             margin-bottom: 40px;
@@ -216,7 +218,7 @@
     </style>
 </head>
 <body>
-    <header>
+    <header style="background-color: #005eb8; padding: 12px 0;">
         <div class="header-container">
             <div class="nhs-logo">
                 <a href="/" aria-label="NHS homepage">
@@ -227,7 +229,9 @@
             </div>
             
             <div class="paht-logo-container">
+                <!-- For Flask: -->
                 <img src="{{ url_for('static', filename='images/PAHT-logo-for-coloured-backgrounds-Copy.png') }}" alt="The Princess Alexandra Hospital NHS Trust" class="paht-logo">
+                
             </div>
         </div>
     </header>
