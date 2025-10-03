@@ -1,1 +1,557 @@
+/* STYLESHEET for NHS FX Projects
 
+Description: Stylesheet for use in FX projects which applies NHS themes, colours, fonts and ideas. 
+FX version required: 1.5
+Author: Lizzie Brightwell
+Date last updated: 14.07.2021
+
+
+In this document:
+- Section backgrounds
+- Typography
+- Colours
+- Elements
+    -  Buttons
+         - Primary
+         - Secondary
+         - Inverse
+         - Link
+    - Separators
+    - Slider
+    - Progress bar
+- Emphasis Panel
+- Miscallaneous
+
+*/
+
+/* ==========================================================================
+  SECTION BACKGROUNDS
+
+  - applied automatically (simply import stylesheet and press 'refresh'). 
+   If you do not wish for these stylese to be applied, either comment them out or remove them from the stylesheet.
+========================================================================== */
+
+  /* background of entire page */
+    body {
+      background-color: #f0f4f5;
+    }
+
+  /* header section */
+    header {
+      background-color: #005eb8;
+      /* padding ensure content does not flow out of the container */
+      padding-left: 20px;
+      padding-right: 20px;
+      margin-left: -10px;
+      margin-right: -10px;
+    }
+  
+  /* body section */
+    div.ndl-body{
+      background-color: #ffffff;
+      /* padding ensure content does not flow out of the container */
+      padding-left: 20px;
+      padding-right: 20px;
+      margin-left: -10px;
+      margin-right: -10px;
+    }
+
+  /* footer section */
+    footer{
+      background-color: #d8dde0;
+      border-top: 4px solid #005eb8;
+      /* padding ensure content does not flow out of the container */
+      padding-left: 20px;
+      padding-right: 20px;
+      margin-left: -10px;
+      margin-right: -10px;
+    }
+
+  /* panel headings eg. address finder,  complex name, text panel */
+    .panel>.panel-heading{
+      background-color: #005eb8;
+      color: #ffffff;
+    }
+
+
+/* ==========================================================================
+      TYPOGRAPHY
+    
+      - These styles are applied in FX by selecting them from the dropdown list under Styles
+       in the element properties as desired, unless otherwise stated.
+
+      - For styles which are applied automatically (simply import stylesheet and press 'refresh'):
+        if you do not wish for these stylese to be applied, either comment them out or remove them from the stylesheet.
+========================================================================== */
+  
+  /* default font */
+    body {
+      font-family: 'Frutiger W01', Arial, sans-serif;
+      font-size: 14pt;
+      color: #231f20;
+    }
+
+    .Heading1 {
+      font-family: 'Frutiger W01', arial, sans-serif;
+      font-size: 28pt;
+      font-weight: bold;
+      color: #231f20;
+    }
+    
+    .Heading2 {
+      font-family: 'Frutiger W01', arial, sans-serif;
+      font-size: 24pt;
+      font-weight: normal;
+      color: #231f20;
+    }
+    
+    .HeadingWhite {
+      font-family: 'Frutiger W01', arial, sans-serif;
+      font-size: 32pt;
+      font-weight: bold;
+      color: white;
+    }
+
+    .HeadingFormName {
+      font-family: 'Frutiger W01', arial, sans-serif;
+      font-size: 32pt;
+      font-weight: bold;
+      float:right;
+      color: white;
+    }
+
+    .TextCaption {
+      color:#231f20; 
+      font-size: 12pt;
+    }
+
+    .TextFooter {
+      color:#212b32; 
+    }
+
+    .Subtext {
+      color: #4c6272;
+    }
+  
+/* Input and placeholder font - applied automatically */
+.form-control {
+  font-size: 14pt;
+}
+
+/* Error message font - applied automatically */
+.TextBoxErrormessage_Default {
+  font-size: 14pt;
+}
+
+
+  /* links - applied automatically */
+    a {
+      color: #005eb8;
+      text-decoration: underline;
+    }
+    
+    /* changes the colour when user hovers over the link */
+    a:hover {
+      color: #7C2855;
+      text-decoration: none;
+    }
+    
+    /* changes the style when a user is clicking on the link */
+    a:active{
+      background-color: #ffeb3b;
+      color: #212b32;
+      border: none;
+      box-shadow: 0 -2px #ffeb3b, 0 4px #212b32;
+      text-decoration: none;
+    }
+
+  /* footer links - applied automatically */
+    .ndl-footer > * a {
+      color: #4c6272 !important;
+      font-weight: bold;
+    }
+
+    .ndl-footer > * a:hover  {
+      color: #212b32 !important;
+      font-weight: bold;
+    }
+
+  /* header alternative text for images - applied automatically */
+    .ndl-header > * img {
+      color: white;
+    }
+
+  /* header alternative text for images if it has URL behaviour - applied automatically */
+  .ndl-header > * a {
+    color: white !important;
+    font-weight: bold;
+  }
+
+  .ndl-header > * a:hover  {
+    color: white !important;
+    font-weight: bold;
+    text-decoration: underline;
+  }
+
+/* ==========================================================================
+      COLOURS
+
+      - These NHS colours are for optional use. 
+      - Apply these styles in FX by selecting them from the dropdown list under Styles
+       in the element properties as desired.
+========================================================================== */
+  
+    .BlueBackground {
+      background-color: #005eb8;
+    }
+
+    .BlueForeground {
+      color: #005eb8;
+    }
+
+    .GreenBackground {
+      background-color: #007f3b;
+    }
+    
+    .GreenForeground {
+      color: #007f3b;
+    }
+    
+    .DarkGreyBackground {
+      background-color: #425563;
+    }
+
+    .DarkGreyForeground {
+      color: #425563;
+    }
+
+    .YellowBackground {
+      background-color: #FAE100;
+    }
+
+    .YellowForeground {
+      color: #FAE100;
+    }
+
+    .Red {
+      color: #8A1538;
+    }
+
+/* ==========================================================================
+      ELEMENTS: BUTTON
+
+     - Button styles are applied in FX by selecting them from the dropdown list under Styles
+       in the element properties.
+    - For 'ButtonPrimary' you only need to select 'ButtonPrimary' from the list (not ButtonPrimary1, ButtonPrimary2, etc.)
+========================================================================== */
+  
+  
+  /* Primary Button */
+  /* The Primary Button style should be used for all main buttons, such as 'submit' 
+  and 'next' throughout the form. These are buttons which are essential to a user's journey. */
+    .ButtonPrimary{
+      background-color: #007f3b;
+      color:#ffffff;
+      border: none;
+      /* border-radius provides slightly rounded corners */
+      border-radius: 4px;
+      /* box-shadow provides a dark line at the bottom of the button */
+      box-shadow: 0 4px 0 #00401e;
+      /* no outline ensures there is not a blue outline on the button */
+      outline: none !important;
+      /* padding sets the size of the button relative to the text */
+      padding:10px 16px 8px 16px;
+      font-size: 14pt;
+      width: auto;
+      font-weight: bold;
+    }
+
+    /* changes the style when a user hovers over a button */
+    .ButtonPrimary:hover {
+      background-color: #00662f ; 
+      color: #ffffff;
+      border: none;
+    }
+    
+    /* changes the style when a user is clicking on a button */
+    .ButtonPrimary:active {
+      background-color: #00401e !important;
+      box-shadow: none;
+      color: #ffffff !important;
+      border: none;
+      /* transform moves the button down by 4 pixels as the user clicks it */
+      transform: translateY(4px);
+    }
+
+    /* changes the style when the focus is on the button */
+    .ButtonPrimary:focus {
+      background-color: #ffeb3b;
+      color: #212b32;
+    }
+
+    /* changes the style when a user has clicked on a button */
+    .ButtonPrimary:focus:not(:active):not(:hover) {
+      background-color: #ffeb3b !important;
+      box-shadow: 0 4px 0 #212b32;
+      color: #212b32 !important;
+      border: none;
+    }
+  
+  /* Secondary Button */
+  /* The Secondary Button should be used sparingly, for buttons that are not essential 
+  to a user's journey throughout the form, e.g. 'previous' buttons. */
+  
+    .ButtonSecondary{
+      background-color: #4c6272 !important;
+      box-shadow: 0 4px 0 #263139;
+      color: #ffffff !important;
+      padding:10px 16px 8px 16px;
+      font-size: 14pt;
+      width: auto;
+      border: none;
+      outline: none !important;
+      font-weight: bold;
+    }
+    
+    .ButtonSecondary:hover{
+      background-color:#384853 !important;
+      color:white;
+      border: none;
+    }
+    
+    .ButtonSecondary:active {
+      background-color: #263139;
+      box-shadow: none;
+      color: #ffffff !important;
+      border: none;
+      transform: translateY(4px);
+    }
+  
+    .ButtonSecondary:focus {
+      background-color: #ffeb3b;
+      color: #212b32;
+    }
+
+    .ButtonSecondary:focus:not(:active):not(:hover) {
+      background-color: #ffeb3b !important;
+      box-shadow: 0 4px 0 #212b32;
+      color: #212b32 !important;
+      border: none;
+    }
+      
+  /* Inverse Button */
+  /* The Inverse Button should be used sparingly and on non-white backgrounds. It could be 
+  used for buttons which take the user away from the form for more information. */ 
+  
+    .ButtonInverse{
+      background-color: #ffffff !important;
+      box-shadow: 0 4px 0 #212b32;
+      color: #212b32 !important;
+      padding:10px 16px 8px 16px;
+      font-size: 14pt;
+      width: auto;
+      border: none;
+      outline: none !important;
+      font-weight: bold;
+    }
+
+    .ButtonInverse:hover{
+      background-color: #f2f2f2 !important;
+      color: #212b32;
+      border: none;
+    }
+
+    .ButtonInverse:active{
+      background: #212b32 !important;
+      box-shadow: none;
+      color: #ffffff !important;
+      border: none;
+      transform: translateY(4px);
+    }
+
+    .ButtonInverse:focus{
+      background-color: #ffeb3b;
+      color: #212b32;
+    }
+
+    .ButtonInverse:focus:not(:active):not(:hover) {
+      background-color: #ffeb3b !important;
+      box-shadow: 0 4px 0 #212b32;
+      color: #212b32 !important;
+      border: none;
+    }
+  
+  /* Link Button */
+  /* The Link Button is a button that has been styled to look like a URL link.
+     This is done so that a link can have added functionality, as it is possible to
+     add Javascript to a button. */ 
+    .ButtonLink {
+      border:none;
+      outline:none !important;
+      background-color: #ffffff !important;
+      font-size: 14pt;
+    }
+
+    .ButtonLink:hover {
+      background-color: #ffffff;
+      border:none;
+      outline:none;
+      box-shadow:none;
+    }
+
+    .ButtonLink:focus {
+      background-color: #ffffff !important;
+      border:none;
+      outline:none;
+      box-shadow:none;
+    }
+
+    .ButtonLink:active {
+      background-color: #ffffff !important;
+      border:none;
+      outline:none;
+      box-shadow:none;
+    }
+
+  /* The following should be applied to the 'label' style of the button in properties */
+    .ButtonLinkLabel {
+      color: #005eb8;
+      text-decoration: underline;
+    }
+
+    .ButtonLinkLabel:hover {
+      color: #7C2855;
+      text-decoration: none;
+    }
+
+    .ButtonLinkLabel:active{
+      background-color: #ffeb3b !important;
+      color: #212b32 !important;
+      border: none;
+      box-shadow: 0 -2px #ffeb3b, 0 4px #212b32 !important;
+      text-decoration: none;
+    }
+
+    .ButtonLinkLabel:focus{
+      background-color: #ffeb3b !important;
+      color: #212b32 !important;
+      border: none;
+      box-shadow: 0 -2px #ffeb3b, 0 4px #212b32 !important;
+      text-decoration: none;
+    }
+
+    .ButtonLinkLabel:focus:not(:active):not(:hover){
+      background-color: #ffeb3b !important;
+      color: #212b32 !important;
+      border: none;
+      box-shadow: 0 -2px #ffeb3b, 0 4px #212b32 !important;
+      text-decoration: none;
+    }
+
+
+/* ==========================================================================
+      ELEMENTS: SEPERATOR
+
+      - Apply these styles in FX by selecting them from the dropdown list under Styles
+       in the separator properties as desired.
+========================================================================== */
+
+  /* makes the separator invisible */
+    .SeperatorInvisible {
+      opacity: 0;
+    }
+
+    .SeparatorBlue {
+      height: 15px;
+      background-color: #005eb8;
+      border: none;
+    }
+
+    .SeparatorGrey {
+      border-color: #E8EDEE;
+
+    }
+
+/* ==========================================================================
+      ELEMENTS: SLIDER
+
+      - applied automatically (simply import stylesheet and press 'refresh'). 
+      If you do not wish for these stylese to be applied, either comment them out or remove them from the stylesheet.
+========================================================================== */
+
+
+  /* slider circle */
+    .rzslider .rz-pointer {
+      background-color: #005eb8;
+    }
+  
+  /* centre of circle while being clicked */
+    .rzslider .rz-pointer.rz-active:after {
+      background-color: #ffffff;
+    }
+
+  /* horizontal bar */
+    .rzslider .rz-bar {
+      background-color: #E8EDEE;
+    }
+
+  /* unselected dots along the bar */
+    .rzslider .rz-tick {
+      background: #E8EDEE;
+    }
+
+  /* slider number font size */
+  .rz-tick-value{
+    font-size: 12pt;
+  }
+
+/* ==========================================================================
+      ELEMENTS: PROGRESS BAR
+
+      - applied automatically (simply import stylesheet and press 'refresh'). 
+      If you do not wish for these stylese to be applied, either comment them out or remove them from the stylesheet.
+ ========================================================================== */
+
+ /* NHS colour & hide percentage */
+    .progress-bar {
+      background-color: #005eb8;
+      /* change the colour below to white if you would prefer to view the percentage number on the progress bar */
+      color: #005eb8;
+     }
+
+/* ==========================================================================
+      EMPHASIS PANEL
+
+      - Apply this 'EmphasisPanel' style in FX by selecting it from the dropdown list under Styles
+       in the paragraph or label properties as desired.
+      - Appropriate for important instructions or helpful information. 
+========================================================================== */
+
+  /* adds a grey line on left border of element */ 
+    .EmphasisPanel {
+      border-left:5px solid #BFC1C3;
+      line-height:1.5;
+      padding-left:0.7894737em;
+    }
+
+
+/* ==========================================================================
+      MISCELLANEOUS
+ ========================================================================== */
+    
+  /* Justify and element left & right - apply by selecting it from the dropdown list 
+    under Styles in the desired element properties */
+    .Left {
+      float: left;
+    }
+
+    .Right {
+      float: right;
+    }
+
+
+/* Changes the colour of the input box outlines - applied automatically */
+    .form-control:focus {
+      border-color: #005eb8 !important;
+      box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(0, 94, 184, .6);
+    }
