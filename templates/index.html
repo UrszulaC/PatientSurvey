@@ -36,6 +36,23 @@
             width: auto;
             max-width: 200px;
         }
+        .submit-button-container {
+            text-align: right;
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+        
+        /* Fix for logo with spaces in filename */
+        .paht-logo-container img {
+            height: 60px;
+            width: auto;
+            max-width: 200px;
+            display: block;
+        }
+        .paht-logo-container {
+            border: 2px dashed red; /* Temporary to see the container */
+            padding: 5px;
+        }
         header {
             background-color: #005eb8 !important;
         }
@@ -227,12 +244,17 @@
                     </svg>
                 </a>
             </div>
-            
             <div class="paht-logo-container">
-                <!-- For Flask: -->
-                <img src="{{ url_for('static', filename='images/PAHT logo for coloured backgrounds - to be used in top right corner only.png') }}" alt="The Princess Alexandra Hospital NHS Trust" class="paht-logo">
-                
+                <img src="{{ url_for('static', filename='images/PAHT logo for coloured backgrounds - to be used in top right corner only.png') }}" 
+                     alt="The Princess Alexandra Hospital NHS Trust" 
+                     class="paht-logo"
+                     onerror="console.log('Logo failed to load')"
+                     onload="console.log('Logo loaded successfully')">
+                <div style="color: white; font-size: 12px; margin-left: 10px;">
+                    Logo debug
+                </div>
             </div>
+            
         </div>
     </header>
     
@@ -245,7 +267,23 @@
             <form id="surveyForm" class="survey-form" style="display: none;">
                 <div id="questionsContainer"></div>
                 
-                <button type="submit" class="ButtonPrimary">Submit Survey</button>
+                <div class="submit-button-container">
+                    <button type="submit" style="
+                        background-color: #007f3b !important;
+                        color: #ffffff !important;
+                        border: none !important;
+                        border-radius: 4px !important;
+                        box-shadow: 0 4px 0 #00401e !important;
+                        padding: 12px 24px !important;
+                        font-size: 16px !important;
+                        font-weight: bold !important;
+                        cursor: pointer !important;
+                        display: inline-block !important;
+                        text-align: center !important;
+                        text-decoration: none !important;
+                        outline: none !important;
+                    ">Submit Survey</button>
+                </div>
             </form>
 
             <div id="successMessage" class="success-message" style="display: none;" role="alert">
