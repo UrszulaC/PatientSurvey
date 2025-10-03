@@ -6,57 +6,16 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="NHS-stylesheet-FX1.5.css">
     <style>
-        /* NHS Color Palette */
-        :root {
-            --nhs-blue: #005eb8;
-            --nhs-dark-blue: #003087;
-            --nhs-bright-blue: #0072ce;
-            --nhs-light-blue: #41b6e6;
-            --nhs-aqua-green: #00a499;
-            --nhs-dark-green: #006747;
-            --nhs-purple: #330072;
-            --nhs-dark-pink: #7c2855;
-            --nhs-dark-red: #8a1538;
-            --nhs-orange: #ed8b00;
-            --nhs-dark-yellow: #ffb81c;
-            --nhs-black: #231f20;
-            --nhs-dark-grey: #425563;
-            --nhs-mid-grey: #768692;
-            --nhs-pale-grey: #e8edee;
-            --nhs-white: #ffffff;
-            --nhs-focus-color: #ffeb3b;
-            --nhs-error-color: #d5281b;
-            --nhs-success-color: #007f3b;
-        }
-        
-        /* NHS Typography */
-        @import url('https://fonts.googleapis.com/css2?family=Frutiger:wght@300;400;600;700&display=swap');
-        
-        body {
-            font-family: 'Frutiger', Arial, sans-serif;
-            font-size: 16px;
-            line-height: 1.5;
-            color: var(--nhs-black);
-            background-color: var(--nhs-white);
-            margin: 0;
-            padding: 0;
-        }
-        
+        /* Additional styles to complement the NHS FX stylesheet */
         .container {
             max-width: 960px;
             margin: 0 auto;
             padding: 20px;
         }
         
-        /* NHS Header with PAHT Logo */
-        .nhs-header {
-            background-color: var(--nhs-blue);
-            padding: 12px 0;
-            margin-bottom: 32px;
-            position: relative;
-        }
-        
+        /* Header layout */
         .header-container {
             max-width: 960px;
             margin: 0 auto;
@@ -64,27 +23,12 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-        }
-        
-        .nhs-logo {
-            display: flex;
-            align-items: center;
+            min-height: 80px;
         }
         
         .nhs-logo__svg {
             height: 40px;
             width: auto;
-        }
-        
-        .nhs-logo__link {
-            display: inline-block;
-            text-decoration: none;
-        }
-        
-        /* PAHT Logo Container */
-        .paht-logo-container {
-            display: flex;
-            align-items: center;
         }
         
         .paht-logo {
@@ -93,44 +37,7 @@
             max-width: 200px;
         }
         
-        .paht-logo-placeholder {
-            background: var(--nhs-white);
-            color: var(--nhs-blue);
-            padding: 10px 15px;
-            border-radius: 4px;
-            font-weight: 600;
-            text-align: center;
-            line-height: 1.2;
-        }
-        
-        .paht-logo-placeholder .trust-name {
-            font-size: 14px;
-            font-weight: 700;
-        }
-        
-        .paht-logo-placeholder .hospital-name {
-            font-size: 12px;
-        }
-        
-        /* NHS Typography Styles */
-        h1 {
-            font-size: 32px;
-            font-weight: 600;
-            line-height: 1.2;
-            color: var(--nhs-blue);
-            margin-bottom: 32px;
-            margin-top: 0;
-        }
-        
-        h2 {
-            font-size: 24px;
-            font-weight: 600;
-            line-height: 1.3;
-            color: var(--nhs-dark-blue);
-            margin-bottom: 16px;
-        }
-        
-        /* NHS Form Elements */
+        /* Survey specific styles */
         .survey-form {
             margin-bottom: 40px;
         }
@@ -138,57 +45,42 @@
         .question {
             margin-bottom: 32px;
             padding: 24px;
-            border: 2px solid var(--nhs-pale-grey);
+            border: 2px solid #E8EDEE;
             border-radius: 4px;
-            background: var(--nhs-white);
+            background: #ffffff;
         }
         
         .question-text {
-            font-weight: 600;
+            font-weight: bold;
             margin-bottom: 16px;
-            color: var(--nhs-black);
+            color: #231f20;
             font-size: 19px;
         }
         
         .required {
-            color: var(--nhs-error-color);
+            color: #8A1538;
         }
         
-        /* NHS Form Controls */
-        .nhs-form-group {
+        .form-group {
             margin-bottom: 24px;
         }
         
-        .nhs-label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-        
-        .nhs-hint {
-            display: block;
-            font-weight: 400;
-            color: var(--nhs-dark-grey);
-            margin-bottom: 8px;
-        }
-        
         .nhs-input {
-            font-family: 'Frutiger', Arial, sans-serif;
-            font-size: 16px;
-            line-height: 1.5;
+            font-family: 'Frutiger W01', Arial, sans-serif;
+            font-size: 14pt;
             padding: 8px;
-            border: 2px solid var(--nhs-dark-grey);
+            border: 2px solid #425563;
             border-radius: 4px;
             width: 100%;
             box-sizing: border-box;
         }
         
         .nhs-input:focus {
-            outline: 3px solid var(--nhs-focus-color);
-            outline-offset: 0;
-            box-shadow: inset 0 0 0 2px;
+            border-color: #005eb8 !important;
+            box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(0, 94, 184, .6);
         }
         
+        /* Custom radio buttons to match NHS style */
         .nhs-radios__item {
             position: relative;
             margin-bottom: 8px;
@@ -211,6 +103,7 @@
             padding: 0;
             cursor: pointer;
             display: block;
+            font-size: 14pt;
         }
         
         .nhs-radios__label::before {
@@ -220,9 +113,9 @@
             left: 0;
             width: 24px;
             height: 24px;
-            border: 2px solid var(--nhs-dark-grey);
+            border: 2px solid #425563;
             border-radius: 50%;
-            background: var(--nhs-white);
+            background: #ffffff;
         }
         
         .nhs-radios__label::after {
@@ -235,7 +128,7 @@
             border: 7px solid;
             border-radius: 50%;
             opacity: 0;
-            background: var(--nhs-blue);
+            background: #005eb8;
         }
         
         .nhs-radios__input:checked + .nhs-radios__label::after {
@@ -244,100 +137,59 @@
         
         .nhs-radios__input:focus + .nhs-radios__label::before {
             border-width: 4px;
-            box-shadow: 0 0 0 3px var(--nhs-focus-color);
+            box-shadow: 0 0 0 3px #ffeb3b;
         }
         
-        /* NHS Buttons */
-        .nhs-button {
-            background-color: var(--nhs-blue);
-            border: 2px solid var(--nhs-blue);
-            border-radius: 4px;
-            color: var(--nhs-white);
-            cursor: pointer;
-            display: inline-block;
-            font-family: 'Frutiger', Arial, sans-serif;
-            font-size: 19px;
-            font-weight: 600;
-            line-height: 1;
-            padding: 12px 16px;
-            text-align: center;
-            text-decoration: none;
-            box-shadow: 0 2px 0 var(--nhs-dark-blue);
-        }
-        
-        .nhs-button:hover {
-            background-color: var(--nhs-dark-blue);
-            border-color: var(--nhs-dark-blue);
-        }
-        
-        .nhs-button:focus {
-            background-color: var(--nhs-dark-blue);
-            outline: 3px solid var(--nhs-focus-color);
-            outline-offset: 0;
-        }
-        
-        .nhs-button:active {
-            background-color: var(--nhs-dark-blue);
-            box-shadow: none;
-            top: 2px;
-        }
-        
-        /* NHS Alerts */
-        .nhs-success {
-            background-color: var(--nhs-success-color);
-            color: var(--nhs-white);
-            padding: 16px;
-            margin-bottom: 32px;
-            border-radius: 4px;
-        }
-        
-        .nhs-error {
-            background-color: var(--nhs-error-color);
-            color: var(--nhs-white);
-            padding: 16px;
-            margin-bottom: 32px;
-            border-radius: 4px;
-        }
-        
-        .nhs-warning {
-            background-color: var(--nhs-orange);
-            color: var(--nhs-black);
-            padding: 16px;
-            margin-bottom: 32px;
-            border-radius: 4px;
-        }
-        
-        /* NHS Navigation */
+        /* Navigation links */
         .nav-links {
             margin-top: 40px;
             padding-top: 24px;
-            border-top: 1px solid var(--nhs-pale-grey);
+            border-top: 1px solid #E8EDEE;
         }
         
         .nav-links a {
-            color: var(--nhs-blue);
+            color: #005eb8;
             text-decoration: underline;
             margin-right: 24px;
-            font-weight: 600;
+            font-weight: bold;
         }
         
         .nav-links a:hover {
-            color: var(--nhs-dark-blue);
+            color: #7C2855;
             text-decoration: none;
         }
         
-        .nav-links a:focus {
-            background-color: var(--nhs-focus-color);
-            color: var(--nhs-black);
-            outline: 3px solid var(--nhs-focus-color);
+        .nav-links a:active {
+            background-color: #ffeb3b;
+            color: #212b32;
+            border: none;
+            box-shadow: 0 -2px #ffeb3b, 0 4px #212b32;
             text-decoration: none;
         }
         
-        /* Loading indicator */
+        /* Loading and message styles */
         #loading {
             padding: 24px;
             text-align: center;
-            font-size: 19px;
+            font-size: 14pt;
+        }
+        
+        .success-message {
+            background-color: #007f3b;
+            color: #ffffff;
+            padding: 16px;
+            margin-bottom: 32px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .error-message {
+            background-color: #8A1538;
+            color: #ffffff;
+            padding: 16px;
+            margin-bottom: 32px;
+            border-radius: 4px;
+            font-weight: bold;
         }
         
         /* Responsive adjustments */
@@ -349,15 +201,7 @@
             .header-container {
                 flex-direction: column;
                 gap: 15px;
-            }
-            
-            .paht-logo-container {
-                order: -1;
-                align-self: flex-end;
-            }
-            
-            h1 {
-                font-size: 24px;
+                text-align: center;
             }
             
             .question {
@@ -372,10 +216,10 @@
     </style>
 </head>
 <body>
-    <header class="nhs-header" role="banner">
+    <header>
         <div class="header-container">
             <div class="nhs-logo">
-                <a class="nhs-logo__link" href="/" aria-label="NHS homepage">
+                <a href="/" aria-label="NHS homepage">
                     <svg class="nhs-logo__svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 16" height="40" width="100">
                         <path fill="#ffffff" d="M3.9 1.5h4.4l2.6 9h.1l1.8-9h3.3l-2.8 13H9l-2.7-9h-.1l-1.8 9H1.1M17.3 1.5h3.6l-1 4.9h4L25 1.5h3.5l-2.7 13h-3.5l1.1-5.6h-4.1l-1.2 5.6h-3.4M37.7 4.4c-.7-.3-1.6-.6-2.9-.6-1.4 0-2.5.4-2.5 1.3 0 1.8 5.1 1.2 5.1 5.1 0 3.6-3.3 4.5-6.4 4.5-1.3 0-2.9-.3-4-.7l.8-2.7c.7.4 2.1.7 3.2.7 1.6 0 2.8-.4 2.8-1.4 0-2.1-5.1-1.3-5.1-5 0-3.4 2.9-4.4 5.8-4.4 1.2 0 2.7.2 3.8.7"></path>
                     </svg>
@@ -383,44 +227,45 @@
             </div>
             
             <div class="paht-logo-container">
-                <!-- Replace this placeholder with your actual PAHT logo 
-                <div class="paht-logo-placeholder">
-                    <div class="trust-name">NHS</div>
-                    <div class="hospital-name">The Princess Alexandra</div>
-                    <div class="hospital-name">Hospital</div>
-                    <div class="hospital-name">NHS Trust</div>
-                </div>-->
-                <img src="PAHT-logo.png" alt="The Princess Alexandra Hospital NHS Trust" class="paht-logo">
+                <img src="PAHT-logo-for-coloured-backgrounds-Copy.png" alt="The Princess Alexandra Hospital NHS Trust" class="paht-logo">
             </div>
         </div>
     </header>
     
-    <div class="container">
-        <h1>Patient Experience Survey</h1>
-        
-        <div id="loading">Loading survey questions...</div>
-        
-        <form id="surveyForm" class="survey-form" style="display: none;">
-            <div id="questionsContainer"></div>
+    <div class="ndl-body">
+        <div class="container">
+            <h1 class="Heading1">Patient Experience Survey</h1>
             
-            <button type="submit" class="nhs-button">Submit Survey</button>
-        </form>
+            <div id="loading">Loading survey questions...</div>
+            
+            <form id="surveyForm" class="survey-form" style="display: none;">
+                <div id="questionsContainer"></div>
+                
+                <button type="submit" class="ButtonPrimary">Submit Survey</button>
+            </form>
 
-        <div id="successMessage" class="nhs-success" style="display: none;" role="alert">
-            <strong>Thank you for completing the survey!</strong> Your feedback has been recorded.
-        </div>
+            <div id="successMessage" class="success-message" style="display: none;" role="alert">
+                Thank you for completing the survey! Your feedback has been recorded.
+            </div>
 
-        <div id="errorMessage" class="nhs-error" style="display: none;" role="alert">
-            <strong>There was an error submitting your survey.</strong> Please try again.
-        </div>
+            <div id="errorMessage" class="error-message" style="display: none;" role="alert">
+                There was an error submitting your survey. Please try again.
+            </div>
 
-        <div class="nav-links">
-            <a href="/api/questions">View Questions (JSON)</a>
-            <a href="/api/responses">View Responses (JSON)</a>
-            <a href="/metrics">Metrics</a>
-            <a href="/health">Health Check</a>
+            <div class="nav-links">
+                <a href="/api/questions">View Questions (JSON)</a>
+                <a href="/api/responses">View Responses (JSON)</a>
+                <a href="/metrics">Metrics</a>
+                <a href="/health">Health Check</a>
+            </div>
         </div>
     </div>
+
+    <footer>
+        <div class="container">
+            <p class="TextFooter">© NHS The Princess Alexandra Hospital NHS Trust</p>
+        </div>
+    </footer>
 
     <script>
         // Add cache busting parameter
@@ -448,7 +293,7 @@
                     
                     if (question.question_type === 'multiple_choice' && question.options.length > 0) {
                         const radioGroup = document.createElement('div');
-                        radioGroup.className = 'nhs-form-group';
+                        radioGroup.className = 'form-group';
                         
                         question.options.forEach(option => {
                             const radioItem = document.createElement('div');
@@ -475,7 +320,7 @@
                         questionDiv.appendChild(radioGroup);
                     } else {
                         const formGroup = document.createElement('div');
-                        formGroup.className = 'nhs-form-group';
+                        formGroup.className = 'form-group';
                         
                         const input = document.createElement('input');
                         input.className = 'nhs-input';
@@ -497,7 +342,7 @@
             } catch (error) {
                 console.error('Error loading questions:', error);
                 document.getElementById('loading').textContent = 'Error loading questions. Please refresh the page.';
-                document.getElementById('loading').className = 'nhs-error';
+                document.getElementById('loading').className = 'error-message';
             }
         }
 
@@ -539,7 +384,7 @@
             } catch (error) {
                 console.error('Error submitting survey:', error);
                 document.getElementById('errorMessage').style.display = 'block';
-                document.getElementById('errorMessage').textContent = '❌ Error submitting survey: ' + error.message;
+                document.getElementById('errorMessage').textContent = 'Error submitting survey: ' + error.message;
             }
         });
 
