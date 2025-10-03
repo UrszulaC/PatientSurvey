@@ -245,14 +245,9 @@
                 </a>
             </div>
             <div class="paht-logo-container">
-                <img src="{{ url_for('static', filename='images/PAHT logo for coloured backgrounds - to be used in top right corner only.png') }}" 
+                <img src="{{ url_for('static', filename='images/PAHT-logo.png') }}" 
                      alt="The Princess Alexandra Hospital NHS Trust" 
-                     class="paht-logo"
-                     onerror="console.log('Logo failed to load')"
-                     onload="console.log('Logo loaded successfully')">
-                <div style="color: white; font-size: 12px; margin-left: 10px;">
-                    Logo debug
-                </div>
+                     class="paht-logo">
             </div>
             
         </div>
@@ -261,7 +256,10 @@
     <div class="ndl-body">
         <div class="container">
             <h1 class="Heading1">Patient Experience Survey</h1>
-            
+            <!-- Add this right after <h1> to test CSS -->
+            <div class="BlueBackground" style="padding: 10px; margin: 10px 0;">
+                <span style="color: white;">If this is blue, NHS CSS is working</span>
+            </div>
             <div id="loading">Loading survey questions...</div>
             
             <form id="surveyForm" class="survey-form" style="display: none;">
