@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app directly
-app = Flask(__name__, template_folder='../templates')
+app = Flask(__name__, template_folder='../templates', static_folder='static', static_url_path='/static')
 
 # Simple direct metric creation
 survey_counter = Counter('patient_survey_submissions_total', 'Total number of patient surveys submitted')
@@ -469,6 +469,20 @@ def debug_metrics():
 def metrics():
     """Prometheus metrics endpoint"""
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+@app.route('/debug-static')
+def debug_static():
+    import os
+    static_path = os.path.join(app.root_path, 'static')
+    css_path = os.path.join(static_path, 'css')
+    
+    files = {
+        'static_folder_exists': os.path.exists(static_path),
+        'css_folder_exists': os.path.exists(css_path),
+        'css_files': os.listdir(css_path) if os.path.exists(css_path) else []
+    }
+    
+    return files
 
 if __name__ == "__main__":
     # Initialize database
