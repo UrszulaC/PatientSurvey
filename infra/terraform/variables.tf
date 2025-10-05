@@ -14,13 +14,13 @@ variable "grafana_password" {
   sensitive   = true
 }
 
-variable "grafana_email" {
+variable "GRAFANA_EMAIL" {
   description = "Email address for Grafana alerts"
   type        = string
   sensitive   = true
 }
 
-variable "grafana_email_password" {
+variable "GRAFANA_EMAIL_PASSWORD" {
   description = "App password for Grafana email"
   type        = string
   sensitive   = true
