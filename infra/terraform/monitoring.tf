@@ -76,7 +76,17 @@ resource "azurerm_container_group" "grafana" {
     image  = "grafana/grafana:9.5.6"
     cpu    = "0.5"
     memory = "1.5"
-
+    
+    environment_variables = {
+      GF_SECURITY_ADMIN_PASSWORD = var.grafana_password
+      GF_SMTP_ENABLED            = "true"
+      GF_SMTP_HOST               = "smtp.gmail.com:587"
+      GF_SMTP_USER               = var.GRAFANA_EMAIL
+      GF_SMTP_PASSWORD           = var.GRAFANA_EMAIL_PASSWORD
+      GF_SMTP_FROM_ADDRESS       = var.GRAFANA_EMAIL
+      GF_SMTP_FROM_NAME          = "Grafana-Alerts"
+      GF_SMTP_SKIP_VERIFY        = "true"
+    }
     ports {
       port     = 3000
       protocol = "TCP"
