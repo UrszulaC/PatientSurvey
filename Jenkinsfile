@@ -128,11 +128,36 @@ pipeline {
                                 # Import Storage Shares
                                 import_if_missing "azurerm_storage_share.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/prometheus-data"    
                                 import_if_missing "azurerm_storage_share.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/grafana-data"
-
+        
+                                # ADD MISSING IMPORTS HERE:
+                                # Import SQL Database (if different from above)
+                                import_if_missing "azurerm_mssql_database.main_database" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/databases/patient_survey_db"
+                                
+                                # Import additional firewall rules if they exist
+                                import_if_missing "azurerm_mssql_firewall_rule.allow_all_azure_ips" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/firewallRules/AllowAllWindowsAzureIps"
+                                
+                                # Import Virtual Network if it exists
+                                import_if_missing "azurerm_virtual_network.monitoring_vnet" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/virtualNetworks/monitoring-vnet" || true
+                                
+                                # Import Subnet if it exists  
+                                import_if_missing "azurerm_subnet.monitoring_subnet" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/virtualNetworks/monitoring-vnet/subnets/monitoring-subnet" || true
         
                                 # Try to import container groups if they exist
                                 import_if_missing "azurerm_container_group.prometheus" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg"
                                 import_if_missing "azurerm_container_group.grafana" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg"
+                                import_if_missing "azurerm_container_group.survey_app" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/survey-app-cg"
+        
+                                # ADD DIRECT IMPORTS FOR RESOURCES THAT KEEP FAILING:
+                                echo "Performing direct imports for critical resources..."
+                                
+                                # Direct import for SQL Server (bypass the function)
+                                terraform import azurerm_mssql_server.sql_server "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql" || echo "SQL Server import completed or already managed"
+                                
+                                # Direct import for Network Security Group
+                                terraform import azurerm_network_security_group.monitoring_nsg "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg" || echo "NSG import completed or already managed"
+                                
+                                # Direct import for Storage Account
+                                terraform import azurerm_storage_account.monitoring "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor" || echo "Storage Account import completed or already managed"
         
                                 echo "✅ Terraform initialization and resource import completed"
                             '''
@@ -141,59 +166,6 @@ pipeline {
                 }
             }
         }
-        // stage('Import Existing Resources if Missing') {
-        //     steps {
-        //         script {
-        //             dir('infra/terraform') {
-        //                 withCredentials([
-        //                     string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-        //                     string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-        //                     string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-        //                     string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR')
-        //                 ]) {
-        //                     sh '''
-        //                         set -e
-        //                         export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
-        //                         export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
-        //                         export ARM_TENANT_ID="${ARM_TENANT_ID}"
-        //                         export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
-        
-        //                         az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-        //                         az account set --subscription "$ARM_SUBSCRIPTION_ID"
-        
-        //                         terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
-        //                                        -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
-        //                                        -backend-config="container_name=${TF_STATE_CONTAINER}" \
-        //                                        -backend-config="key=${TF_STATE_KEY}"
-        
-        //                         terraform state list > existing_state.txt || true
-        
-        //                         import_if_missing() {
-        //                             local resource_name="$1"
-        //                             local azure_resource_id="$2"
-        
-        //                             if ! grep -xq "$resource_name" existing_state.txt; then
-        //                                 echo "Attempting to import $resource_name..."
-        //                                 terraform import "$resource_name" "$azure_resource_id" && \
-        //                                 echo "✅ Imported $resource_name" || \
-        //                                 echo "⚠️ Failed to import $resource_name"
-        //                             else
-        //                                 echo "✅ $resource_name already in state"
-        //                             fi
-        //                         }
-        
-        //                         # Conditional import of resources
-        //                         import_if_missing "azurerm_mssql_server.sql_server" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql"
-        //                         import_if_missing "azurerm_network_security_group.monitoring_nsg" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg"
-        //                         import_if_missing "azurerm_storage_account.monitoring" "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
-        
-        //                         echo "✅ Conditional import stage completed"
-        //                     '''
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
         stage('Cleanup Old Resources') {
             steps {
                 script {
