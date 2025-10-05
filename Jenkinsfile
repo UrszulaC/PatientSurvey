@@ -97,53 +97,7 @@ pipeline {
                 }
             }
         }
-        stage('Import Existing Resources') {
-            steps {
-                script {
-                    dir('infra/terraform') {
-                        withCredentials([
-                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
-                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
-                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
-                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
-                            string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
-                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
-                            string(credentialsId: 'GRAFANA_EMAIL', variable: 'GRAFANA_EMAIL'),
-                            string(credentialsId: 'GRAFANA_EMAIL_PASSWORD', variable: 'GRAFANA_EMAIL_PASSWORD')
-                        ]) {
-                            sh '''
-                                set -e
-                                export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
-                                export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
-                                export ARM_TENANT_ID="${ARM_TENANT_ID}"
-                                export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
-                                
-                                # Login to Azure
-                                az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                                az account set --subscription "$ARM_SUBSCRIPTION_ID_VAR"
         
-                                echo "=== CHECKING TERRAFORM STATE ==="
-                                terraform state list || echo "No existing state"
-        
-                                echo "=== IMPORTING EXISTING RESOURCES ==="
-        
-                                # Import with proper error handling
-                                echo "Importing SQL Server..."
-                                terraform import azurerm_mssql_server.sql_server "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql"
-                                
-                                echo "Importing Network Security Group..."
-                                terraform import azurerm_network_security_group.monitoring_nsg "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg"
-                                
-                                echo "Importing Storage Account..."
-                                terraform import azurerm_storage_account.monitoring "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
-        
-                                echo "✅ All resources imported successfully"
-                            '''
-                        }
-                    }
-                }
-            }
-        }
         stage('Cleanup Old Resources') {
             steps {
                 script {
@@ -175,7 +129,53 @@ pipeline {
                 }
             }
         }
-    
+        stage('Import Existing Resources') {
+            steps {
+                script {
+                    dir('infra/terraform') {
+                        withCredentials([
+                            usernamePassword(credentialsId: 'db-creds', usernameVariable: 'TF_VAR_db_user', passwordVariable: 'TF_VAR_db_password'),
+                            string(credentialsId: 'AZURE_CLIENT_ID', variable: 'ARM_CLIENT_ID'),
+                            string(credentialsId: 'AZURE_CLIENT_SECRET', variable: 'ARM_CLIENT_SECRET'),
+                            string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
+                            string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
+                            string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
+                            string(credentialsId: 'GRAFANA_EMAIL', variable: 'GRAFANA_EMAIL'),
+                            string(credentialsId: 'GRAFANA_EMAIL_PASSWORD', variable: 'GRAFANA_EMAIL_PASSWORD')
+                        ]) {
+                            sh '''
+                                set -e
+                                export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
+                                export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
+                                export ARM_TENANT_ID="${ARM_TENANT_ID}"
+                                export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID_VAR}"
+                                
+                                # Login to Azure
+                                az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+                                az account set --subscription "$ARM_SUBSCRIPTION_ID_VAR"
+        
+                                echo "=== CHECKING TERRAFORM STATE ==="
+                                terraform state list || echo "No existing state"
+        
+                                echo "=== IMPORTING EXISTING RESOURCES ==="
+        
+                                # Import with required variables
+                                echo "Importing SQL Server..."
+                                terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_mssql_server.sql_server "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql"
+                                
+                                echo "Importing Network Security Group..."
+                                terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_network_security_group.monitoring_nsg "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg"
+                                
+                                echo "Importing Storage Account..."
+                                terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_storage_account.monitoring "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
+        
+                                echo "✅ All resources imported successfully"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
        stage('Build Docker Images') {
             steps {
                 script {
