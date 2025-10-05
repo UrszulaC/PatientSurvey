@@ -293,6 +293,8 @@ pipeline {
             -var="grafana_password=${TF_VAR_grafana_password}" \
             -var="docker_user=${TF_VAR_docker_user}" \
             -var="docker_password=${TF_VAR_docker_password}" \
+            -var="grafana_email_password=${GRAFANA_EMAIL_PASSWORD}" \
+            -var="grafana_email=${GRAFANA_EMAIL}" \
             -var="prometheus_image_tag=${BUILD_NUMBER}" \
             -var="resource_group_name=MyPatientSurveyRG" \
             -var="location=uksouth"
