@@ -14,7 +14,17 @@ variable "grafana_password" {
   sensitive   = true
 }
 
+variable "grafana_email" {
+  description = "Email address for Grafana alerts"
+  type        = string
+  sensitive   = true
+}
 
+variable "grafana_email_password" {
+  description = "App password for Grafana email"
+  type        = string
+  sensitive   = true
+}
 variable "docker_user" {
   description = "Docker Hub username for private images"
   type        = string
