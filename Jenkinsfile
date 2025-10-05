@@ -58,7 +58,7 @@ pipeline {
             }
         }
 
-        stage('Initialize Terraform and Import Existing Resources') {
+        stage('Initialize Terraform') {
             steps {
                 script {
                     dir('infra/terraform') {
@@ -84,34 +84,13 @@ pipeline {
                                 export TF_VAR_tenant_id="${ARM_TENANT_ID}"
                                 export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID_VAR}"
         
-                                # Initialize Terraform with backend
+                                # Initialize Terraform only - NO IMPORTS
                                 terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
                                                -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
                                                -backend-config="container_name=${TF_STATE_CONTAINER}" \
                                                -backend-config="key=${TF_STATE_KEY}"
         
-                                # Login to Azure for resource import
-                                az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
-                                az account set --subscription "$ARM_SUBSCRIPTION_ID_VAR"
-        
-                                echo "=== IMPORTING EXISTING AZURE RESOURCES ==="
-        
-                                # Force import critical resources (ignore errors if already imported)
-                                terraform import azurerm_mssql_server.sql_server "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql" || echo "SQL Server already imported or different error"
-                                
-                                terraform import azurerm_network_security_group.monitoring_nsg "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg" || echo "NSG already imported or different error"
-                                
-                                terraform import azurerm_storage_account.monitoring "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor" || echo "Storage Account already imported or different error"
-        
-                                # Import SQL Database
-                                terraform import azurerm_mssql_database.sql_database "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/databases/patient_survey_db" || echo "SQL Database already imported or different error"
-        
-                                # Import Storage Shares
-                                terraform import azurerm_storage_share.prometheus "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/prometheus-data" || echo "Prometheus share already imported or different error"
-                                
-                                terraform import azurerm_storage_share.grafana "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/grafana-data" || echo "Grafana share already imported or different error"
-        
-                                echo "✅ Terraform initialization and resource import completed"
+                                echo "✅ Terraform initialization completed (imports skipped)"
                             '''
                         }
                     }
