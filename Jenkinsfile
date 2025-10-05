@@ -169,6 +169,18 @@ pipeline {
                                 echo "Importing Storage Account..."
                                 terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_storage_account.monitoring "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
         
+                                echo "Importing SQL Database..."
+                                terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_mssql_database.sql_database "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/databases/patient_survey_db"
+                                
+                                echo "Importing SQL Firewall Rule..."
+                                terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_mssql_firewall_rule.allow_azure_services "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql/firewallRules/AllowAzureServices"
+                                
+                                echo "Importing Prometheus Storage Share..."
+                                terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_storage_share.prometheus "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/prometheus-data"
+                                
+                                echo "Importing Grafana Storage Share..."
+                                terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_storage_share.grafana "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor/fileServices/default/shares/grafana-data"
+                                
                                 echo "✅ All resources imported successfully"
                             '''
                         }
