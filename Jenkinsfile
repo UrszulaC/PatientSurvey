@@ -182,12 +182,6 @@ pipeline {
         # Use unique tag if available, otherwise fallback to latest
         export TF_VAR_app_image_tag="${APP_IMAGE_TAG:-latest}"
         
-        # Initialize Terraform with backend
-        terraform init -backend-config="resource_group_name=${RESOURCE_GROUP}" \
-                       -backend-config="storage_account_name=${TF_STATE_STORAGE}" \
-                       -backend-config="container_name=${TF_STATE_CONTAINER}" \
-                       -backend-config="key=${TF_STATE_KEY}"
-        
         # Terraform plan with all required variables (added app_image_tag)
         terraform plan -out=complete_plan.out \
             -var="app_image_tag=${TF_VAR_app_image_tag}" \
