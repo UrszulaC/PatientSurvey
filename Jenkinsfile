@@ -9,8 +9,8 @@ pipeline {
         TF_STATE_CONTAINER = 'tfstate'
         TF_STATE_KEY = 'patient_survey.tfstate'
         GRAFANA_PASSWORD = credentials('GRAFANA_PASSWORD')
-        GRAFANA_EMAIL = credentials('GRAFANA_EMAIL')
-        GRAFANA_EMAIL_PASSWORD = credentials('GRAFANA_EMAIL_PASSWORD')
+        GRAFANA_EMAIL = credentials('grafana_email')
+        GRAFANA_EMAIL_PASSWORD = credentials('grafana_email_password')
     }
 
     options {
@@ -69,8 +69,8 @@ pipeline {
                             string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                             string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
                             string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
-                            string(credentialsId: 'GRAFANA_EMAIL', variable: 'GRAFANA_EMAIL'),
-                            string(credentialsId: 'GRAFANA_EMAIL_PASSWORD', variable: 'GRAFANA_EMAIL_PASSWORD')
+                            string(credentialsId: 'GRAFANA_EMAIL', variable: 'grafana_email'),
+                            string(credentialsId: 'GRAFANA_EMAIL_PASSWORD', variable: 'grafana_email_password')
                         ]) {
                             sh '''
                                 set -e
@@ -259,8 +259,8 @@ pipeline {
                             string(credentialsId: 'AZURE_TENANT_ID', variable: 'ARM_TENANT_ID'),
                             string(credentialsId: 'azure_subscription_id', variable: 'ARM_SUBSCRIPTION_ID_VAR'),
                             string(credentialsId: 'GRAFANA_PASSWORD', variable: 'TF_VAR_grafana_password'),
-                            string(credentialsId: 'GRAFANA_EMAIL', variable: 'GRAFANA_EMAIL'),
-                            string(credentialsId: 'GRAFANA_EMAIL_PASSWORD', variable: 'GRAFANA_EMAIL_PASSWORD'),
+                            string(credentialsId: 'GRAFANA_EMAIL', variable: 'grafana_email'),
+                            string(credentialsId: 'GRAFANA_EMAIL_PASSWORD', variable: 'grafana_email_password'),
                             usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'TF_VAR_docker_user', passwordVariable: 'TF_VAR_docker_password')
                         ]) {
                             sh '''#!/bin/bash
