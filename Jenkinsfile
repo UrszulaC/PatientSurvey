@@ -184,8 +184,8 @@ pipeline {
                                 echo "Importing Prometheus Container Group..."
                                 terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_container_group.prometheus "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/prometheus-cg"
                                 
-                                //echo "Importing Grafana Container Group..."
-                                //terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_container_group.grafana "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg"
+                                # echo "Importing Grafana Container Group..."
+                                # terraform import -var="GRAFANA_EMAIL=${GRAFANA_EMAIL}" -var="GRAFANA_EMAIL_PASSWORD=${GRAFANA_EMAIL_PASSWORD}" azurerm_container_group.grafana "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ContainerInstance/containerGroups/grafana-cg"
                                 echo "✅ All resources imported successfully"
                             '''
                         }
