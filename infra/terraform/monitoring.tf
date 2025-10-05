@@ -78,7 +78,6 @@ resource "azurerm_container_group" "grafana" {
     memory = "1.5"
     
     environment_variables = {
-      GF_SECURITY_ADMIN_PASSWORD = var.grafana_password
       GF_SMTP_ENABLED            = "true"
       GF_SMTP_HOST               = "smtp.gmail.com:587"
       GF_SMTP_USER               = var.GRAFANA_EMAIL
