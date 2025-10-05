@@ -122,16 +122,22 @@ pipeline {
                                 az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
                                 az account set --subscription "$ARM_SUBSCRIPTION_ID_VAR"
         
+                                echo "=== CHECKING TERRAFORM STATE ==="
+                                terraform state list || echo "No existing state"
+        
                                 echo "=== IMPORTING EXISTING RESOURCES ==="
         
-                                # Import critical resources that already exist
-                                terraform import azurerm_mssql_server.sql_server "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql" || echo "SQL Server import completed"
+                                # Import with proper error handling
+                                echo "Importing SQL Server..."
+                                terraform import azurerm_mssql_server.sql_server "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Sql/servers/patientsurveysql"
                                 
-                                terraform import azurerm_network_security_group.monitoring_nsg "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg" || echo "NSG import completed"
+                                echo "Importing Network Security Group..."
+                                terraform import azurerm_network_security_group.monitoring_nsg "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/networkSecurityGroups/monitoring-nsg"
                                 
-                                terraform import azurerm_storage_account.monitoring "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor" || echo "Storage Account import completed"
+                                echo "Importing Storage Account..."
+                                terraform import azurerm_storage_account.monitoring "/subscriptions/${ARM_SUBSCRIPTION_ID_VAR}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Storage/storageAccounts/mypatientsurveymonitor"
         
-                                echo "✅ Resource imports completed"
+                                echo "✅ All resources imported successfully"
                             '''
                         }
                     }
