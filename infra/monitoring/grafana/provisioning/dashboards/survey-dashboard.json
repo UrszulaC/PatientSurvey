@@ -1,105 +1,744 @@
 {
-  "id": null,
-  "title": "Patient Survey & Resource Metrics",
-  "tags": ["patient-survey","infrastructure"],
-  "timezone": "browser",
-  "schemaVersion": 37,
-  "version": 1,
-  "refresh": "30s",
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 15,
+  "links": [],
+  "liveNow": false,
   "panels": [
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
-      "title": "Total Survey Submissions (Lifetime)",
-      "type": "stat",
-      "datasource": {"type": "prometheus","uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr": "patient_survey_submissions_total","legendFormat":"Total Surveys","refId":"A"}],
-      "gridPos":{"h":6,"w":6,"x":0,"y":0}
-    },
-    {
-      "id": 2,
-      "title": "Survey Failures (Lifetime)",
-      "type": "stat",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr": "patient_survey_failures_total","legendFormat":"Failures","refId":"A"}],
-      "gridPos":{"h":6,"w":6,"x":6,"y":0}
-    },
-    {
-      "id": 3,
-      "title": "Survey Questions Total (Lifetime)",
-      "type": "stat",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr": "survey_questions_total","legendFormat":"Questions","refId":"A"}],
-      "gridPos":{"h":6,"w":6,"x":12,"y":0}
-    },
-    {
-      "id": 4,
-      "title": "Active Surveys",
-      "type": "gauge",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr": "active_surveys_total","legendFormat":"Active","refId":"A"}],
-      "fieldConfig":{"defaults":{"unit":"none","min":0},"overrides":[]},
-      "gridPos":{"h":6,"w":6,"x":0,"y":6}
-    },
-    {
-      "id": 5,
-      "title": "Average Survey Duration (Lifetime, seconds)",
-      "type": "stat",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr":"patient_survey_duration_seconds_total / patient_survey_duration_seconds_count","legendFormat":"Avg Duration","refId":"A"}],
-      "fieldConfig":{"defaults":{"unit":"s"},"overrides":[]},
-      "gridPos":{"h":6,"w":6,"x":6,"y":6}
-    },
-    {
-      "id": 6,
-      "title": "Survey Submission Rate (5m Window)",
-      "type": "timeseries",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr": "rate(patient_survey_submissions_total[5m])","legendFormat":"Submissions/sec","refId":"A"}],
-      "gridPos":{"h":6,"w":12,"x":0,"y":12}
-    },
-    {
-      "id": 7,
-      "title": "CPU Usage (%)",
-      "type": "timeseries",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr":"100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)","legendFormat":"{{instance}}","refId":"A"}],
-      "gridPos":{"h":8,"w":12,"x":0,"y":18}
-    },
-    {
-      "id": 8,
-      "title": "Memory Usage (%)",
-      "type": "timeseries",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr":"100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))","legendFormat":"{{instance}}","refId":"A"}],
-      "gridPos":{"h":8,"w":12,"x":12,"y":18}
-    },
-    {
-      "id": 9,
-      "title": "Disk Usage (%)",
-      "type": "timeseries",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr":"100 * (1 - (node_filesystem_free_bytes{fstype!=\"tmpfs\"} / node_filesystem_size_bytes{fstype!=\"tmpfs\"}))","legendFormat":"{{instance}} - {{mountpoint}}","refId":"A"}],
-      "gridPos":{"h":8,"w":12,"x":0,"y":26}
-    },
-    {
-      "id": 10,
-      "title": "Docker Container Count",
-      "type": "stat",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[{"expr":"count(container_last_seen{container_label_com_docker_swarm_service_name!=\"\"})","legendFormat":"Containers","refId":"A"}],
-      "gridPos":{"h":6,"w":6,"x":12,"y":26}
-    },
-    {
-      "id": 11,
-      "title": "Network Traffic (bytes/sec)",
-      "type": "timeseries",
-      "datasource":{"type":"prometheus","uid":"a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"},
-      "targets":[
-        {"expr":"rate(node_network_receive_bytes_total[5m])","legendFormat":"{{instance}} RX","refId":"A"},
-        {"expr":"rate(node_network_transmit_bytes_total[5m])","legendFormat":"{{instance}} TX","refId":"B"}
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.5.6",
+      "targets": [
+        {
+          "expr": "patient_survey_submissions_total",
+          "legendFormat": "Total Surveys",
+          "refId": "A"
+        }
       ],
-      "gridPos":{"h":6,"w":12,"x":0,"y":32}
+      "title": "Total Survey Submissions (Lifetime)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.5.6",
+      "targets": [
+        {
+          "expr": "patient_survey_failures_total",
+          "legendFormat": "Failures",
+          "refId": "A"
+        }
+      ],
+      "title": "Survey Failures (Lifetime)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.5.6",
+      "targets": [
+        {
+          "expr": "survey_questions_total",
+          "legendFormat": "Questions",
+          "refId": "A"
+        }
+      ],
+      "title": "Survey Questions Total (Lifetime)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 6
+      },
+      "id": 4,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "9.5.6",
+      "targets": [
+        {
+          "expr": "active_surveys_total",
+          "legendFormat": "Active",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Surveys",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 6
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.5.6",
+      "targets": [
+        {
+          "expr": "(1 - (rate(patient_survey_failures_total[5m]) / rate(patient_survey_submissions_total[5m]))) * 100",
+          "legendFormat": "Success Rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Survey Success Rate (5m Window)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "db_active_connections",
+          "legendFormat": "Active Connections",
+          "refId": "A"
+        }
+      ],
+      "title": "Database Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(patient_survey_submissions_total[5m])",
+          "legendFormat": "Submissions/sec",
+          "refId": "A"
+        }
+      ],
+      "title": "Survey Submission Rate (5m Window)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": "Down",
+                "1": "Up"
+              },
+              "type": "value",
+              "value": "1"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 14
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.5.6",
+      "targets": [
+        {
+          "expr": "up{job=\"patient-survey-app\"}",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Application Health Status",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP Request Duration (95th percentile)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(http_request_duration_seconds_count[5m])",
+          "legendFormat": "{{method}} {{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP Request Rate by Endpoint",
+      "type": "timeseries"
     }
   ],
-  "time":{"from":"now-6h","to":"now"}
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "patient-survey",
+    "infrastructure"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Patient Survey & Resource Metrics",
+  "uid": "a7bbbdb4-5c77-4d6e-a6ce-355da1b4f70e",
+  "version": 8,
+  "weekStart": ""
 }
