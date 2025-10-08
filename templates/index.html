@@ -9,26 +9,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body style="font-family: 'Frutiger W01', Arial, sans-serif; font-size: 14pt; color: #231f20; background-color: #f0f4f5; margin: 0; padding: 0;">
-
     <header style="background-color: #005eb8; padding: 12px 0;">
-      <div style="max-width: 960px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; min-height: 80px;">
-        
-        <!-- Left: Page title moved into header -->
-        <div style="color: white; font-weight: bold; font-size: 28px;">
-          Patient Experience Survey
-        </div>
+        <div style="max-width: 960px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; min-height: 80px;">
+            
+            <!-- Left: Page title -->
+            <div style="color: white; font-weight: bold; font-size: 28px;">
+                Patient Experience Survey
+            </div>
     
-        <!-- Right: Inline NHS Trust logo -->
-        <div>
-          <img alt="The Princess Alexandra Hospital NHS Trust"
-               style="height: 65px; width: auto; display: block;"
-               src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAywAAAFKCAYAAAD/vNvzAAAACXBIWXMAAC4jAAAuIwF4pT92AAAKT2lDQ1BQaG90b3Nob3AgSUNDIHByb2ZpbGUAAHjanVNnVFPpFj333vRCS4iAlEtvUhUIIFJCi4AUkSYqIQkQSoghodkVUcERRUUEG8igiAOOjoCMFVEsDIoK2AfkIaKOg6OIisr74Xuja9a89+bN/rXXPues852zzwfACAyWSDNRNYAMqUIeEeCDx8TG4eQuQIEKJHAAEAizZCFz/SMBAPh+PDwrIsAHvgABeNMLCADATZvAMByH/w/qQplcAYCEAcB0kThLCIAUAEB6jkKmAEBGAYCdmCZTAKAEAGDLY2LjAFAtAGAnf+bTAICd+Jl7AQBblCEVAaCRACATZYhEAGg7AKzPVopFAFgwAB... (base64 continues) ...">
-        </div>
+            <!-- Right: Inline white NHS-style logo -->
+            <div style="display: flex; align-items: center;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40" style="height: 50px; width: auto;">
+                    <!-- Transparent background -->
+                    <rect width="100" height="40" rx="4" fill="transparent"></rect>
+                    <!-- White NHS text -->
+                    <text x="50%" y="65%" text-anchor="middle"
+                          font-family="Arial, Helvetica, sans-serif"
+                          font-weight="bold"
+                          font-size="22"
+                          fill="white"
+                          letter-spacing="1">
+                        NHS
+                    </text>
+                </svg>
+                <div style="color: white; text-align: right; font-weight: bold; line-height: 1.1; margin-left: 8px;">
+                    <div style="font-size: 13px;">The Princess Alexandra</div>
+                    <div style="font-size: 13px;">Hospital</div>
+                    <div style="font-size: 13px;">NHS Trust</div>
+                </div>
+            </div>
     
-      </div>
+        </div>
     </header>
-
-    
     <div style="background-color: #ffffff; padding: 20px; margin: 0 -10px;">
         <div style="max-width: 960px; margin: 0 auto; padding: 20px;">
             <div id="loading" style="padding: 24px; text-align: center; font-size: 14pt;">Loading survey questions...</div>
