@@ -1,4 +1,4 @@
-# Use official Python 3.9 slim image
+# Python 3.9 slim image
 FROM python:3.9-slim-bullseye
 
 # Set non-interactive environment variables
@@ -12,7 +12,7 @@ RUN apt-get update && \
         apt-transport-https ca-certificates gcc libffi-dev python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# ✅ Securely add Microsoft package repository (modern keyring method)
+# ✅ Securely add Microsoft package repository (keyring method)
 RUN mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg && \
     echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" \
