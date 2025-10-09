@@ -1,16 +1,22 @@
-# Python 3.9 base image
+# Use official Python 3.9 slim image
 FROM python:3.9-slim-bullseye
 
-# System dependencies for ODBC
+# Set non-interactive environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies and ODBC prerequisites
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl gnupg2 unixodbc unixodbc-dev odbcinst libodbc1 \
         apt-transport-https ca-certificates gcc libffi-dev python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Microsoft ODBC Driver 17 for SQL Server
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+# ✅ Securely add Microsoft package repository (modern keyring method)
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" \
+        > /etc/apt/sources.list.d/mssql-release.list && \
     apt-get update && \
     ACCEPT_EULA=Y apt-get install -y msodbcsql17 && \
     rm -rf /var/lib/apt/lists/*
@@ -19,13 +25,13 @@ RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
 WORKDIR /app
 ENV PYTHONPATH=/app
 
-# Copy app source
+# Copy app source code
 COPY . .
 
-
-# Install Python dependencies (make sure Flask is in requirements.txt!)
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy HTML templates
 COPY templates/ ./templates/
 
 # Expose Flask app port
