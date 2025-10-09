@@ -9,42 +9,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body style="font-family: 'Frutiger W01', Arial, sans-serif; font-size: 14pt; color: #231f20; background-color: #f0f4f5; margin: 0; padding: 0;">
-    <header style="background-color: #005eb8; padding: 12px 0;">
-      <div style="max-width: 960px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; min-height: 80px;">
+    <header>
+        <div class="header-container">
+            <!-- Left: Page title -->
+            <div class="page-title">
+                Patient Experience Survey
+            </div>
     
-        <!-- Left: Page title -->
-        <div style="color: white; font-weight: bold; font-size: 28px;">
-          Patient Experience Survey
+            <!-- Right: Inline recreated NHS-style logo -->
+            <div class="logo-container">
+                <!-- NHS box (fixed dimensions) -->
+                <svg class="nhs-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 25">
+                    <!-- White box with adjusted dimensions -->
+                    <rect x="0" y="0" width="58" height="20" fill="white" rx="1" ry="1" />
+                    <!-- NHS text with proper positioning -->
+                    <text x="50%" y="65%" text-anchor="middle"
+                          font-family="Arial Black, Arial, Helvetica, sans-serif"
+                          font-weight="900"
+                          font-size="18"
+                          fill="#005eb8"
+                          letter-spacing="0.2"
+                          transform="skewX(-9) scale(1.03, 1.08)">
+                        NHS
+                    </text>
+                </svg>
+    
+                <!-- Hospital trust text -->
+                <div class="hospital-name">
+                    <div>The Princess Alexandra</div>
+                    <div>Hospital</div>
+                    <div>NHS Trust</div>
+                </div>
+            </div>
         </div>
-    
-        <!-- Right: Inline recreated NHS-style logo -->
-        <div style="display: flex; flex-direction: column; align-items: flex-end; color: white;">
-    
-          <!-- NHS box (tighter + larger) -->
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 25" style="height: 32px; width: auto; margin-bottom: 4px;">
-            <!-- Smaller white box padding -->
-            <rect x="0" y="0" width="58" height="20" fill="white" rx="1" ry="1" />
-            <!-- NHS text with reduced skew and slightly larger font -->
-            <text x="50%" y="73%" text-anchor="middle"
-                  font-family="Arial Black, Arial, Helvetica, sans-serif"
-                  font-weight="900"
-                  font-size="18"
-                  fill="#005eb8"
-                  letter-spacing="0.2"
-                  transform="skewX(-9) scale(1.03, 1.08)">
-              NHS
-            </text>
-          </svg>
-    
-          <!-- Hospital trust text -->
-          <div style="text-align: right; font-weight: bold; line-height: 1.1;">
-            <div style="font-size: 14px;">The Princess Alexandra</div>
-            <div style="font-size: 14px;">Hospital</div>
-            <div style="font-size: 12px;">NHS Trust</div>
-          </div>
-    
-        </div>
-      </div>
     </header>
 
     <div style="background-color: #ffffff; padding: 20px; margin: 0 -10px;">
