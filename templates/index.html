@@ -20,18 +20,18 @@
         <!-- Right: Inline recreated NHS-style logo -->
         <div style="display: flex; flex-direction: column; align-items: flex-end; color: white;">
           
-          <!-- NHS box (proper proportions and tight white background) -->
+          <!-- NHS box with tighter crop and heavier text -->
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 22" style="height: 26px; width: auto; margin-bottom: 4px;">
             <!-- Tight white box -->
-            <rect x="0" y="0" width="60" height="22" fill="white" />
-            <!-- Slightly smaller italic NHS text centered -->
-            <text x="50%" y="70%" text-anchor="middle"
-                  font-family="Arial, Helvetica, sans-serif"
+            <rect x="0" y="0" width="60" height="22" fill="white" rx="1" ry="1" />
+            <!-- Bold, thick, italic blue NHS text -->
+            <text x="50%" y="72%" text-anchor="middle"
+                  font-family="Arial Black, Arial, Helvetica, sans-serif"
                   font-weight="900"
-                  font-size="16"
-                  font-style="italic"
+                  font-size="17"
                   fill="#005eb8"
-                  letter-spacing="0.5">
+                  letter-spacing="0.3"
+                  transform="skewX(-12) scale(1.05, 1.08)">
               NHS
             </text>
           </svg>
@@ -47,6 +47,7 @@
     
       </div>
     </header>
+
 
     <div style="background-color: #ffffff; padding: 20px; margin: 0 -10px;">
         <div style="max-width: 960px; margin: 0 auto; padding: 20px;">
