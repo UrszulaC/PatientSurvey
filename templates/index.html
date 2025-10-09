@@ -9,37 +9,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body style="font-family: 'Frutiger W01', Arial, sans-serif; font-size: 14pt; color: #231f20; background-color: #f0f4f5; margin: 0; padding: 0;">
-    <header>
-        <div class="header-container">
+    <header style="background-color: #005eb8; padding: 12px 0;">
+        <div style="max-width: 960px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; min-height: 80px;">
+    
             <!-- Left: Page title -->
-            <div class="page-title">
+            <div style="color: white; font-weight: bold; font-size: 28px;">
                 Patient Experience Survey
             </div>
     
             <!-- Right: Inline recreated NHS-style logo -->
-            <div class="logo-container">
-                <!-- NHS box (fixed dimensions) -->
-                <svg class="nhs-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 25">
-                    <!-- White box with adjusted dimensions -->
-                    <rect x="0" y="0" width="58" height="20" fill="white" rx="1" ry="1" />
+            <div style="display: flex; flex-direction: column; align-items: flex-end; color: white;">
+    
+                <!-- NHS box with corrected dimensions -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 30" width="80" height="30" style="height: 32px; width: auto; margin-bottom: 4px;">
+                    <!-- White box with proper dimensions -->
+                    <rect x="0" y="0" width="75" height="25" fill="white" rx="2" ry="2" />
                     <!-- NHS text with proper positioning -->
-                    <text x="50%" y="65%" text-anchor="middle"
+                    <text x="50%" y="68%" text-anchor="middle"
                           font-family="Arial Black, Arial, Helvetica, sans-serif"
                           font-weight="900"
-                          font-size="18"
+                          font-size="22"
                           fill="#005eb8"
                           letter-spacing="0.2"
-                          transform="skewX(-9) scale(1.03, 1.08)">
+                          transform="skewX(-10) scale(1.05, 1.1)">
                         NHS
                     </text>
                 </svg>
     
                 <!-- Hospital trust text -->
-                <div class="hospital-name">
-                    <div>The Princess Alexandra</div>
-                    <div>Hospital</div>
-                    <div>NHS Trust</div>
+                <div style="text-align: right; font-weight: bold; line-height: 1.1;">
+                    <div style="font-size: 14px;">The Princess Alexandra</div>
+                    <div style="font-size: 14px;">Hospital</div>
+                    <div style="font-size: 12px;">NHS Trust</div>
                 </div>
+    
             </div>
         </div>
     </header>
