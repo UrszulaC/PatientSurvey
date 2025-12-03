@@ -115,6 +115,7 @@
         async function loadQuestions() {
             try {
                 const response = await fetch('/api/questions' + CACHE_BUST);
+                
                 const questions = await response.json();
                 
                 const container = document.getElementById('questionsContainer');
